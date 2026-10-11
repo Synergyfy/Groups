@@ -1,0 +1,113 @@
+@import "tailwindcss";
+
+@theme {
+  /* ------------------------------------------------------------------
+     Light dashboard palette.
+     The ink ramp is now surface tint (lighter number = greyer surface),
+     not darkness. Everything that used to be a dark surface is now white
+     or near-white, and the page body is pure white.
+     ------------------------------------------------------------------ */
+  --color-ink-950: #f1f5f9;
+  --color-ink-900: #ffffff;
+  --color-ink-850: #f8fafc;
+  --color-ink-800: #e2e8f0;
+  --color-ink-700: #cbd5e1;
+  --color-ink-600: #94a3b8;
+
+  /* "white" is the contrast ink of this theme: text-white renders as the
+     heading colour and border-white/10 as a hairline, so every component
+     keeps its intent on the white dashboard without per-site edits. */
+  --color-white: #0f172a;
+
+  /* slate ramp remapped so text stays readable on white */
+  --color-slate-200: #1e293b;
+  --color-slate-300: #334155;
+  --color-slate-400: #475569;
+  --color-slate-500: #64748b;
+
+  /* gold: 400/500/600 stay bright because they are used as fills */
+  --color-gold-200: #92400e;
+  --color-gold-300: #a16207;
+  --color-gold-400: #f2c15c;
+  --color-gold-500: #e6a92b;
+  --color-gold-600: #c98d18;
+
+  --color-success-300: #a7f3d0;
+  --color-success-400: #047857;
+  --color-success-500: #34d399;
+  --color-success-600: #10b981;
+
+  --color-warning-300: #d97706;
+  --color-warning-400: #b45309;
+  --color-warning-500: #f59e0b;
+  --color-warning-600: #d97706;
+
+  --color-danger-300: #fecdd3;
+  --color-danger-400: #be123c;
+  --color-danger-500: #f43f5e;
+  --color-danger-600: #e11d48;
+
+  --color-info-300: #0284c7;
+  --color-info-400: #0369a1;
+  --color-info-500: #38bdf8;
+  --color-info-600: #0ea5e9;
+
+  --animate-ring-spin: ring-spin 80s linear infinite;
+  --animate-node-in: node-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-rise-in: node-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-node-zoom: node-zoom 2.6s ease-in-out infinite;
+
+  @keyframes ring-spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes node-in {
+    from {
+      opacity: 0;
+      transform: scale(0.4);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  @keyframes node-zoom {
+    0%,
+    100% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.1);
+    }
+  }
+}
+
+body {
+  background-color: #ffffff;
+  color: #0f172a;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  @apply bg-gold-500/40 text-white;
+}
+
+@layer utilities {
+  /* text-ink-950 is only ever the label on a gold/success chip, so it has
+     to stay dark now that ink-950 is a light surface. */
+  .text-ink-950 {
+    color: #0f172a;
+  }
+
+  /* gold-400 must stay bright for gradients/fills, so its text form is
+     darkened here instead of in the palette. */
+  .text-gold-400 {
+    color: #b45309;
+  }
+}
