@@ -43,15 +43,19 @@ export default function AutomaticGroupRulesPage() {
       <SectionHeader
         title="20 — Automatic Group Rules"
         back="/admin/groups"
+        tip="Every change saves as you click. This screen only calculates outcomes — it never splits or merges a group itself."
         subtitle="The configuration every automatic group lives by: threshold, method, scope and combination rules, with a live preview of what the current rule would do right now."
         actions={
-          <button
-            type="button"
-            onClick={() => patch(DEFAULT_ADMIN_CONFIG.automaticGrouping)}
-            className="inline-flex h-10 cursor-pointer items-center gap-1.5 rounded-lg border border-white/10 bg-ink-900/70 px-3 text-xs font-medium text-slate-300 transition-colors hover:border-gold-500/40 hover:text-white"
-          >
-            Reset to defaults
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={() => patch(DEFAULT_ADMIN_CONFIG.automaticGrouping)}
+              className="inline-flex h-10 cursor-pointer items-center gap-1.5 rounded-lg border border-white/10 bg-ink-900/70 px-3 text-xs font-medium text-slate-300 transition-colors hover:border-gold-500/40 hover:text-white"
+            >
+              Reset to defaults
+            </button>
+            <TipIcon text="Overwrites every setting below at once — threshold 12, joining order, national scope, combining off." />
+          </>
         }
       />
 
@@ -86,12 +90,18 @@ export default function AutomaticGroupRulesPage() {
         <Card className="lg:col-span-2">
           <CardBody className="flex flex-col gap-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <CardTitle>Rule configuration</CardTitle>
+              <div className="flex items-center gap-1.5">
+                <CardTitle>Rule configuration</CardTitle>
+                <TipIcon text="Every control here saves immediately — there is no save button, and every screen reads these values." />
+              </div>
             </div>
 
             <label className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-ink-950/60 px-3 py-3 text-xs">
               <span>
-                <span className="font-semibold text-white">Automatic grouping</span>
+                <span className="flex items-center gap-1.5">
+                  <span className="font-semibold text-white">Automatic grouping</span>
+                  <TipIcon text="When this is off, groups are only created by hand." />
+                </span>
                 <span className="mt-1 block text-[11px] text-slate-400">
                   Turning this off stops splitting — it never deletes an existing group.
                 </span>
@@ -139,7 +149,10 @@ export default function AutomaticGroupRulesPage() {
 
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="flex flex-col gap-1.5 text-xs">
-                <span className="font-semibold text-white">Method</span>
+                <span className="flex items-center gap-1.5">
+                  <span className="font-semibold text-white">Method</span>
+                  <TipIcon text="Changing it does not move members in groups that already exist — it applies at the next split." />
+                </span>
                 <FieldHint>Sets how members are assigned when the threshold triggers a split.</FieldHint>
                 <select
                   value={rule.method}
@@ -156,7 +169,10 @@ export default function AutomaticGroupRulesPage() {
               </label>
 
               <label className="flex flex-col gap-1.5 text-xs">
-                <span className="font-semibold text-white">Scope</span>
+                <span className="flex items-center gap-1.5">
+                  <span className="font-semibold text-white">Scope</span>
+                  <TipIcon text="Groups outside the selected scope are not affected by this rule at all." />
+                </span>
                 <FieldHint>
                   Limits splitting to the whole network, a single city, or one local area.
                 </FieldHint>
@@ -177,7 +193,10 @@ export default function AutomaticGroupRulesPage() {
 
             <label className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-ink-950/60 px-3 py-3 text-xs">
               <span>
-                <span className="font-semibold text-white">Allow combining groups</span>
+                <span className="flex items-center gap-1.5">
+                  <span className="font-semibold text-white">Allow combining groups</span>
+                  <TipIcon text="Only automatic groups are ever combined, and only while automatic grouping is switched on." />
+                </span>
                 <span className="mt-1 block text-[11px] text-slate-400">
                   Whether two undersized automatic groups may be merged by the system.
                 </span>
@@ -197,7 +216,10 @@ export default function AutomaticGroupRulesPage() {
 
         <Card data-tour="preview">
           <CardBody className="flex flex-col gap-3">
-            <CardTitle>Live outcome preview</CardTitle>
+            <div className="flex items-center gap-1.5">
+              <CardTitle>Live outcome preview</CardTitle>
+              <TipIcon text="The table recalculates whenever you change the threshold or a group's membership." />
+            </div>
             <p className="text-[11px] leading-relaxed text-slate-400">
               What the rule would do if it ran against today's demo network:
             </p>
@@ -241,7 +263,10 @@ export default function AutomaticGroupRulesPage() {
         <Card>
           <CardBody className="flex flex-col gap-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <CardTitle>Current groups against the rule</CardTitle>
+              <div className="flex items-center gap-1.5">
+                <CardTitle>Current groups against the rule</CardTitle>
+                <TipIcon text="Only automatic Network groups are listed — groups businesses created are never governed by this rule." />
+              </div>
               <span className="text-[11px] text-slate-500">
                 {rule.enabled ? "Rule enabled" : "Rule disabled"}
               </span>

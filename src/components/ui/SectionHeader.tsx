@@ -1,10 +1,13 @@
 import type { ReactNode } from "react";
 import { ChevronLeft } from "lucide-react";
 import { Link } from "react-router-dom";
+import TipIcon from "./TipIcon";
 
 interface SectionHeaderProps {
   title: string;
   subtitle?: string;
+  /** Hover/focus tooltip shown beside the title. */
+  tip?: string;
   actions?: ReactNode;
   back?: string;
   backLabel?: string;
@@ -13,6 +16,7 @@ interface SectionHeaderProps {
 export default function SectionHeader({
   title,
   subtitle,
+  tip,
   actions,
   back,
   backLabel = "Back",
@@ -31,6 +35,7 @@ export default function SectionHeader({
         )}
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-lg font-bold text-white sm:text-xl">{title}</h1>
+          {tip && <TipIcon text={tip} />}
         </div>
         {subtitle && (
           <p className="mt-1 max-w-2xl text-xs leading-relaxed text-slate-400 sm:text-sm">

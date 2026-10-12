@@ -4,6 +4,7 @@ import Badge from "../../components/ui/Badge";
 import Card, { CardBody, CardTitle } from "../../components/ui/Card";
 import SectionHeader from "../../components/ui/SectionHeader";
 import StatCard from "../../components/ui/StatCard";
+import TipIcon from "../../components/ui/TipIcon";
 import { CAMPAIGNS, PROGRAMMES, RELATIONSHIPS, findDirectoryEntry } from "../../data/businessData";
 import { LOCATIONS } from "../../data/locationsData";
 import { useAppState, useGroup, useGroupActivity } from "../../store/selectors";
@@ -146,7 +147,10 @@ export default function AdminGroupRelationshipsPage() {
 
         <Card data-tour="people">
           <CardBody className="flex flex-col gap-3">
-            <CardTitle>People and business relationships</CardTitle>
+            <div className="flex items-center gap-1.5">
+              <CardTitle>People and business relationships</CardTitle>
+              <TipIcon text="Gold values are links that open the related screen; white values have no separate screen." />
+            </div>
             <ul className="flex flex-col gap-2 text-xs">
               {links.map((entry) => (
                 <li
@@ -249,6 +253,7 @@ export default function AdminGroupRelationshipsPage() {
       <SectionHeader
         title="Relationship rule of thumb"
         subtitle="Group ≠ location ≠ campaign ≠ programme: this screen exists so an administrator can see all four at once and never confuse them."
+        tip="This screen is read-only — it shows relationships without changing them."
       />
     </div>
   );

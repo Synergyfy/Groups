@@ -2,13 +2,25 @@ import { useMemo } from "react";
 import type {
   ActivityEvent,
   AdminGroupFilters,
+  BusinessRecord,
+  CampaignRecord,
+  CircleTypeConfigEntry,
   Group,
   GroupActivity,
   GroupThreshold,
   GroupCircle,
   Invitation,
   NetworkContact,
+  PartnerRecord,
+  ProgrammeRecord,
+  RelationshipRecord,
+  AuditLogEntry,
 } from "../domain/types";
+import {
+  circleTypeFallback,
+  circleTypeMetaFrom,
+  type CircleTypeMeta,
+} from "../domain/constants";
 import { useAppStore } from "./context";
 import type { AppState } from "./reducer";
 
@@ -58,6 +70,7 @@ export function selectGroupStats(state: AppState, actorId: string): GroupStats {
     (invitation) =>
       invitation.kind === "request" &&
       invitation.status === "pending" &&
+      invitation.groupId !== undefined &&
       ownedIds.has(invitation.groupId)
   ).length;
 
@@ -250,6 +263,14 @@ export function useGroup(groupId: string | undefined): Group | undefined {
   );
 }
 
+export function useInvitation(invitationId: string | undefined): Invitation | undefined {
+  const state = useAppState();
+  return useMemo(
+    () => state.invitations.find((invitation) => invitation.id === invitationId),
+    [state, invitationId]
+  );
+}
+
 export function useGroupActivity(groupId: string | undefined): GroupActivity[] {
   const state = useAppState();
   return useMemo(
@@ -295,4 +316,89 @@ export function selectNetworkContacts(state: AppState): NetworkContact[] {
 
 export function useNetworkContacts(): NetworkContact[] {
   return useAppState().networkContacts;
+}
+
+// ---------------------------------------------------------------------------
+// Admin entity selectors
+// ---------------------------------------------------------------------------
+
+export function usePartners(): PartnerRecord[] {
+  return useAppState().partners;
+}
+
+export function usePartner(id: string | undefined): PartnerRecord | undefined {
+  const partners = usePartners();
+  return useMemo(() => partners.find((p) => p.id === id), [partners, id]);
+}
+
+export function useBusinesses(): BusinessRecord[] {
+  return useAppState().businesses;
+}
+
+export function useBusiness(id: string | undefined): BusinessRecord | undefined {
+  const businesses = useBusinesses();
+  return useMemo(() => businesses.find((b) => b.id === id), [businesses, id]);
+}
+
+export function useProgrammes(): ProgrammeRecord[] {
+  return useAppState().programmes;
+}
+
+export function useCampaigns(): CampaignRecord[] {
+  return useAppState().campaigns;
+}
+
+export function useRelationships(): RelationshipRecord[] {
+  return useAppState().relationships;
+}
+
+export function useAuditLog(): AuditLogEntry[] {
+  return useAppState().adminConfig.auditLog;
+}
+
+export function usePendingReviewGroups(): Group[] {
+  const state = useAppState();
+  return useMemo(() => state.groups.filter((g) => g.status === "Pending Review"), [state]);
+}
+
+// ---------------------------------------------------------------------------
+// Circle type configuration (admin-authored)
+// ---------------------------------------------------------------------------
+
+/** Every circle type the administrator has defined, in creation order. */
+export function useCircleTypeEntries(): CircleTypeConfigEntry[] {
+  return useAppState().adminConfig.circleTypes;
+}
+
+/**
+ * The circle types businesses may choose from — the ones the administrator
+ * has enabled. This is the single source of truth for business dashboards.
+ */
+export function useCircleTypeMetas(): CircleTypeMeta[] {
+  const entries = useCircleTypeEntries();
+  return useMemo(
+    () => entries.filter((entry) => entry.enabled).map(circleTypeMetaFrom),
+    [entries]
+  );
+}
+
+/** Resolve display metadata for a circle's type, with a safe fallback. */
+export function useCircleTypeMeta(type: string): CircleTypeMeta {
+  const entries = useCircleTypeEntries();
+  return useMemo(() => {
+    const found = entries.find((entry) => entry.type === type);
+    return found ? circleTypeMetaFrom(found) : circleTypeFallback(type);
+  }, [entries, type]);
+}
+
+/**
+ * Memoised type → metadata lookup. Use this when resolving metadata inside a
+ * `.map()` loop, where individual hooks cannot be called.
+ */
+export function useCircleTypeLookup(): (type: string) => CircleTypeMeta {
+  const entries = useCircleTypeEntries();
+  return useMemo(() => {
+    const map = new Map(entries.map((entry) => [entry.type, circleTypeMetaFrom(entry)]));
+    return (type: string) => map.get(type) ?? circleTypeFallback(type);
+  }, [entries]);
 }

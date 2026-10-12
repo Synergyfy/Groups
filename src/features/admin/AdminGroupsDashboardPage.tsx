@@ -6,6 +6,7 @@ import LinkButton from "../../components/ui/LinkButton";
 import SectionHeader from "../../components/ui/SectionHeader";
 import { SkeletonCard, SkeletonRows } from "../../components/ui/Skeleton";
 import StatCard from "../../components/ui/StatCard";
+import TipIcon from "../../components/ui/TipIcon";
 import BarChart from "../../components/ui/charts/BarChart";
 import type { BarDatum } from "../../components/ui/charts/BarChart";
 import Donut from "../../components/ui/charts/Donut";
@@ -82,6 +83,7 @@ export default function AdminGroupsDashboardPage() {
       <SectionHeader
         title="14 — Admin Groups Dashboard"
         subtitle="National group network summary: every group, member and business in the demo store, plus what needs an administrator's attention."
+        tip="Everything here is read-only — approval and editing happen in the group list and the moderation queue."
         actions={
           <LinkButton to="/admin/groups/all" size="sm">
             All groups <ArrowRight className="size-3.5" />
@@ -120,7 +122,10 @@ export default function AdminGroupsDashboardPage() {
         <Card className="lg:col-span-2">
           <CardBody className="flex flex-col gap-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <CardTitle>Needs attention</CardTitle>
+              <div className="flex items-center gap-1.5">
+                <CardTitle>Needs attention</CardTitle>
+                <TipIcon text="Groups waiting for review plus invitations without an answer. Open an item to act on it." />
+              </div>
             </div>
 
             {needsAttention === 0 ? (
@@ -174,7 +179,10 @@ export default function AdminGroupsDashboardPage() {
 
         <Card>
           <CardBody className="flex flex-col gap-3">
-            <CardTitle>Automatic grouping rule</CardTitle>
+            <div className="flex items-center gap-1.5">
+              <CardTitle>Automatic grouping rule</CardTitle>
+              <TipIcon text="A summary of the Automatic Group Rules — change the threshold or method on that screen." />
+            </div>
             <div className="flex items-baseline gap-2">
               <p className="text-3xl font-bold text-white">{rule.threshold}</p>
               <p className="text-xs text-slate-400">members per automatic group</p>
@@ -262,14 +270,20 @@ export default function AdminGroupsDashboardPage() {
 
         <Card>
           <CardBody className="flex flex-col gap-3">
-            <CardTitle>Groups by status</CardTitle>
+              <div className="flex items-center gap-1.5">
+                <CardTitle>Groups by status</CardTitle>
+                <TipIcon text="Status is the moderation state (Active, Pending Review, Suspended, Closed), not the lifecycle stage." />
+              </div>
             <BarChart data={byStatus} accent="#34d399" />
           </CardBody>
         </Card>
 
         <Card>
           <CardBody className="flex flex-col gap-3">
-            <CardTitle>Groups by programme</CardTitle>
+              <div className="flex items-center gap-1.5">
+                <CardTitle>Groups by programme</CardTitle>
+                <TipIcon text="Groups with no programme assigned are counted as No programme." />
+              </div>
             <BarChart data={byProgramme} accent="#fb7185" />
           </CardBody>
         </Card>

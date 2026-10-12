@@ -5,7 +5,9 @@ import { appReducer, createInitialAppState, STORE_VERSION } from "./reducer";
 import type { AppState } from "./reducer";
 import StoreInspector from "./StoreInspector";
 
-const STORAGE_KEY = "247gbs.group.store.v1";
+// Bump the key whenever the seed data changes so a previously cached demo
+// store can never hide freshly added demo circles / invitations.
+const STORAGE_KEY = "247gbs.group.store.v2";
 
 function loadState(): AppState {
   try {

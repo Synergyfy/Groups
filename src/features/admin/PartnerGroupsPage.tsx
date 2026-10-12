@@ -4,6 +4,7 @@ import Badge from "../../components/ui/Badge";
 import Card, { CardBody, CardTitle } from "../../components/ui/Card";
 import SectionHeader from "../../components/ui/SectionHeader";
 import StatCard from "../../components/ui/StatCard";
+import TipIcon from "../../components/ui/TipIcon";
 import { PROGRAMMES } from "../../data/businessData";
 import { useAppState } from "../../store/selectors";
 import { memberCountOf } from "../groups/groupUtils";
@@ -19,6 +20,7 @@ export default function PartnerGroupsPage() {
       <SectionHeader
         title="Partner Groups"
         back="/admin/groups"
+        tip="Everything here is a read-only report — there is nothing on this screen to configure or save."
         subtitle="Partner membership structures across the network. The financial rules behind partnerships are a placeholder in this prototype — the structure is shown, the money is not."
       />
 
@@ -54,9 +56,12 @@ export default function PartnerGroupsPage() {
           <div className="flex items-start gap-3">
             <TriangleAlert className="mt-0.5 size-5 shrink-0 text-warning-400" />
             <div className="flex flex-col gap-2">
-              <p className="text-sm font-semibold text-white">
-                Financial rules are out of scope for this prototype
-              </p>
+              <div className="flex items-center gap-1.5">
+                <p className="text-sm font-semibold text-white">
+                  Financial rules are out of scope for this prototype
+                </p>
+                <TipIcon text="Partner groups themselves work normally — only the fee and revenue-share figures are missing." />
+              </div>
               <p className="text-xs leading-relaxed text-slate-400">
                 Doc B §10.6 marks the partner financial rules as a placeholder. This screen therefore
                 shows only what the specification confirms: which partner groups exist, who owns
@@ -73,7 +78,10 @@ export default function PartnerGroupsPage() {
         <Card className="lg:col-span-2">
           <CardBody className="flex flex-col gap-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <CardTitle>Partner groups</CardTitle>
+              <div className="flex items-center gap-1.5">
+                <CardTitle>Partner groups</CardTitle>
+                <TipIcon text="Only groups of type Partner appear here — select one to open it in the register." />
+              </div>
             </div>
             {partnerGroups.length === 0 ? (
               <p className="text-xs text-slate-400">
@@ -105,7 +113,10 @@ export default function PartnerGroupsPage() {
 
         <Card data-tour="programme">
           <CardBody className="flex flex-col gap-3">
-            <CardTitle>Partner membership programme</CardTitle>
+            <div className="flex items-center gap-1.5">
+              <CardTitle>Partner membership programme</CardTitle>
+              <TipIcon text="Every partner group points to this one programme — it is not copied per group." />
+            </div>
             <div className="flex items-center gap-2">
               <Handshake className="size-5 text-gold-400" />
               <span className="text-sm font-semibold text-white">
@@ -121,12 +132,15 @@ export default function PartnerGroupsPage() {
               payment. Groups reference it by id, which is why the register can filter by
               programme.
             </p>
-            <Link
-              to="/admin/groups/all"
-              className="mt-auto inline-flex items-center gap-1 text-xs font-medium text-gold-300 hover:text-gold-200"
-            >
-              Filter the register by programme <ArrowRight className="size-3.5" />
-            </Link>
+            <div className="mt-auto flex items-center gap-1.5">
+              <Link
+                to="/admin/groups/all"
+                className="inline-flex items-center gap-1 text-xs font-medium text-gold-300 hover:text-gold-200"
+              >
+                Filter the register by programme <ArrowRight className="size-3.5" />
+              </Link>
+              <TipIcon text="Opens the full register — use the programme filter in the filter bar there." />
+            </div>
           </CardBody>
         </Card>
       </div>

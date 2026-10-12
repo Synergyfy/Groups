@@ -14,7 +14,11 @@ import {
   selectNetworkStats,
   selectOwnedGroups,
 } from "../src/store/selectors";
-import { creatableGroupTypes, nonCreatableGroupTypes } from "../src/features/groups/groupUtils";
+import {
+  contributionLabel,
+  creatableGroupTypes,
+  nonCreatableGroupTypes,
+} from "../src/features/groups/groupUtils";
 
 const BLANK_ADMIN_FILTERS = {
   type: "all",
@@ -50,9 +54,9 @@ function run(actions: AppAction[], from: AppState = createInitialAppState()): Ap
 
 const initial = createInitialAppState();
 
-check("initial state version is 1", initial.version === 1);
+check("initial state version is 2", initial.version === 2);
 check("initial state has 14 groups", initial.groups.length === 14, `${initial.groups.length}`);
-check("initial state has 10 invitations", initial.invitations.length === 10);
+check("initial state has 17 invitations", initial.invitations.length === 17, `${initial.invitations.length}`);
 check("initial state has 10 group activities", initial.groupActivities.length === 10);
 check("initial state has circles", initial.circles.length > 0);
 check(
@@ -79,7 +83,11 @@ check("explore hides closed groups", explore.every((g) => g.status !== "Closed")
 
 const stats = selectGroupStats(initial, ACTOR.id);
 check("stats reports 2 owned groups", stats.owned === 2, `${stats.owned}`);
-check("stats reports 3 pending invites", stats.pendingInvites === 3, `${stats.pendingInvites}`);
+check(
+  "stats reports 5 pending invites (3 group + 2 circle)",
+  stats.pendingInvites === 5,
+  `${stats.pendingInvites}`
+);
 check(
   "stats reports 1 open request on owned groups",
   stats.openRequests === 1,
@@ -713,6 +721,171 @@ const reset = run(
 check("reset restores 14 groups", reset.groups.length === 14);
 check("reset restores threshold", reset.adminConfig.automaticGrouping.threshold === 12);
 check("reset restores membership", reset.groups.find((g) => g.id === "grp-london-sme")?.memberIds.length === 12);
+
+check(
+  "autumn expo group is paid so the review step can show a contribution",
+  (() => {
+    const group = initial.groups.find((g) => g.id === "grp-autumn-expo");
+    return group?.pricing === "paid" && group.contribution === 45 && group.requiredSize === 40;
+  })()
+);
+check(
+  "autumn expo contribution label reads monthly",
+  contributionLabel(
+    initial.groups.find((g) => g.id === "grp-autumn-expo") ?? {
+      pricing: undefined,
+      contribution: undefined,
+      contributionFrequency: undefined,
+    }
+  ) === "£45 monthly per member"
+);
+
+// --- Participant (free invitee) flow -----------------------------------------
+const CONSUMER = { id: "cons-john", name: "John Doe" };
+
+const consumerCircles = initial.circles.filter((c) => c.memberIds.includes(CONSUMER.id));
+check(
+  "cons-john is a member of at least one circle",
+  consumerCircles.length > 0,
+  `${consumerCircles.length}`
+);
+
+const consumerCircleInvites = initial.invitations.filter(
+  (inv) => inv.inviteeId === CONSUMER.id && inv.circleId !== undefined
+);
+check(
+  "cons-john has 2 pending circle invitations",
+  consumerCircleInvites.length === 2 && consumerCircleInvites.every((inv) => inv.status === "pending"),
+  `${consumerCircleInvites.length}`
+);
+check(
+  "circle invitations carry no groupId",
+  consumerCircleInvites.every((inv) => inv.groupId === undefined)
+);
+check(
+  "circle invitations point at circles the invitee is not yet in",
+  consumerCircleInvites.every(
+    (inv) => !initial.circles.find((c) => c.id === inv.circleId)?.memberIds.includes(CONSUMER.id)
+  )
+);
+
+const consumerInvite = consumerCircleInvites[0];
+const circleAccept = run(
+  [{ type: "invitation/respond", invitationId: consumerInvite.id, accept: true, responder: CONSUMER }],
+  initial
+);
+const joinedCircle = circleAccept.circles.find((c) => c.id === consumerInvite.circleId);
+check(
+  "accepting a circle invitation adds the invitee to that circle",
+  joinedCircle?.memberIds.includes(CONSUMER.id) ?? false
+);
+check(
+  "circle invitation is marked accepted",
+  circleAccept.invitations.find((inv) => inv.id === consumerInvite.id)?.status === "accepted"
+);
+check(
+  "circle join logs a circle activity",
+  circleAccept.circleActivities.some(
+    (a) => a.circleId === consumerInvite.circleId && a.kind === "join"
+  )
+);
+check(
+  "accepting a circle invitation does not touch group membership",
+  circleAccept.groups.every((g, i) => g.memberIds.length === initial.groups[i].memberIds.length)
+);
+check(
+  "declining a circle invitation leaves membership untouched",
+  (() => {
+    const next = appReducer(initial, {
+      type: "invitation/respond",
+      invitationId: consumerCircleInvites[1].id,
+      accept: false,
+      responder: CONSUMER,
+    });
+    return (
+      next.invitations.find((inv) => inv.id === consumerCircleInvites[1].id)?.status === "declined" &&
+      !next.circles
+        .find((c) => c.id === consumerCircleInvites[1].circleId)
+        ?.memberIds.includes(CONSUMER.id)
+    );
+  })()
+);
+
+// --- Admin-authored circle types ---------------------------------------------
+check(
+  "admin config seeds circle types",
+  initial.adminConfig.circleTypes.length > 0,
+  `${initial.adminConfig.circleTypes.length}`
+);
+check(
+  "seeded circle types are fully configured",
+  initial.adminConfig.circleTypes.every(
+    (t) => t.id && t.type && t.shortLabel && t.description && t.accent
+  )
+);
+
+const CIRCLE_TYPE_ADMIN = { id: "admin", name: "Administrator" };
+const typeCreated = appReducer(initial, {
+  type: "admin/circle-type-create",
+  entry: {
+    id: "ct-supplier",
+    type: "Supplier Networking",
+    shortLabel: "Supplier",
+    description: "Suppliers and buyers matched into one circle.",
+    accent: "#0ea5e9",
+    accentSoft: "rgba(14, 165, 233, 0.14)",
+    enabled: true,
+    mandatory: false,
+    minMembers: 6,
+    maxMembers: 24,
+    requiresBanker: false,
+    allowedDurations: [60, 90],
+  },
+  actor: CIRCLE_TYPE_ADMIN,
+});
+check(
+  "admin can create a circle type",
+  typeCreated.adminConfig.circleTypes.some((t) => t.id === "ct-supplier")
+);
+check(
+  "creating a circle type writes an audit entry",
+  typeCreated.adminConfig.auditLog.some((e) => e.action === "circle-type-created")
+);
+check(
+  "creating a circle type does not create circles",
+  typeCreated.circles.length === initial.circles.length
+);
+
+const typeDisabled = appReducer(typeCreated, {
+  type: "admin/circle-type-update",
+  id: "ct-supplier",
+  patch: { enabled: false, maxMembers: 12 },
+  actor: CIRCLE_TYPE_ADMIN,
+});
+check(
+  "admin can update a circle type",
+  typeDisabled.adminConfig.circleTypes.find((t) => t.id === "ct-supplier")?.enabled === false &&
+    typeDisabled.adminConfig.circleTypes.find((t) => t.id === "ct-supplier")?.maxMembers === 12
+);
+check(
+  "circle type id and name are immutable through update",
+  typeDisabled.adminConfig.circleTypes.find((t) => t.id === "ct-supplier")?.type ===
+    "Supplier Networking"
+);
+
+const typeDeleted = appReducer(typeDisabled, {
+  type: "admin/circle-type-delete",
+  id: "ct-supplier",
+  actor: CIRCLE_TYPE_ADMIN,
+});
+check(
+  "admin can delete a circle type",
+  !typeDeleted.adminConfig.circleTypes.some((t) => t.id === "ct-supplier")
+);
+check(
+  "deleting a circle type writes an audit entry",
+  typeDeleted.adminConfig.auditLog.some((e) => e.action === "circle-type-deleted")
+);
 
 console.log(`\n${passed}/${passed + failed} store assertions passed`);
 process.exit(failed > 0 ? 1 : 0);

@@ -37,20 +37,15 @@ export interface NetworkContact {
   addedByName: string;
 }
 
-export type CircleType =
-  | "Marketing Circle"
-  | "Advertising Circle"
-  | "Nearby Campaign Circle"
-  | "Hyperlocal Campaign Circle"
-  | "National Campaign Circle"
-  | "Global Campaign Circle"
-  | "Smart Money Partner Finance Network Circle";
+// Circle types are admin-defined: the name is created on the Circle Type
+// Configuration screen and flows through to every business dashboard.
+export type CircleType = string;
 
 export type InteractionLevel = "read" | "message" | "collaborate";
 
-export type CampaignDuration = 90 | 180 | 270 | 360;
+export type CampaignDuration = 60 | 90 | 120 | 180 | 270 | 360 | 365;
 
-export type CircleVisibility = "private" | "invite only";
+export type CircleVisibility = "private" | "invite only" | "public";
 
 export interface CircleConfig {
   name: string;
@@ -120,7 +115,7 @@ export type GroupType = UserGroupType | SystemGroupType;
 
 export type GroupSource = "automatic" | "user-created";
 
-export type GroupStatus = "Active" | "Recruiting" | "Pending Review" | "Closed";
+export type GroupStatus = "Active" | "Recruiting" | "Pending Review" | "Suspended" | "Closed";
 
 export type GroupAccessType = "open" | "request" | "eligibility" | "invitation";
 
@@ -187,7 +182,10 @@ export type InvitationKind = "invite" | "request";
 
 export interface Invitation {
   id: string;
-  groupId: string;
+  /** Target group. Absent when the invitation targets a circle instead. */
+  groupId?: string;
+  /** Target circle. Present for circle invitations sent to free participants. */
+  circleId?: string;
   direction: InvitationDirection;
   kind: InvitationKind;
   inviteeId?: string;
@@ -306,6 +304,10 @@ export interface AdminConfig {
   groupTypes: GroupTypeConfig[];
   stageLabels: string[];
   paymentRules: GroupPaymentRules;
+  circleTypes: CircleTypeConfigEntry[];
+  mandatoryCircles: MandatoryCircleRule[];
+  partnerDefaults: PartnerPermissions;
+  auditLog: AuditLogEntry[];
 }
 
 export interface AdminConfigPatch {
@@ -313,6 +315,10 @@ export interface AdminConfigPatch {
   groupTypes?: GroupTypeConfig[];
   stageLabels?: string[];
   paymentRules?: Partial<GroupPaymentRules>;
+  circleTypes?: CircleTypeConfigEntry[];
+  mandatoryCircles?: MandatoryCircleRule[];
+  partnerDefaults?: Partial<PartnerPermissions>;
+  auditLog?: AuditLogEntry[];
 }
 
 export interface AdminGroupFilters {
@@ -334,4 +340,162 @@ export interface BusinessDirectoryEntry {
   city: string;
   category: string;
   joinedAt?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Admin: audit log, moderation, partner administration
+// ---------------------------------------------------------------------------
+
+export type AuditActionKind =
+  | "group-created"
+  | "group-updated"
+  | "group-approved"
+  | "group-suspended"
+  | "group-closed"
+  | "group-deleted"
+  | "member-added"
+  | "member-removed"
+  | "invitation-approved"
+  | "invitation-declined"
+  | "invitation-cancelled"
+  | "config-updated"
+  | "partner-updated"
+  | "business-updated"
+  | "programme-updated"
+  | "campaign-updated"
+  | "relationship-assigned"
+  | "circle-type-created"
+  | "circle-type-updated"
+  | "circle-type-deleted"
+  | "content-published";
+
+export interface AuditLogEntry {
+  id: string;
+  action: AuditActionKind;
+  actorId: string;
+  actorName: string;
+  targetType: "group" | "member" | "invitation" | "config" | "partner" | "business" | "programme" | "campaign" | "content" | "circle-type";
+  targetId: string;
+  targetName: string;
+  detail: string;
+  at: string;
+}
+
+export type PartnerStatus = "Active" | "Suspended" | "Pending" | "Closed";
+export type PartnerTier = "Free" | "Bronze" | "Silver" | "Gold" | "Platinum";
+
+export interface PartnerPermissions {
+  canCreateGroups: boolean;
+  canCreateCircles: boolean;
+  canInviteMembers: boolean;
+  canRemoveMembers: boolean;
+  canRunPaidGroups: boolean;
+  canRunFreeGroups: boolean;
+  canAccessCampaigns: boolean;
+  canAccessReports: boolean;
+  canSeeFinancials: boolean;
+  canSetContributionAmounts: boolean;
+  maxGroups: number;
+  maxCircles: number;
+  revenueSharePercent: number;
+}
+
+export interface PartnerRecord {
+  id: string;
+  businessId: string;
+  businessName: string;
+  tier: PartnerTier;
+  status: PartnerStatus;
+  joinedAt: string;
+  programmeId?: string;
+  feeMonthly: number;
+  permissions: PartnerPermissions;
+  notes?: string;
+}
+
+export type BusinessStatus = "Active" | "Pending" | "Suspended" | "Closed";
+
+export interface BusinessRecord {
+  id: string;
+  name: string;
+  contactName: string;
+  email: string;
+  phone?: string;
+  city: string;
+  localArea?: string;
+  category: string;
+  status: BusinessStatus;
+  verified: boolean;
+  tier: PartnerTier;
+  joinedAt: string;
+  programmeId?: string;
+  accountManagerId?: string;
+  agentId?: string;
+  consultantId?: string;
+  isPartner: boolean;
+}
+
+export interface ProgrammeRecord {
+  id: string;
+  name: string;
+  tier: PartnerTier;
+  status: "Active" | "Draft" | "Closed";
+  description: string;
+  monthlyFee: number;
+  benefits: string[];
+  groupCount: number;
+}
+
+export interface CampaignRecord {
+  id: string;
+  name: string;
+  platform: string;
+  status: "Active" | "Draft" | "Closed";
+  groupIds: string[];
+  budget?: number;
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface RelationshipRecord {
+  id: string;
+  kind: "account-manager" | "agent" | "consultant";
+  name: string;
+  role: string;
+  email: string;
+  phone?: string;
+  activeGroups: number;
+}
+
+// ---------------------------------------------------------------------------
+// Circle admin configuration
+// ---------------------------------------------------------------------------
+
+export interface CircleTypeConfigEntry {
+  /** Stable identifier — never changes once created. */
+  id: string;
+  /** The admin-authored circle type name businesses select. */
+  type: CircleType;
+  /** Short display label used in dense UI (cards, chips, sidebars). */
+  shortLabel: string;
+  /** One-line explanation shown to businesses when they pick this type. */
+  description: string;
+  /** Accent hex used for the type dot / border. */
+  accent: string;
+  /** Translucent accent used for type backgrounds. */
+  accentSoft: string;
+  enabled: boolean;
+  mandatory: boolean;
+  minMembers: number | null;
+  maxMembers: number | null;
+  requiresBanker: boolean;
+  allowedDurations: CampaignDuration[];
+}
+
+export interface MandatoryCircleRule {
+  circleType: CircleType;
+  required: boolean;
+  appliesToTier: "All" | "Free" | "Paid";
+  minMemberCount: number;
+  autoEnforce: boolean;
 }

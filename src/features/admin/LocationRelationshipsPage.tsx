@@ -3,6 +3,7 @@ import { ArrowRight, MapPinned, Network } from "lucide-react";
 import Card, { CardBody, CardTitle } from "../../components/ui/Card";
 import SectionHeader from "../../components/ui/SectionHeader";
 import StatCard from "../../components/ui/StatCard";
+import TipIcon from "../../components/ui/TipIcon";
 import { LOCATIONS } from "../../data/locationsData";
 import { useAppState } from "../../store/selectors";
 import { memberCountOf } from "../groups/groupUtils";
@@ -20,6 +21,7 @@ export default function LocationRelationshipsPage() {
       <SectionHeader
         title="Location Relationships"
         back="/admin/groups"
+        tip="This is a read-only report — nothing on this screen edits the hierarchy or the groups listed."
         subtitle="National Community → city → local area, and which groups sit under each level. Joining a group never changes this hierarchy — it is maintained separately."
       />
 
@@ -53,7 +55,10 @@ export default function LocationRelationshipsPage() {
       <Card data-tour="hierarchy">
         <CardBody className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <CardTitle>Configured hierarchy</CardTitle>
+            <div className="flex items-center gap-1.5">
+              <CardTitle>Configured hierarchy</CardTitle>
+              <TipIcon text="Counts are live — they change as groups are created, moved or updated." />
+            </div>
           </div>
           <div className="flex flex-col gap-2 text-xs">
             <div className="flex items-center justify-between gap-2 rounded-xl border border-gold-500/30 bg-gold-500/10 px-3 py-2.5">
@@ -89,7 +94,10 @@ export default function LocationRelationshipsPage() {
             <Card key={city.id}>
               <CardBody className="flex flex-col gap-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <CardTitle>{city.name}</CardTitle>
+                  <div className="flex items-center gap-1.5">
+                    <CardTitle>{city.name}</CardTitle>
+                    <TipIcon text="Only groups with a city set appear here. The number beside each area counts the groups in it." />
+                  </div>
                   <span className="text-[11px] text-slate-500">
                     {cityGroups.length} group{cityGroups.length === 1 ? "" : "s"}
                   </span>
@@ -144,7 +152,10 @@ export default function LocationRelationshipsPage() {
 
       <Card>
         <CardBody className="flex flex-col gap-3">
-          <CardTitle>Groups without a location</CardTitle>
+          <div className="flex items-center gap-1.5">
+            <CardTitle>Groups without a location</CardTitle>
+            <TipIcon text="Attach a city later and the group moves into the right card above automatically." />
+          </div>
           {noLocation.length === 0 ? (
             <p className="text-xs text-slate-400">Every group in the demo store has a city.</p>
           ) : (

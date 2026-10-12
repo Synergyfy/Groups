@@ -31,14 +31,16 @@ export default function InvitationsInboxPage() {
 
   const groupName = useMemo(() => {
     const map = new Map(state.groups.map((group) => [group.id, group.name]));
-    return (groupId: string) => map.get(groupId) ?? "Unknown group";
+    return (groupId: string | undefined) =>
+      (groupId && map.get(groupId)) ?? "Unknown group";
   }, [state.groups]);
 
   const incoming = state.invitations.filter(
     (invitation) =>
       invitation.inviteeId === ACTOR_ID &&
       invitation.kind === "invite" &&
-      invitation.direction === "incoming"
+      invitation.direction === "incoming" &&
+      !invitation.circleId
   );
 
   const myRequests = state.invitations.filter(
@@ -54,18 +56,14 @@ export default function InvitationsInboxPage() {
 
   const actor = { id: ACTOR_ID, name: CURRENT_BUSINESS.businessName };
 
-  const respond = (invitation: Invitation, accept: boolean) => {
+  const respond = (invitation: Invitation) => {
     dispatch({
       type: "invitation/respond",
       invitationId: invitation.id,
-      accept,
+      accept: false,
       responder: actor,
     });
-    setFeedback(
-      accept
-        ? `You joined ${groupName(invitation.groupId)}`
-        : `You declined the invitation from ${invitation.invitedByName}`
-    );
+    setFeedback(`You declined the invitation from ${invitation.invitedByName}`);
   };
 
   const cancel = (invitation: Invitation) => {
@@ -127,7 +125,14 @@ export default function InvitationsInboxPage() {
                   {invitation.status === "pending" ? (
                     <div className="flex flex-wrap gap-2">
                       <LinkButton
-                        to={`/business/groups/${invitation.groupId}`}
+                        to={`/business/invitations/${invitation.id}/review`}
+                        variant="primary"
+                        size="sm"
+                      >
+                        <Check className="size-4" /> Review &amp; accept
+                      </LinkButton>
+                      <LinkButton
+                        to={`/business/groups/${invitation.groupId ?? ""}`}
                         state={{ from: "/business/invitations", fromLabel: "Invitations" }}
                         variant="outline"
                         size="sm"
@@ -135,16 +140,9 @@ export default function InvitationsInboxPage() {
                         View group
                       </LinkButton>
                       <Button
-                        variant="primary"
-                        size="sm"
-                        onClick={() => respond(invitation, true)}
-                      >
-                        <Check className="size-4" /> Accept
-                      </Button>
-                      <Button
                         variant="danger"
                         size="sm"
-                        onClick={() => respond(invitation, false)}
+                        onClick={() => respond(invitation)}
                       >
                         <X className="size-4" /> Decline
                       </Button>

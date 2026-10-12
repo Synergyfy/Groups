@@ -4,6 +4,7 @@ import Card, { CardBody, CardTitle } from "../../components/ui/Card";
 import FieldHint from "../../components/ui/FieldHint";
 import SectionHeader from "../../components/ui/SectionHeader";
 import StatCard from "../../components/ui/StatCard";
+import TipIcon from "../../components/ui/TipIcon";
 import type { GroupPaymentRules } from "../../domain/types";
 import { useAppStore } from "../../store/context";
 import { useAppState } from "../../store/selectors";
@@ -11,18 +12,23 @@ import { useAppState } from "../../store/selectors";
 function Toggle({
   label,
   hint,
+  tip,
   checked,
   onChange,
 }: {
   label: string;
   hint: string;
+  tip?: string;
   checked: boolean;
   onChange: (next: boolean) => void;
 }) {
   return (
     <label className="flex items-start justify-between gap-3 rounded-xl border border-white/10 bg-ink-950/60 px-3 py-2.5 text-xs">
       <span>
-        <span className="font-semibold text-white">{label}</span>
+        <span className="flex items-center gap-1.5">
+          <span className="font-semibold text-white">{label}</span>
+          {tip && <TipIcon text={tip} />}
+        </span>
         <span className="mt-0.5 block text-[11px] text-slate-400">{hint}</span>
       </span>
       <input
@@ -103,6 +109,7 @@ export default function GroupTypeConfigPage() {
       <SectionHeader
         title="21 — Group Type Configuration"
         back="/admin/groups"
+        tip="Every change takes effect straight away across the app — there is no save or publish step on this screen."
         subtitle="The switchboard behind every group type: whether it exists, whether a business may create one and whether anyone may join one — plus the stage labels used across the app."
       />
 
@@ -138,23 +145,29 @@ export default function GroupTypeConfigPage() {
           <Card key={entry.type}>
             <CardBody className="flex flex-col gap-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <CardTitle>{entry.type}</CardTitle>
+                <div className="flex items-center gap-1.5">
+                  <CardTitle>{entry.type}</CardTitle>
+                  <TipIcon text="These three switches apply to every group with this type, and none of them edits or deletes an existing group." />
+                </div>
               </div>
               <Toggle
                 label="Enabled"
                 hint="Off means the type disappears everywhere — wizard, explore, register."
+                tip="This switch gates the other two — when it is off, creation and joining are ignored."
                 checked={entry.enabled}
                 onChange={(next) => updateType(index, { enabled: next })}
               />
               <Toggle
                 label="Allow creation"
                 hint="Businesses may create groups of this type in the wizard."
+                tip="Only affects new groups — groups of this type that already exist are untouched."
                 checked={entry.allowCreate}
                 onChange={(next) => updateType(index, { allowCreate: next })}
               />
               <Toggle
                 label="Allow joining"
                 hint="Members can join or request this type in Explore Groups."
+                tip="Switching it off never removes members who are already in a group of this type."
                 checked={entry.allowJoin}
                 onChange={(next) => updateType(index, { allowJoin: next })}
               />
@@ -167,7 +180,10 @@ export default function GroupTypeConfigPage() {
         <Card className="lg:col-span-2">
           <CardBody className="flex flex-col gap-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <CardTitle>Stage labels</CardTitle>
+              <div className="flex items-center gap-1.5">
+                <CardTitle>Stage labels</CardTitle>
+                <TipIcon text="You can remove any label except the last one — at least one stage must always exist." />
+              </div>
               <span className="text-[11px] text-slate-500">
                 {stageLabels.length} label{stageLabels.length === 1 ? "" : "s"}
               </span>
@@ -244,7 +260,10 @@ export default function GroupTypeConfigPage() {
       <Card data-tour="payments">
         <CardBody className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <CardTitle>Paid groups &amp; contributions</CardTitle>
+            <div className="flex items-center gap-1.5">
+              <CardTitle>Paid groups &amp; contributions</CardTitle>
+              <TipIcon text="When paid groups are off, the range, custom amount and preset settings below do nothing." />
+            </div>
             <span className="text-[11px] text-slate-500">
               Allowed range: £{paymentRules.minAmount} – £{paymentRules.maxAmount} per member
             </span>
@@ -257,12 +276,16 @@ export default function GroupTypeConfigPage() {
           <Toggle
             label="Allow paid groups"
             hint="Off means every new group is free — the wizard hides the paid option."
+            tip="One switch for every enabled group type — there is no per-type payment setting."
             checked={paymentRules.allowPaid}
             onChange={(next) => updatePayments({ allowPaid: next })}
           />
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-1.5 rounded-xl border border-white/10 bg-ink-950/60 px-3 py-2.5">
-              <span className="text-[11px] font-medium text-slate-400">Minimum amount (£)</span>
+              <span className="flex items-center gap-1.5">
+                <span className="text-[11px] font-medium text-slate-400">Minimum amount (£)</span>
+                <TipIcon text="Raising the minimum above the maximum automatically raises the maximum." />
+              </span>
               <FieldHint>
                 The smallest contribution the wizard offers; it can never exceed the maximum.
               </FieldHint>
@@ -275,7 +298,10 @@ export default function GroupTypeConfigPage() {
               />
             </label>
             <label className="flex flex-col gap-1.5 rounded-xl border border-white/10 bg-ink-950/60 px-3 py-2.5">
-              <span className="text-[11px] font-medium text-slate-400">Maximum amount (£)</span>
+              <span className="flex items-center gap-1.5">
+                <span className="text-[11px] font-medium text-slate-400">Maximum amount (£)</span>
+                <TipIcon text="Lowering the maximum below the minimum automatically lowers the minimum." />
+              </span>
               <FieldHint>
                 The largest contribution the wizard offers; it can never drop below the minimum.
               </FieldHint>
@@ -291,12 +317,14 @@ export default function GroupTypeConfigPage() {
           <Toggle
             label="Allow custom amounts"
             hint="Owners can type any amount inside the range instead of picking a preset."
+            tip="If this stays off, keep at least one in-range preset or owners will have nothing to pick."
             checked={paymentRules.allowCustom}
             onChange={(next) => updatePayments({ allowCustom: next })}
           />
           <div className="flex flex-col gap-2.5">
-            <span className="text-[11px] font-medium text-slate-400">
+            <span className="flex items-center gap-1.5 text-[11px] font-medium text-slate-400">
               Preset amounts owners can select
+              <TipIcon text="With custom amounts off, owners can only pick one of these presets." />
             </span>
             <div className="flex flex-wrap gap-2">
               {paymentRules.presets.map((value) => (

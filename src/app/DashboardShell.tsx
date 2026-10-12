@@ -8,13 +8,14 @@ import TourOverlay from "../journey/TourOverlay";
 import { useJourney } from "../journey/context";
 import BottomSheet from "../components/ui/BottomSheet";
 
-function JourneyRecorder() {
+function JourneyRecorder({ enabled }: { enabled: boolean }) {
   const location = useLocation();
   const { recordVisit } = useJourney();
 
   useEffect(() => {
+    if (!enabled) return;
     recordVisit(location.pathname);
-  }, [location.pathname, recordVisit]);
+  }, [location.pathname, recordVisit, enabled]);
 
   return null;
 }
@@ -27,10 +28,14 @@ interface DashboardShellProps {
 
 export default function DashboardShell({ sectionLabel, nav, bottomNav }: DashboardShellProps) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const location = useLocation();
+  // The admin experience deliberately has no guided journey or page tour —
+  // guidance there is delivered inline as tooltips and field descriptions.
+  const showJourney = !location.pathname.startsWith("/admin");
 
   return (
     <div className="flex min-h-screen flex-col overflow-x-clip">
-      <JourneyRecorder />
+      <JourneyRecorder enabled={showJourney} />
       <TopBar sectionLabel={sectionLabel} />
 
       <div className="mx-auto flex w-full max-w-[1440px] flex-1">
@@ -39,7 +44,7 @@ export default function DashboardShell({ sectionLabel, nav, bottomNav }: Dashboa
           className="hidden w-60 shrink-0 border-r border-white/10 bg-ink-950/60 lg:sticky lg:top-[3.75rem] lg:block lg:h-[calc(100vh-3.75rem)] lg:overflow-y-auto"
         >
           <Sidebar sections={nav} onNavigate={() => setMenuOpen(false)} />
-          <JourneyRail />
+          {showJourney && <JourneyRail />}
         </aside>
 
         <main className="flex min-w-0 flex-1 flex-col gap-4 p-4 pb-28 lg:p-6 lg:pb-6">
@@ -60,10 +65,10 @@ export default function DashboardShell({ sectionLabel, nav, bottomNav }: Dashboa
         onClose={() => setMenuOpen(false)}
       >
         <Sidebar sections={nav} onNavigate={() => setMenuOpen(false)} />
-        <JourneyRail />
+        {showJourney && <JourneyRail />}
       </BottomSheet>
 
-      <TourOverlay />
+      {showJourney && <TourOverlay />}
     </div>
   );
 }

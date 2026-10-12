@@ -92,7 +92,7 @@ export default function TopBar({ sectionLabel }: TopBarProps) {
         </nav>
 
         <div className="flex items-center gap-2.5">
-          <PageGuideMenu />
+          {!onAdmin && <PageGuideMenu />}
           <div ref={menuRef} className="relative">
             <button
               type="button"
@@ -141,15 +141,17 @@ export default function TopBar({ sectionLabel }: TopBarProps) {
                   <Settings className="size-3.5" />
                   Account settings
                 </Link>
-                <Link
-                  role="menuitem"
-                  to="/business/journey"
-                  onClick={closeMenu}
-                  className={MENU_ITEM_CLASS}
-                >
-                  <Compass className="size-3.5" />
-                  My journey
-                </Link>
+                {!onAdmin && (
+                  <Link
+                    role="menuitem"
+                    to="/business/journey"
+                    onClick={closeMenu}
+                    className={MENU_ITEM_CLASS}
+                  >
+                    <Compass className="size-3.5" />
+                    My journey
+                  </Link>
+                )}
                 <Link
                   role="menuitem"
                   to={onAdmin ? "/business" : "/admin"}

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import type { CircleMember } from "../../domain/types";
-import { circleTypeMeta } from "../../domain/constants";
 import { LISTS } from "../../data/mockData";
 import { resolveAllContacts } from "../../data/contactHelpers";
 import CircleSidebar from "../../components/circle/CircleSidebar";
@@ -12,41 +11,67 @@ import AddMemberFlow from "../../components/circle/AddMemberFlow";
 import Toast from "../../components/ui/Toast";
 import SectionHeader from "../../components/ui/SectionHeader";
 import { useAppStore } from "../../store/context";
-import { useActiveCircle, useCircles, useCircleActivity, useNetworkContacts } from "../../store/selectors";
+import { useActiveCircle, useCircles, useCircleActivity, useCircleTypeMeta, useNetworkContacts } from "../../store/selectors";
 
 interface CirclesWorkspacePageProps {
   title?: string;
   subtitle?: string;
   focusCircleId?: string;
+  participantMode?: boolean;
+  /** When set, only circles containing this member are listed and openable. */
+  restrictToMemberId?: string;
 }
 
 export default function CirclesWorkspacePage({
   title = "Group Circles",
   subtitle = "Interactive circles built from My Network lists — marketing, advertising, seasonal campaigns and Smart Money partner networks.",
   focusCircleId,
+  participantMode = false,
+  restrictToMemberId,
 }: CirclesWorkspacePageProps = {}) {
   const { dispatch } = useAppStore();
-  const circles = useCircles();
-  const activeCircle = useActiveCircle();
+  const allCircles = useCircles();
+  const storeActiveCircle = useActiveCircle();
+
+  // A participant only ever sees the circles they belong to.
+  const visibleCircles = useMemo(
+    () =>
+      restrictToMemberId
+        ? allCircles.filter((circle) => circle.memberIds.includes(restrictToMemberId))
+        : allCircles,
+    [allCircles, restrictToMemberId]
+  );
+
+  const activeCircle = useMemo(() => {
+    if (!storeActiveCircle) return undefined;
+    if (visibleCircles.some((circle) => circle.id === storeActiveCircle.id)) return storeActiveCircle;
+    return visibleCircles[0];
+  }, [storeActiveCircle, visibleCircles]);
+
   const circleActivity = useCircleActivity(activeCircle?.id);
 
   const [filters, setFilters] = useState<CircleFilterState>(INITIAL_FILTERS);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [addFlowOpen, setAddFlowOpen] = useState(false);
+  const meta = useCircleTypeMeta(activeCircle?.type ?? "");
 
   useEffect(() => {
-    if (!focusCircleId || focusCircleId === activeCircle?.id) return;
-    if (!circles.some((circle) => circle.id === focusCircleId)) return;
-    dispatch({ type: "circle/set-active", circleId: focusCircleId });
-  }, [focusCircleId, activeCircle?.id, circles, dispatch]);
+    const focusTarget =
+      focusCircleId && visibleCircles.some((circle) => circle.id === focusCircleId)
+        ? focusCircleId
+        : undefined;
+    const isActiveVisible =
+      storeActiveCircle && visibleCircles.some((circle) => circle.id === storeActiveCircle.id);
+    const target = focusTarget ?? (isActiveVisible ? undefined : visibleCircles[0]?.id);
+    if (!target || target === storeActiveCircle?.id) return;
+    dispatch({ type: "circle/set-active", circleId: target });
+  }, [focusCircleId, visibleCircles, storeActiveCircle, dispatch]);
 
   useEffect(() => {
     if (!feedback) return;
     const timer = window.setTimeout(() => setFeedback(null), 2600);
     return () => window.clearTimeout(timer);
   }, [feedback]);
-
-  const meta = activeCircle ? circleTypeMeta(activeCircle.type) : null;
 
   const networkContacts = useNetworkContacts();
   const allMembers = useMemo(
@@ -127,7 +152,7 @@ export default function CirclesWorkspacePage({
     );
   }
 
-  const focusMissing = Boolean(focusCircleId) && !circles.some((c) => c.id === focusCircleId);
+  const focusMissing = Boolean(focusCircleId) && !visibleCircles.some((c) => c.id === focusCircleId);
 
   return (
     <>
@@ -142,10 +167,11 @@ export default function CirclesWorkspacePage({
       <div className="flex flex-1 flex-col gap-4 lg:flex-row lg:gap-5">
         <div className="order-2 lg:order-1" data-tour="circle-sidebar">
           <CircleSidebar
-            circles={circles}
+            circles={visibleCircles}
             activeCircleId={activeCircle.id}
             onSelect={selectCircle}
             memberCountOf={(circle) => circle.memberIds.length}
+            participantMode={participantMode}
           />
         </div>
 
@@ -182,6 +208,7 @@ export default function CirclesWorkspacePage({
             sourceLists={sourceLists}
             activity={circleActivity}
             onAddMember={openAddMemberFlow}
+            participantMode={participantMode}
           />
         </div>
       </div>

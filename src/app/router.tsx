@@ -1,14 +1,13 @@
 import { Navigate, createBrowserRouter, type RouteObject } from "react-router-dom";
 import BusinessLayout from "./BusinessLayout";
 import AdminLayout from "./AdminLayout";
+import PublicLayout from "./PublicLayout";
 import NotFoundPage from "./NotFoundPage";
 import PlaceholderPage from "./PlaceholderPage";
 import CirclesWorkspacePage from "../features/circles/CirclesWorkspacePage";
 import CircleCreatePage from "../features/circles/CircleCreatePage";
 import CircleWorkspaceDetailPage from "../features/circles/CircleWorkspaceDetailPage";
 import MyNetworkListsPage from "../features/network/MyNetworkListsPage";
-import JoinListPage from "../features/network/JoinListPage";
-import ConfirmContactPage from "../features/network/ConfirmContactPage";
 import GroupsOverviewPage from "../features/groups/GroupsOverviewPage";
 import MyGroupsPage from "../features/groups/MyGroupsPage";
 import NetworkGroupPage from "../features/groups/NetworkGroupPage";
@@ -17,6 +16,7 @@ import GroupMembersPage from "../features/groups/GroupMembersPage";
 import GroupActivityPage from "../features/groups/GroupActivityPage";
 import GroupInvitationsPage from "../features/groups/GroupInvitationsPage";
 import GroupSettingsPage from "../features/groups/GroupSettingsPage";
+import InvitationReviewPage from "../features/invitations/InvitationReviewPage";
 import InvitationsInboxPage from "../features/invitations/InvitationsInboxPage";
 import ExploreGroupsPage from "../features/groups/ExploreGroupsPage";
 import CreateGroupWizardPage from "../features/groups/CreateGroupWizardPage";
@@ -39,6 +39,24 @@ import LocationRelationshipsPage from "../features/admin/LocationRelationshipsPa
 import PartnerGroupsPage from "../features/admin/PartnerGroupsPage";
 import MandatoryCirclesPage from "../features/admin/MandatoryCirclesPage";
 import AdminInvitationsPage from "../features/admin/AdminInvitationsPage";
+import PublicContentAdminPage from "../features/public/PublicContentAdminPage";
+import AdminPendingReviewPage from "../features/admin/AdminPendingReviewPage";
+import AdminAuditLogPage from "../features/admin/AdminAuditLogPage";
+import AdminPartnersPage from "../features/admin/AdminPartnersPage";
+import AdminBusinessesPage from "../features/admin/AdminBusinessesPage";
+import AdminProgrammesPage from "../features/admin/AdminProgrammesPage";
+import AdminCampaignsPage from "../features/admin/AdminCampaignsPage";
+import AdminRelationshipsPage from "../features/admin/AdminRelationshipsPage";
+import AdminCircleConfigPage from "../features/admin/AdminCircleConfigPage";
+import AdminPermissionsPage from "../features/admin/AdminPermissionsPage";
+import LandingPage from "../features/public/LandingPage";
+import SignInPage from "../app/SignInPage";
+import GetStartedPage from "../app/GetStartedPage";
+import ParticipantLayout from "../features/participant/ParticipantLayout";
+import ParticipantDashboardPage from "../features/participant/ParticipantDashboardPage";
+import ParticipantInvitationsPage from "../features/participant/ParticipantInvitationsPage";
+import ParticipantCircleDetailPage from "../features/participant/ParticipantCircleDetailPage";
+import ParticipantAccountPage from "../features/participant/ParticipantAccountPage";
 
 const businessRoutes = [
   { index: true, element: <Navigate to="/business/groups" replace /> },
@@ -97,6 +115,10 @@ const businessRoutes = [
   {
     path: "invitations",
     element: <InvitationsInboxPage />,
+  },
+  {
+    path: "invitations/:invitationId/review",
+    element: <InvitationReviewPage />,
   },
   {
     path: "network/lists",
@@ -198,19 +220,66 @@ const adminRoutes = [
     element: <AdminInvitationsPage />,
   },
   {
+    path: "pending-review",
+    element: <AdminPendingReviewPage />,
+  },
+  {
+    path: "audit-log",
+    element: <AdminAuditLogPage />,
+  },
+  {
+    path: "partners",
+    element: <AdminPartnersPage />,
+  },
+  {
+    path: "businesses",
+    element: <AdminBusinessesPage />,
+  },
+  {
+    path: "programmes",
+    element: <AdminProgrammesPage />,
+  },
+  {
+    path: "campaigns",
+    element: <AdminCampaignsPage />,
+  },
+  {
+    path: "relationships",
+    element: <AdminRelationshipsPage />,
+  },
+  {
+    path: "config/circles",
+    element: <AdminCircleConfigPage />,
+  },
+  {
+    path: "config/permissions",
+    element: <AdminPermissionsPage />,
+  },
+  {
+    path: "content",
+    element: <PublicContentAdminPage />,
+  },
+  {
     path: "reports",
     element: <AdminReportsPage />,
   },
+];
+
+const publicRoutes: RouteObject[] = [
   {
-    path: "journey",
-    element: <JourneyPage />,
+    path: "/",
+    element: <PublicLayout />,
+    children: [
+      { index: true, element: <LandingPage /> },
+      { path: "sign-in", element: <SignInPage /> },
+      { path: "get-started", element: <GetStartedPage /> },
+      { path: "*", element: <NotFoundPage /> },
+    ],
   },
 ];
 
 export const routes: RouteObject[] = [
-  { path: "/", element: <Navigate to="/business/groups" replace /> },
-  { path: "/join/:listId", element: <JoinListPage /> },
-  { path: "/join/:listId/confirm/:contactId", element: <ConfirmContactPage /> },
+  ...publicRoutes,
   {
     path: "/business",
     element: <BusinessLayout />,
@@ -220,6 +289,18 @@ export const routes: RouteObject[] = [
     path: "/admin",
     element: <AdminLayout />,
     children: [...adminRoutes, { path: "*", element: <NotFoundPage /> }],
+  },
+  {
+    path: "/participant",
+    element: <ParticipantLayout />,
+    children: [
+      { index: true, element: <ParticipantDashboardPage /> },
+      { path: "invitations", element: <ParticipantInvitationsPage /> },
+      { path: "invitations/:invitationId/review", element: <InvitationReviewPage /> },
+      { path: "circles/:groupId", element: <ParticipantCircleDetailPage /> },
+      { path: "account", element: <ParticipantAccountPage /> },
+      { path: "*", element: <NotFoundPage /> },
+    ],
   },
   { path: "*", element: <NotFoundPage /> },
 ];

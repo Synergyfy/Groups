@@ -5,6 +5,7 @@ import Card, { CardBody, CardTitle } from "../../components/ui/Card";
 import StatCard from "../../components/ui/StatCard";
 import Table from "../../components/ui/Table";
 import type { TableColumn } from "../../components/ui/Table";
+import TipIcon from "../../components/ui/TipIcon";
 import type { GroupActivity, GroupActivityKind } from "../../domain/types";
 import { useGroup, useGroupActivity } from "../../store/selectors";
 import { useDemoLoading } from "../../lib/demoDelay";
@@ -108,7 +109,10 @@ export default function AdminGroupActivityPage() {
       <Card data-tour="list">
         <CardBody className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <CardTitle>Activity log</CardTitle>
+            <div className="flex items-center gap-1.5">
+              <CardTitle>Activity log</CardTitle>
+              <TipIcon text="Read-only: entries are added automatically and cannot be edited or deleted here." />
+            </div>
           </div>
           <Table
             columns={columns}

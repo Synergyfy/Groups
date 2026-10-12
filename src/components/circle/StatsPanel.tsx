@@ -1,6 +1,7 @@
 import { Layers, MessageSquare, Plus, RefreshCw, Sparkles, UserPlus, Wallet } from "lucide-react";
 import type { ActivityEvent, CircleMember, GroupCircle, NetworkList } from "../../domain/types";
-import { circleTypeMeta, TIER_ORDER, TIERS } from "../../domain/constants";
+import { TIER_ORDER, TIERS } from "../../domain/constants";
+import { useCircleTypeMeta } from "../../store/selectors";
 
 interface StatsPanelProps {
   circle: GroupCircle;
@@ -9,6 +10,7 @@ interface StatsPanelProps {
   sourceLists: NetworkList[];
   activity: ActivityEvent[];
   onAddMember: () => void;
+  participantMode?: boolean;
 }
 
 const activityIcon = {
@@ -37,8 +39,9 @@ export default function StatsPanel({
   sourceLists,
   activity,
   onAddMember,
+  participantMode = false,
 }: StatsPanelProps) {
-  const meta = circleTypeMeta(circle.type);
+  const meta = useCircleTypeMeta(circle.type);
   const coreCount = members.filter((m) => m.role === "core" || m.role === "banker").length;
   const peripheralCount = members.length - coreCount;
   const activeCount = members.filter((m) => m.status === "active").length;
@@ -165,14 +168,23 @@ export default function StatsPanel({
         </ul>
       </section>
 
-      <button
-        type="button"
-        onClick={onAddMember}
-        className="flex items-center justify-center gap-2 rounded-2xl border border-dashed border-white/20 bg-ink-900/40 px-4 py-3 text-xs font-semibold text-slate-300 transition-colors hover:border-gold-500/50 hover:text-gold-200"
-      >
-        <Plus className="size-4" />
-        Add member from My Network
-      </button>
+      {participantMode ? (
+        <div className="rounded-2xl border border-dashed border-gold-500/30 bg-gold-500/5 px-4 py-3 text-center">
+          <p className="text-[11px] font-semibold text-gold-300">Free participant access</p>
+          <p className="mt-1 text-[10px] leading-relaxed text-slate-400">
+            To add members or create your own circles, upgrade to a paid plan.
+          </p>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={onAddMember}
+          className="flex items-center justify-center gap-2 rounded-2xl border border-dashed border-white/20 bg-ink-900/40 px-4 py-3 text-xs font-semibold text-slate-300 transition-colors hover:border-gold-500/50 hover:text-gold-200"
+        >
+          <Plus className="size-4" />
+          Add member from My Network
+        </button>
+      )}
     </aside>
   );
 }

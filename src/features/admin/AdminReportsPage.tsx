@@ -3,6 +3,7 @@ import SectionHeader from "../../components/ui/SectionHeader";
 import StatCard from "../../components/ui/StatCard";
 import Table from "../../components/ui/Table";
 import type { TableColumn } from "../../components/ui/Table";
+import TipIcon from "../../components/ui/TipIcon";
 import BarChart from "../../components/ui/charts/BarChart";
 import type { BarDatum } from "../../components/ui/charts/BarChart";
 import Donut from "../../components/ui/charts/Donut";
@@ -112,6 +113,7 @@ export default function AdminReportsPage() {
         title="22 — Group Reports & Statistics"
         back="/admin/groups"
         subtitle="National network reporting: totals, origin distribution and growth — every figure aggregated from the demo store, with origin always shown alongside volume."
+        tip="Figures come straight from the store and update on their own — there is nothing to refresh."
       />
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
@@ -145,7 +147,10 @@ export default function AdminReportsPage() {
         <Card data-tour="origin">
           <CardBody className="flex flex-col gap-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <CardTitle>Origin distribution</CardTitle>
+              <div className="flex items-center gap-1.5">
+                <CardTitle>Origin distribution</CardTitle>
+                <TipIcon text="The centre figure is all groups; the ring splits them by who created them." />
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-5">
               <Donut
@@ -175,7 +180,10 @@ export default function AdminReportsPage() {
 
         <Card data-tour="growth">
           <CardBody className="flex flex-col gap-3">
-            <CardTitle>Growth — groups created per month</CardTitle>
+            <div className="flex items-center gap-1.5">
+              <CardTitle>Growth — groups created per month</CardTitle>
+              <TipIcon text="Counts groups by the month their creation date falls in." />
+            </div>
             <BarChart data={growthBars} accent="#34d399" />
             <p className="text-[11px] leading-relaxed text-slate-500">
               Creation dates come from the demo store; a month with no bar had no groups created.
@@ -185,14 +193,20 @@ export default function AdminReportsPage() {
 
         <Card data-tour="types">
           <CardBody className="flex flex-col gap-3">
-            <CardTitle>Groups by type</CardTitle>
+            <div className="flex items-center gap-1.5">
+              <CardTitle>Groups by type</CardTitle>
+              <TipIcon text="One bar per group type, sized by how many groups have that type." />
+            </div>
             <BarChart data={typeBars} />
           </CardBody>
         </Card>
 
         <Card data-tour="cities">
           <CardBody className="flex flex-col gap-3">
-            <CardTitle>Groups by city</CardTitle>
+            <div className="flex items-center gap-1.5">
+              <CardTitle>Groups by city</CardTitle>
+              <TipIcon text="One bar per city, sized by how many groups are based there." />
+            </div>
             <BarChart data={cityBars} accent="#a78bfa" />
           </CardBody>
         </Card>
@@ -201,7 +215,10 @@ export default function AdminReportsPage() {
       <Card data-tour="table">
         <CardBody className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <CardTitle>Type totals</CardTitle>
+            <div className="flex items-center gap-1.5">
+              <CardTitle>Type totals</CardTitle>
+              <TipIcon text="Rows are sorted by group count, largest first." />
+            </div>
             <span className="text-[11px] text-slate-500">
               Volume with origin beside it — a report never shows a total without saying where it
               came from.

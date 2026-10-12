@@ -27,6 +27,7 @@ export default function AdminGroupTabsHeader({ title, subtitle }: AdminGroupTabs
         subtitle={subtitle}
         back="/admin/groups/all"
         backLabel="All Groups"
+        tip="Each tab has its own address, so you can share a link straight to Members, Activity or Relationships."
       />
       <nav
         data-tour="tabs"

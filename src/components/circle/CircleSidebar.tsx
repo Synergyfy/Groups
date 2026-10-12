@@ -1,12 +1,18 @@
-import { Info, Plus } from "lucide-react";
+import { Info, Plus, Lock } from "lucide-react";
 import type { GroupCircle } from "../../domain/types";
-import { circleTypeMeta } from "../../domain/constants";
+import { useCircleTypeEntries, useCircleTypeLookup } from "../../store/selectors";
+
+function formatList(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? "";
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
 
 interface CircleSidebarProps {
   circles: GroupCircle[];
   activeCircleId: string;
   onSelect: (id: string) => void;
   memberCountOf: (circle: GroupCircle) => number;
+  participantMode?: boolean;
 }
 
 export default function CircleSidebar({
@@ -14,22 +20,37 @@ export default function CircleSidebar({
   activeCircleId,
   onSelect,
   memberCountOf,
+  participantMode = false,
 }: CircleSidebarProps) {
+  const circleTypeMeta = useCircleTypeLookup();
+  const mandatoryTypes = useCircleTypeEntries()
+    .filter((entry) => entry.enabled && entry.mandatory)
+    .map((entry) => entry.shortLabel);
+
+  const mandatorySentence =
+    mandatoryTypes.length === 0
+      ? "Group Circles are always built from My Network lists."
+      : `Every business must maintain ${formatList(mandatoryTypes)}. Group Circles are always built from My Network lists.`;
+
   return (
     <aside className="flex w-full flex-col gap-3 self-start lg:w-64">
       <div className="flex items-start gap-2.5 rounded-2xl border border-gold-500/30 bg-gold-500/5 p-3.5">
         <Info className="mt-0.5 size-4 shrink-0 text-gold-400" />
         <p className="text-[11px] leading-relaxed text-slate-300">
-          Every business must maintain a{" "}
-          <span className="font-semibold text-gold-200">Marketing Circle</span> and an{" "}
-          <span className="font-semibold text-gold-200">Advertising Circle</span>. Group Circles are
-          always built from My Network lists.
+          {participantMode ? (
+            <>
+              You are viewing circles you have been invited to. To create your own circles and
+              manage members, upgrade to a paid plan.
+            </>
+          ) : (
+            mandatorySentence
+          )}
         </p>
       </div>
 
       <div className="rounded-2xl border border-white/10 bg-ink-900/70 p-3">
         <p className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-          Your circles
+          {participantMode ? "Invited circles" : "Your circles"}
         </p>
         <ul className="flex flex-col gap-1">
           {circles.map((circle) => {
@@ -70,15 +91,22 @@ export default function CircleSidebar({
           })}
         </ul>
 
-        <button
-          type="button"
-          disabled
-          title="Circle creation flow arrives in Phase 1"
-          className="mt-2 flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 px-3 py-2 text-[11px] font-medium text-slate-500"
-        >
-          <Plus className="size-3.5" />
-          New Circle
-        </button>
+        {participantMode ? (
+          <div className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 px-3 py-2 text-[11px] font-medium text-slate-500">
+            <Lock className="size-3.5" />
+            Upgrade to create circles
+          </div>
+        ) : (
+          <button
+            type="button"
+            disabled
+            title="Circle creation flow arrives in Phase 1"
+            className="mt-2 flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 px-3 py-2 text-[11px] font-medium text-slate-500"
+          >
+            <Plus className="size-3.5" />
+            New Circle
+          </button>
+        )}
       </div>
     </aside>
   );

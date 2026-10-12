@@ -6,6 +6,7 @@ const STATUS_VARIANTS: Record<GroupStatus, BadgeVariant> = {
   Active: "success",
   Recruiting: "info",
   "Pending Review": "warning",
+  Suspended: "danger",
   Closed: "muted",
 };
 
