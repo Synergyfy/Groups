@@ -2,9 +2,12 @@ import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
   Building2,
+  Check,
   ChevronRight,
+  CircleDollarSign,
   Compass,
   Info,
+  ListChecks,
   Mail,
   MapPinned,
   Network,
@@ -12,20 +15,39 @@ import {
   Users,
 } from "lucide-react";
 import Badge from "../../components/ui/Badge";
+import LinkButton from "../../components/ui/LinkButton";
 import SectionHeader from "../../components/ui/SectionHeader";
 import { SkeletonRows } from "../../components/ui/Skeleton";
 import { CURRENT_BUSINESS } from "../../data/businessData";
+import type { MandatoryGroupPricing } from "../../domain/types";
 import { useDemoLoading } from "../../lib/demoDelay";
-import { useActor, useAutomaticProgress, useGroup } from "../../store/selectors";
+import {
+  useActor,
+  useAppState,
+  useAutomaticProgress,
+  useGroup,
+  useMandatoryGroupStatuses,
+} from "../../store/selectors";
 
 const ACTOR_ID = CURRENT_BUSINESS.id;
+
+function requiredPricingLabel(pricing: MandatoryGroupPricing, allowPaid: boolean): string {
+  if (pricing === "paid") {
+    return allowPaid ? "Paid group" : "Paid group — paid groups are off, so it starts free";
+  }
+  return allowPaid ? "Free or paid — your choice" : "Free — paid groups are off";
+}
 
 export default function GroupsOverviewPage() {
   const loading = useDemoLoading();
   const { exploreGroups, stats } = useActor(ACTOR_ID);
+  const { adminConfig } = useAppState();
   const nationalCommunity = useGroup("grp-national");
   const automatic = useAutomaticProgress(ACTOR_ID);
   const networkGroup = automatic.group;
+  const mandatoryStatuses = useMandatoryGroupStatuses(ACTOR_ID);
+  const requiredGroups = mandatoryStatuses.filter((entry) => entry.required);
+  const missingGroups = requiredGroups.filter((entry) => !entry.satisfied);
 
   return (
     <div className="flex flex-col gap-4">
@@ -38,6 +60,69 @@ export default function GroupsOverviewPage() {
         <SkeletonRows rows={6} />
       ) : (
         <>
+          {requiredGroups.length > 0 && (
+            <div data-tour="required-groups" className="rounded-2xl border border-gold-500/30 bg-ink-900 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  <ListChecks className="size-4 text-gold-500" />
+                  <p className="text-sm font-semibold text-white">Required groups</p>
+                  <Badge variant={missingGroups.length > 0 ? "warning" : "success"}>
+                    {requiredGroups.length - missingGroups.length} / {requiredGroups.length}{" "}
+                    created
+                  </Badge>
+                </div>
+                {missingGroups.length > 0 && (
+                  <span className="text-[11px] text-slate-400">
+                    Create these first — every other group type unlocks afterwards.
+                  </span>
+                )}
+              </div>
+              <p className="mt-1.5 text-[11px] leading-relaxed text-slate-400">
+                Administrators require your business to own each of these groups before you can
+                create any other group type.
+              </p>
+              <ul className="mt-3 flex flex-col gap-2">
+                {requiredGroups.map((entry) => (
+                  <li
+                    key={entry.type}
+                    className="flex flex-wrap items-center gap-3 rounded-xl border border-white/10 bg-ink-950/60 px-3 py-2.5"
+                  >
+                    <div className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-ink-900">
+                      {entry.satisfied ? (
+                        <Check className="size-4 text-success-400" />
+                      ) : (
+                        <span className="size-2 rounded-full bg-warning-400" />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="flex flex-wrap items-center gap-2 text-xs font-semibold text-white">
+                        <span>{entry.type} group</span>
+                        <span className="flex items-center gap-1 text-[10px] font-medium text-slate-500">
+                          <CircleDollarSign className="size-3" />
+                          {requiredPricingLabel(entry.pricing, adminConfig.paymentRules.allowPaid)}
+                        </span>
+                      </p>
+                      <p className="mt-0.5 truncate text-[11px] text-slate-400">
+                        {entry.satisfied && entry.group
+                          ? `Created — ${entry.group.name}`
+                          : "Not created yet."}
+                      </p>
+                    </div>
+                    {entry.satisfied ? (
+                      <Badge variant="success">Created</Badge>
+                    ) : (
+                      <LinkButton
+                        to={`/business/groups/create?type=${encodeURIComponent(entry.type)}`}
+                        size="sm"
+                      >
+                        Create
+                      </LinkButton>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <div className="flex flex-col gap-2" data-tour="actions">
             <NavRow
               to="/business/groups/mine"
@@ -89,7 +174,9 @@ export default function GroupsOverviewPage() {
           >
             <Info className="mt-0.5 size-4 shrink-0 text-gold-500" />
             <span className="font-semibold">
-              The business does not need to create a group to use Group Circle.
+              The business does not need to create a group to use Group Circle. The required groups
+              above must be created first in your group dashboard before any other group type can
+              be created.
             </span>
           </p>
 

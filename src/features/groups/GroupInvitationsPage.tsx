@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
-import { Check, ChevronLeft, Mail, RotateCcw, Search, Send, UserMinus, X } from "lucide-react";
+import { Link, useParams } from "react-router-dom";
+import { Check, ChevronLeft, Link2, Mail, RotateCcw, Search, Send, UserMinus, X } from "lucide-react";
 import Badge from "../../components/ui/Badge";
 import type { BadgeVariant } from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
@@ -18,7 +18,7 @@ import { useAppStore } from "../../store/context";
 import { useGroup, useGroupInvitations } from "../../store/selectors";
 import { useDemoLoading } from "../../lib/demoDelay";
 import { SkeletonCard, SkeletonRows } from "../../components/ui/Skeleton";
-import type { Invitation, InvitationStatus } from "../../domain/types";
+import type { Invitation, InvitationStatus, ParticipantRole } from "../../domain/types";
 import GroupTabsHeader, { GroupMissingState } from "./GroupTabsHeader";
 
 const ACTOR_ID = CURRENT_BUSINESS.id;
@@ -49,7 +49,9 @@ export default function GroupInvitationsPage() {
 
   const [search, setSearch] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [contactName, setContactName] = useState("");
+  const [inviteAs, setInviteAs] = useState<ParticipantRole>("consumer");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [phase, setPhase] = useState<"select" | "review">("select");
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -125,6 +127,7 @@ export default function GroupInvitationsPage() {
       entries: selectedEntries.map((entry) => ({
         inviteeId: entry.id,
         inviteeName: entry.name,
+        inviteeRole: "business-invitee" as const,
       })),
       actor,
     });
@@ -137,10 +140,17 @@ export default function GroupInvitationsPage() {
     setPhase("select");
   };
 
-  const inviteByEmail = () => {
-    const trimmed = email.trim();
-    if (!trimmed.includes("@")) {
-      setFeedback("Enter a valid email address");
+  const sendManualInvite = () => {
+    const trimmedEmail = email.trim();
+    const trimmedPhone = phone.trim();
+    const hasEmail = trimmedEmail.includes("@");
+    const hasPhone = trimmedPhone.replace(/[^0-9]/g, "").length >= 6;
+    if (!hasEmail && !hasPhone) {
+      setFeedback("Enter an email address or a phone number to send the invitation");
+      return;
+    }
+    if (!contactName.trim() && !hasEmail) {
+      setFeedback("Enter a contact name — it is shown on an SMS invitation");
       return;
     }
     dispatch({
@@ -148,14 +158,21 @@ export default function GroupInvitationsPage() {
       groupId: group.id,
       entries: [
         {
-          inviteeName: contactName.trim() || trimmed,
-          inviteeEmail: trimmed,
+          inviteeName: contactName.trim() || trimmedEmail,
+          ...(hasEmail ? { inviteeEmail: trimmedEmail } : {}),
+          ...(hasPhone ? { inviteePhone: trimmedPhone } : {}),
+          inviteeRole: inviteAs,
         },
       ],
       actor,
     });
-    setFeedback(`Email invitation queued for ${trimmed}`);
+    setFeedback(
+      hasEmail
+        ? `Email invitation queued for ${trimmedEmail}`
+        : `SMS invitation queued for ${trimmedPhone}`
+    );
     setEmail("");
+    setPhone("");
     setContactName("");
   };
 
@@ -178,6 +195,8 @@ export default function GroupInvitationsPage() {
           ...(invitation.inviteeId ? { inviteeId: invitation.inviteeId } : {}),
           inviteeName: invitation.inviteeName,
           ...(invitation.inviteeEmail ? { inviteeEmail: invitation.inviteeEmail } : {}),
+          ...(invitation.inviteePhone ? { inviteePhone: invitation.inviteePhone } : {}),
+          ...(invitation.inviteeRole ? { inviteeRole: invitation.inviteeRole } : {}),
         },
       ],
       actor,
@@ -220,9 +239,18 @@ export default function GroupInvitationsPage() {
     {
       key: "channel",
       header: "Channel",
-      render: (row) => <Badge variant={row.inviteeEmail ? "info" : "default"}>
-        {row.inviteeEmail ? "Email" : "Directory"}
-      </Badge>,
+      render: (row) => (
+        <span className="flex flex-wrap gap-1">
+          <Badge variant={row.inviteeEmail || row.inviteePhone ? "info" : "default"}>
+            {row.inviteeEmail ? "Email" : row.inviteePhone ? "SMS" : "Directory"}
+          </Badge>
+          {row.inviteeRole && (
+            <Badge variant="muted">
+              {row.inviteeRole === "consumer" ? "As consumer" : "As business"}
+            </Badge>
+          )}
+        </span>
+      ),
     },
     { key: "sent", header: "Sent", render: (row) => row.createdAt.slice(0, 10) },
     {
@@ -231,6 +259,33 @@ export default function GroupInvitationsPage() {
       render: (row) => (
         <Badge variant={STATUS_VARIANTS[row.status]}>{row.status}</Badge>
       ),
+    },
+    {
+      key: "invite-link",
+      header: "Invite link",
+      render: (row) => {
+        if (!(row.status === "pending" && row.kind === "invite")) {
+          return <span className="text-[11px] text-slate-600">—</span>;
+        }
+        // Generate audience-specific invite route based on the invitee role
+        const inviteSlug =
+          row.inviteeRole === "consumer"
+            ? `/invite/consumer/${row.id}`
+            : `/invite/business/${row.id}`;
+        const inviteAudienceLabel =
+          row.inviteeRole === "consumer" ? "Consumer invite" : "Business invite";
+        return (
+          <div className="flex flex-col gap-0.5">
+            <Link
+              to={inviteSlug}
+              className="inline-flex items-center gap-1 text-[11px] font-semibold text-gold-300 hover:text-gold-200"
+            >
+              <Link2 className="size-3.5" /> Open link
+            </Link>
+            <span className="text-[10px] text-slate-600">{inviteAudienceLabel}</span>
+          </div>
+        );
+      },
     },
     {
       key: "actions",
@@ -423,7 +478,7 @@ export default function GroupInvitationsPage() {
 
           <Card>
             <CardBody className="flex flex-col gap-3">
-              <CardTitle>Invite by email</CardTitle>
+              <CardTitle>Invite by email or phone</CardTitle>
               <label className="flex flex-col gap-1.5">
                 <span className="text-[11px] font-medium text-slate-400">Contact name</span>
                 <FieldHint>Shown on the invitation so you can recognise who was invited.</FieldHint>
@@ -446,12 +501,43 @@ export default function GroupInvitationsPage() {
                   className="h-11 rounded-lg border border-white/10 bg-ink-800 px-3 text-sm text-slate-200 placeholder:text-slate-500 focus:border-gold-500/50 focus:outline-none"
                 />
               </label>
-              <Button variant="primary" size="sm" onClick={inviteByEmail}>
-                <Mail className="size-4" /> Send email invitation
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[11px] font-medium text-slate-400">
+                  Mobile number <span className="text-slate-600">(SMS alternative)</span>
+                </span>
+                <FieldHint>
+                  Fill in an email or a phone number — the invite link works from either message.
+                </FieldHint>
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(event) => setPhone(event.target.value)}
+                  placeholder="+44 7700 900000"
+                  className="h-11 rounded-lg border border-white/10 bg-ink-800 px-3 text-sm text-slate-200 placeholder:text-slate-500 focus:border-gold-500/50 focus:outline-none"
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[11px] font-medium text-slate-400">Invite as</span>
+                <FieldHint>
+                  Decides the permissions they get when they accept — a consumer never becomes an
+                  owner or an admin.
+                </FieldHint>
+                <select
+                  value={inviteAs}
+                  onChange={(event) => setInviteAs(event.target.value as ParticipantRole)}
+                  className="h-11 rounded-lg border border-white/10 bg-ink-800 px-3 text-sm text-slate-200 focus:border-gold-500/50 focus:outline-none"
+                >
+                  <option value="consumer">Consumer (member of the group only)</option>
+                  <option value="business-invitee">Invited business (participant access)</option>
+                </select>
+              </label>
+              <Button variant="primary" size="sm" onClick={sendManualInvite}>
+                <Mail className="size-4" /> Send invitation
               </Button>
               <p className="text-[11px] leading-relaxed text-slate-500">
-                Email invitations stay pending until the recipient responds. No message is actually
-                delivered.
+                Invitations stay pending until the recipient responds. Each pending invitation has
+                its own invite link in the status table below — open it to see exactly what the
+                recipient sees. No message is actually delivered in this demo.
               </p>
 
               <div className="mt-2 rounded-xl border border-white/10 bg-ink-950/60 p-3">

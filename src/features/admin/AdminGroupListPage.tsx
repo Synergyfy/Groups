@@ -27,6 +27,7 @@ const BLANK_FILTERS: AdminGroupFilters = {
   owner: "all",
   programme: "all",
   source: "all",
+  pricing: "all",
   query: "",
 };
 
@@ -122,6 +123,26 @@ export default function AdminGroupListPage() {
       ),
     },
     {
+      key: "pricing",
+      header: "Plan / Pricing",
+      render: (group) => (
+        <span className="inline-flex items-center gap-1.5">
+          {group.pricing === "paid" ? (
+            <Badge variant="gold">
+              Paid · £{group.contribution ?? 0}
+              {group.contributionFrequency === "once"
+                ? " one-off"
+                : group.contributionFrequency
+                ? `/${group.contributionFrequency}`
+                : ""}
+            </Badge>
+          ) : (
+            <Badge variant="muted">Free</Badge>
+          )}
+        </span>
+      ),
+    },
+    {
       key: "members",
       header: "Members",
       align: "right",
@@ -207,6 +228,17 @@ export default function AdminGroupListPage() {
           { value: "all", label: "All sources" },
           { value: "automatic", label: "Automatic" },
           { value: "user-created", label: "User created" },
+        ]}
+      />
+      <FilterSelect
+        label="Pricing"
+        tip="Filter by paid groups with member contributions or free groups."
+        value={filters.pricing ?? "all"}
+        onChange={(value) => patch({ pricing: value as AdminGroupFilters["pricing"] })}
+        options={[
+          { value: "all", label: "All pricing" },
+          { value: "paid", label: "Paid groups" },
+          { value: "free", label: "Free groups" },
         ]}
       />
     </>

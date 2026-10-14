@@ -7,7 +7,8 @@ export type BadgeVariant =
   | "warning"
   | "danger"
   | "info"
-  | "muted";
+  | "muted"
+  | "neutral";
 
 interface BadgeProps {
   variant?: BadgeVariant;
@@ -23,6 +24,7 @@ const VARIANT_CLASSES: Record<BadgeVariant, string> = {
   danger: "bg-danger-500/15 text-danger-400 border-danger-500/30",
   info: "bg-info-500/15 text-info-400 border-info-500/30",
   muted: "bg-ink-800 text-slate-400 border-white/10",
+  neutral: "bg-white/10 text-slate-300 border-white/15",
 };
 
 export default function Badge({

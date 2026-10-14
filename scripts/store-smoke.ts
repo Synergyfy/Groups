@@ -2,13 +2,17 @@ import {
   appReducer,
   createInitialAppState,
   newNetworkContact,
+  newPlatformAccount,
 } from "../src/store/reducer";
 import type { AppAction, AppState } from "../src/store/reducer";
 import {
+  findAccountByEmail,
+  findAccountByPhone,
   selectAdminFilteredGroups,
   selectAutomaticProgress,
   selectExploreGroups,
   selectGroupStats,
+  selectMandatoryGroupStatuses,
   selectMyGroups,
   selectNetworkContacts,
   selectNetworkStats,
@@ -18,6 +22,8 @@ import {
   contributionLabel,
   creatableGroupTypes,
   nonCreatableGroupTypes,
+  pendingMandatoryTypes,
+  typeForcedPaid,
 } from "../src/features/groups/groupUtils";
 
 const BLANK_ADMIN_FILTERS = {
@@ -347,6 +353,238 @@ check(
   "group type patch replaces the list",
   disabledTypes.adminConfig.groupTypes.find((entry) => entry.type === "Marketing")?.allowCreate ===
     false
+);
+
+// --- Mandatory ("create first") groups ---------------------------------------
+check(
+  "admin config seeds 3 mandatory groups",
+  initial.adminConfig.mandatoryGroups.length === 3,
+  `${initial.adminConfig.mandatoryGroups.length}`
+);
+check(
+  "Marketing and Advertising are required with owner-choice pricing",
+  initial.adminConfig.mandatoryGroups
+    .filter((rule) => rule.type === "Marketing" || rule.type === "Advertising")
+    .every((rule) => rule.required && rule.pricing === "owner-choice")
+);
+const partnerRule = initial.adminConfig.mandatoryGroups.find(
+  (rule) => rule.type === "Partner"
+);
+check(
+  "Partner is required and paid by default",
+  partnerRule?.required === true && partnerRule?.pricing === "paid",
+  `${partnerRule?.required}/${partnerRule?.pricing}`
+);
+
+const partnerFree = appReducer(initial, {
+  type: "admin/update-config",
+  patch: {
+    mandatoryGroups: initial.adminConfig.mandatoryGroups.map((rule) =>
+      rule.type === "Partner" ? { ...rule, pricing: "owner-choice" as const } : rule
+    ),
+  },
+});
+check(
+  "mandatory patch flips the Partner paid switch",
+  partnerFree.adminConfig.mandatoryGroups.find((rule) => rule.type === "Partner")?.pricing ===
+    "owner-choice"
+);
+check(
+  "mandatory patch leaves the other rules alone",
+  partnerFree.adminConfig.mandatoryGroups.find((rule) => rule.type === "Marketing")?.required ===
+    true
+);
+
+const mandatoryStatuses = selectMandatoryGroupStatuses(initial, ACTOR.id);
+check(
+  "biz-smith already satisfies the Marketing requirement",
+  mandatoryStatuses.find((entry) => entry.type === "Marketing")?.satisfied === true
+);
+check(
+  "biz-smith still owes Advertising and Partner",
+  mandatoryStatuses.some((entry) => entry.type === "Advertising" && !entry.satisfied) &&
+    mandatoryStatuses.some((entry) => entry.type === "Partner" && !entry.satisfied)
+);
+const ownedTypesList = selectOwnedGroups(initial, ACTOR.id).map((group) => group.type);
+check(
+  "pending mandatory types are Advertising and Partner",
+  pendingMandatoryTypes(initial.adminConfig, ownedTypesList).join(",") ===
+    "Advertising,Partner",
+  pendingMandatoryTypes(initial.adminConfig, ownedTypesList).join(",")
+);
+check(
+  "Partner forces paid while Marketing stays owner-choice",
+  typeForcedPaid(initial.adminConfig, "Partner") &&
+    !typeForcedPaid(initial.adminConfig, "Marketing")
+);
+check(
+  "switching Allow paid groups off never forces paid",
+  typeForcedPaid(
+    {
+      ...initial.adminConfig,
+      paymentRules: { ...initial.adminConfig.paymentRules, allowPaid: false },
+    },
+    "Partner"
+  ) === false
+);
+check(
+  "switching the Partner rule off releases the mandate",
+  pendingMandatoryTypes(
+    {
+      ...initial.adminConfig,
+      mandatoryGroups: initial.adminConfig.mandatoryGroups.map((rule) =>
+        rule.type === "Partner" ? { ...rule, required: false } : rule
+      ),
+    },
+    ownedTypesList
+  ).join(",") === "Advertising"
+);
+
+// --- Invitation-first onboarding: accounts, claim, accept ------------------
+check(
+  "seeded platform accounts exist for the demo",
+  initial.accounts.length === 2,
+  `${initial.accounts.length}`
+);
+check(
+  "findAccountByEmail finds the invitee's seeded account",
+  findAccountByEmail(initial, "Events@Westside.example")?.id === "acc-westside"
+);
+check(
+  "findAccountByPhone ignores formatting",
+  findAccountByPhone(initial, "447700900700")?.id === "acc-westside"
+);
+
+const dupEmail = run([
+  {
+    type: "account/register",
+    account: newPlatformAccount({
+      name: "Duplicate Email",
+      email: "events@westside.example",
+      role: "consumer",
+    }),
+  },
+]);
+check(
+  "registration with a registered email is rejected",
+  dupEmail.accounts.length === initial.accounts.length,
+  `${dupEmail.accounts.length}`
+);
+
+const dupPhone = run([
+  {
+    type: "account/register",
+    account: newPlatformAccount({
+      name: "Duplicate Phone",
+      email: "dup@example.com",
+      phone: "+44 7700 900700",
+      role: "consumer",
+    }),
+  },
+]);
+check(
+  "registration with a registered phone is rejected",
+  dupPhone.accounts.length === initial.accounts.length,
+  `${dupPhone.accounts.length}`
+);
+
+const inviteeAccount = newPlatformAccount({
+  name: "Casey Morgan",
+  email: "casey.morgan@example.com",
+  phone: "+44 7700 900111",
+  role: "consumer",
+});
+const registered = run([{ type: "account/register", account: inviteeAccount }]);
+check(
+  "a brand-new account registers successfully",
+  registered.accounts.some((account) => account.id === inviteeAccount.id) &&
+    registered.accounts.length === initial.accounts.length + 1
+);
+
+// Open the invite link → claim → accept (what the landing page dispatches).
+const onboarded = run(
+  [
+    {
+      type: "invitation/claim",
+      invitationId: "inv-009",
+      account: { id: inviteeAccount.id, name: inviteeAccount.name },
+    },
+    {
+      type: "invitation/respond",
+      invitationId: "inv-009",
+      accept: true,
+      responder: { id: inviteeAccount.id, name: inviteeAccount.name },
+    },
+  ],
+  registered
+);
+check(
+  "claim binds the invitation to the new account",
+  onboarded.invitations.find((entry) => entry.id === "inv-009")?.inviteeId ===
+    inviteeAccount.id
+);
+check(
+  "claim records who claimed the invitation",
+  onboarded.invitations.find((entry) => entry.id === "inv-009")?.claimedByAccountId ===
+    inviteeAccount.id
+);
+check(
+  "accepting adds the new account to the group",
+  onboarded.groups.find((group) => group.id === "grp-expo-2026")?.memberIds.includes(
+    inviteeAccount.id
+  ) === true
+);
+check(
+  "the new member never becomes the group owner",
+  onboarded.groups.find((group) => group.id === "grp-expo-2026")?.ownerId !==
+    inviteeAccount.id
+);
+check(
+  "the join is logged in the group activity",
+  onboarded.groupActivities.some(
+    (entry) => entry.groupId === "grp-expo-2026" && entry.message.includes("Casey Morgan")
+  )
+);
+
+const secondClaim = run(
+  [
+    {
+      type: "invitation/claim",
+      invitationId: "inv-009",
+      account: { id: "acc-someone-else", name: "Someone Else" },
+    },
+  ],
+  onboarded
+);
+check(
+  "a second account cannot claim an already-claimed invitation",
+  secondClaim.invitations.find((entry) => entry.id === "inv-009")?.claimedByAccountId ===
+    inviteeAccount.id
+);
+
+const roleInvite = run([
+  {
+    type: "group/invite",
+    groupId: "grp-smith-marketing",
+    entries: [
+      {
+        inviteeName: "Sam Consumer",
+        inviteePhone: "+44 7700 900123",
+        inviteeRole: "consumer",
+      },
+    ],
+    actor: ACTOR,
+  },
+]);
+check(
+  "a manual SMS invite stores the owner-chosen role",
+  roleInvite.invitations.find((entry) => entry.inviteeName === "Sam Consumer")
+    ?.inviteeRole === "consumer"
+);
+check(
+  "the seeded invite link carries an owner-chosen role",
+  initial.invitations.find((entry) => entry.id === "inv-009")?.inviteeRole ===
+    "business-invitee"
 );
 
 // automatic progress uses the configured threshold
@@ -720,6 +958,8 @@ const reset = run(
 );
 check("reset restores 14 groups", reset.groups.length === 14);
 check("reset restores threshold", reset.adminConfig.automaticGrouping.threshold === 12);
+check("reset restores mandatory groups", reset.adminConfig.mandatoryGroups.length === 3);
+check("reset restores seeded accounts", reset.accounts.length === 2);
 check("reset restores membership", reset.groups.find((g) => g.id === "grp-london-sme")?.memberIds.length === 12);
 
 check(

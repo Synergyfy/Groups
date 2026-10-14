@@ -26,6 +26,13 @@ import MyLocationPage from "../features/platform/MyLocationPage";
 import CampaignsPage from "../features/platform/CampaignsPage";
 import RewardsPage from "../features/platform/RewardsPage";
 import JourneyPage from "../journey/JourneyPage";
+import AdminOverviewPage from "../features/admin/AdminOverviewPage";
+import AdminUsersPage from "../features/admin/AdminUsersPage";
+import AdminGroupsHubPage from "../features/admin/AdminGroupsHubPage";
+import AdminAccessRulesPage from "../features/admin/AdminAccessRulesPage";
+import AdminMembershipsPage from "../features/admin/AdminMembershipsPage";
+import AdminRewardsDealsPage from "../features/admin/AdminRewardsDealsPage";
+import AdminSettingsReportsPage from "../features/admin/AdminSettingsReportsPage";
 import AdminGroupsDashboardPage from "../features/admin/AdminGroupsDashboardPage";
 import AdminGroupListPage from "../features/admin/AdminGroupListPage";
 import AdminGroupDetailsPage from "../features/admin/AdminGroupDetailsPage";
@@ -52,11 +59,25 @@ import AdminPermissionsPage from "../features/admin/AdminPermissionsPage";
 import LandingPage from "../features/public/LandingPage";
 import SignInPage from "../app/SignInPage";
 import GetStartedPage from "../app/GetStartedPage";
+import GroupInvitationLandingPage from "../features/invitations/GroupInvitationLandingPage";
+import GroupAccessDashboardPage from "../features/groups/GroupAccessDashboardPage";
+import CentralCirclePage from "../features/groups/CentralCirclePage";
 import ParticipantLayout from "../features/participant/ParticipantLayout";
 import ParticipantDashboardPage from "../features/participant/ParticipantDashboardPage";
 import ParticipantInvitationsPage from "../features/participant/ParticipantInvitationsPage";
 import ParticipantCircleDetailPage from "../features/participant/ParticipantCircleDetailPage";
+import ParticipantGroupPage from "../features/participant/ParticipantGroupPage";
 import ParticipantAccountPage from "../features/participant/ParticipantAccountPage";
+import ParticipantInvitedGroupsPage from "../features/participant/ParticipantInvitedGroupsPage";
+import ParticipantOnboardingPage from "../features/participant/ParticipantOnboardingPage";
+import ConsumerMyGroupsPage from "../features/participant/ConsumerMyGroupsPage";
+import ConsumerDiscoverGroupsPage from "../features/participant/ConsumerDiscoverGroupsPage";
+import ConsumerLayout from "../features/consumer/ConsumerLayout";
+import ConsumerDashboardPage from "../features/consumer/ConsumerDashboardPage";
+import DedicatedConsumerMyGroupsPage from "../features/consumer/ConsumerMyGroupsPage";
+import DedicatedConsumerDiscoverGroupsPage from "../features/consumer/ConsumerDiscoverGroupsPage";
+import ConsumerInvitationsPage from "../features/consumer/ConsumerInvitationsPage";
+import ConsumerAccountPage from "../features/consumer/ConsumerAccountPage";
 
 const businessRoutes = [
   { index: true, element: <Navigate to="/business/groups" replace /> },
@@ -170,9 +191,37 @@ const businessRoutes = [
 ];
 
 const adminRoutes = [
-  { index: true, element: <Navigate to="groups" replace /> },
+  { index: true, element: <Navigate to="overview" replace /> },
+  {
+    path: "overview",
+    element: <AdminOverviewPage />,
+  },
+  {
+    path: "users",
+    element: <AdminUsersPage />,
+  },
   {
     path: "groups",
+    element: <AdminGroupsHubPage />,
+  },
+  {
+    path: "access-rules",
+    element: <AdminAccessRulesPage />,
+  },
+  {
+    path: "memberships",
+    element: <AdminMembershipsPage />,
+  },
+  {
+    path: "rewards-deals",
+    element: <AdminRewardsDealsPage />,
+  },
+  {
+    path: "settings-reports",
+    element: <AdminSettingsReportsPage />,
+  },
+  {
+    path: "groups/dashboard",
     element: <AdminGroupsDashboardPage />,
   },
   {
@@ -272,7 +321,9 @@ const publicRoutes: RouteObject[] = [
     children: [
       { index: true, element: <LandingPage /> },
       { path: "sign-in", element: <SignInPage /> },
+      { path: "login", element: <SignInPage /> },
       { path: "get-started", element: <GetStartedPage /> },
+      { path: "register", element: <GetStartedPage /> },
       { path: "*", element: <NotFoundPage /> },
     ],
   },
@@ -280,6 +331,58 @@ const publicRoutes: RouteObject[] = [
 
 export const routes: RouteObject[] = [
   ...publicRoutes,
+  {
+    path: "/groups/invitation/business/:invitationId",
+    element: <GroupInvitationLandingPage targetAudience="business" />,
+  },
+  {
+    path: "/groups/invitation/consumer/:invitationId",
+    element: <GroupInvitationLandingPage targetAudience="consumer" />,
+  },
+  {
+    path: "/groups/invitation/:invitationId",
+    element: <GroupInvitationLandingPage />,
+  },
+  {
+    path: "/invite/business/:invitationId",
+    element: <GroupInvitationLandingPage targetAudience="business" />,
+  },
+  {
+    path: "/invite/consumer/:invitationId",
+    element: <GroupInvitationLandingPage targetAudience="consumer" />,
+  },
+  {
+    path: "/invite/customer/:invitationId",
+    element: <GroupInvitationLandingPage targetAudience="consumer" />,
+  },
+  {
+    path: "/invite/:invitationId",
+    element: <GroupInvitationLandingPage />,
+  },
+  {
+    path: "/login",
+    element: <SignInPage />,
+  },
+  {
+    path: "/register",
+    element: <GetStartedPage />,
+  },
+  {
+    path: "/get-started",
+    element: <GetStartedPage />,
+  },
+  {
+    path: "/groups/access",
+    element: <GroupAccessDashboardPage />,
+  },
+  {
+    path: "/groups/central-circle",
+    element: <CentralCirclePage />,
+  },
+  {
+    path: "/groups/:groupId",
+    element: <GroupDetailsPage />,
+  },
   {
     path: "/business",
     element: <BusinessLayout />,
@@ -291,12 +394,32 @@ export const routes: RouteObject[] = [
     children: [...adminRoutes, { path: "*", element: <NotFoundPage /> }],
   },
   {
+    path: "/consumer",
+    element: <ConsumerLayout />,
+    children: [
+      { index: true, element: <ConsumerDashboardPage /> },
+      { path: "my-groups", element: <DedicatedConsumerMyGroupsPage /> },
+      { path: "discover", element: <DedicatedConsumerDiscoverGroupsPage /> },
+      { path: "invitations", element: <ConsumerInvitationsPage /> },
+      { path: "invitations/:invitationId/review", element: <InvitationReviewPage /> },
+      { path: "groups/:groupId", element: <ParticipantGroupPage /> },
+      { path: "circles/:groupId", element: <ParticipantCircleDetailPage /> },
+      { path: "account", element: <ConsumerAccountPage /> },
+      { path: "*", element: <NotFoundPage /> },
+    ],
+  },
+  {
     path: "/participant",
     element: <ParticipantLayout />,
     children: [
       { index: true, element: <ParticipantDashboardPage /> },
+      { path: "groups", element: <ParticipantInvitedGroupsPage /> },
+      { path: "onboarding", element: <ParticipantOnboardingPage /> },
+      { path: "my-groups", element: <ConsumerMyGroupsPage /> },
+      { path: "discover", element: <ConsumerDiscoverGroupsPage /> },
       { path: "invitations", element: <ParticipantInvitationsPage /> },
       { path: "invitations/:invitationId/review", element: <InvitationReviewPage /> },
+      { path: "groups/:groupId", element: <ParticipantGroupPage /> },
       { path: "circles/:groupId", element: <ParticipantCircleDetailPage /> },
       { path: "account", element: <ParticipantAccountPage /> },
       { path: "*", element: <NotFoundPage /> },

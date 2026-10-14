@@ -22,6 +22,8 @@ import type {
   InvitationStatus,
   NetworkContact,
   PartnerRecord,
+  ParticipantRole,
+  PlatformAccount,
   ProgrammeRecord,
   RelationshipRecord,
 } from "../domain/types";
@@ -30,6 +32,7 @@ import {
   CAMPAIGNS_ADMIN,
   DEFAULT_ADMIN_CONFIG,
   PARTNERS,
+  PLATFORM_ACCOUNTS,
   PROGRAMMES_ADMIN,
   RELATIONSHIPS_ADMIN,
 } from "../data/adminData";
@@ -53,6 +56,7 @@ export interface AppState {
   activeCircleId: string;
   adminConfig: AdminConfig;
   networkContacts: NetworkContact[];
+  accounts: PlatformAccount[];
   partners: PartnerRecord[];
   businesses: BusinessRecord[];
   programmes: ProgrammeRecord[];
@@ -80,6 +84,8 @@ export interface InvitationEntry {
   inviteeId?: string;
   inviteeName: string;
   inviteeEmail?: string;
+  inviteePhone?: string;
+  inviteeRole?: ParticipantRole;
 }
 
 export interface NewNetworkContactInput {
@@ -104,6 +110,12 @@ export type AppAction =
     }
   | { type: "group/update"; groupId: string; patch: Partial<Group>; actor: Actor }
   | { type: "invitation/respond"; invitationId: string; accept: boolean; responder: Actor }
+  | {
+      type: "invitation/claim";
+      invitationId: string;
+      account: Actor;
+    }
+  | { type: "account/register"; account: PlatformAccount }
   | { type: "admin/update-config"; patch: AdminConfigPatch }
   | { type: "admin/group-update"; groupId: string; patch: Partial<Group>; actor: Actor }
   | { type: "admin/group-delete"; groupId: string; actor: Actor }
@@ -184,6 +196,30 @@ export function newNetworkContact(
   };
 }
 
+export interface NewAccountInput {
+  name: string;
+  email: string;
+  phone?: string;
+  role: ParticipantRole;
+}
+
+/**
+ * Builds a platform account for the invitation-first onboarding flow. The
+ * reducer drops it when the email or phone is already registered, so callers
+ * should pre-check with `findAccountByEmail` / `findAccountByPhone` to show
+ * the friendly duplicate error first.
+ */
+export function newPlatformAccount(input: NewAccountInput): PlatformAccount {
+  return {
+    id: uid("acc"),
+    name: input.name.trim(),
+    email: input.email.trim().toLowerCase(),
+    ...(input.phone?.trim() ? { phone: input.phone.trim() } : {}),
+    role: input.role,
+    createdAt: nowIso(),
+  };
+}
+
 export function createInitialAppState(): AppState {
   return {
     version: STORE_VERSION,
@@ -194,6 +230,7 @@ export function createInitialAppState(): AppState {
     circleActivities: ACTIVITY.map((event) => ({ ...event })),
     activeCircleId: CIRCLES[0]?.id ?? "",
     networkContacts: [],
+    accounts: PLATFORM_ACCOUNTS.map((account) => ({ ...account })),
     adminConfig: {
       ...DEFAULT_ADMIN_CONFIG,
       automaticGrouping: { ...DEFAULT_ADMIN_CONFIG.automaticGrouping },
@@ -208,6 +245,7 @@ export function createInitialAppState(): AppState {
         allowedDurations: [...entry.allowedDurations],
       })),
       mandatoryCircles: DEFAULT_ADMIN_CONFIG.mandatoryCircles.map((entry) => ({ ...entry })),
+      mandatoryGroups: DEFAULT_ADMIN_CONFIG.mandatoryGroups.map((entry) => ({ ...entry })),
       partnerDefaults: { ...DEFAULT_ADMIN_CONFIG.partnerDefaults },
       auditLog: [],
     },
@@ -260,6 +298,60 @@ function removeMember(state: AppState, groupId: string, memberId: string): Group
       ? { ...group, memberIds: group.memberIds.filter((id) => id !== memberId) }
       : group
   );
+}
+
+function normalizeContact(value: string): string {
+  return value.replace(/[^0-9]/g, "");
+}
+
+/**
+ * Creates a platform account — unless the email or phone is already
+ * registered, in which case the state is returned untouched (the UI shows the
+ * duplicate error before dispatching).
+ */
+function registerAccount(
+  state: AppState,
+  action: Extract<AppAction, { type: "account/register" }>
+): AppState {
+  const account = action.account;
+  const duplicate = state.accounts.some(
+    (existing) =>
+      existing.email.trim().toLowerCase() === account.email.trim().toLowerCase() ||
+      Boolean(
+        account.phone &&
+          existing.phone &&
+          normalizeContact(existing.phone) === normalizeContact(account.phone)
+      )
+  );
+  if (duplicate) return state;
+  return { ...state, accounts: [account, ...state.accounts] };
+}
+
+/**
+ * Binds a pending invitation to a platform account so that accepting it adds
+ * *that* account to the group. The first account to open the link claims it —
+ * a different account cannot claim an already-claimed invitation.
+ */
+function claimInvitation(
+  state: AppState,
+  action: Extract<AppAction, { type: "invitation/claim" }>
+): AppState {
+  const invitation = state.invitations.find((entry) => entry.id === action.invitationId);
+  if (!invitation || invitation.status !== "pending") return state;
+  if (invitation.claimedByAccountId && invitation.claimedByAccountId !== action.account.id) {
+    return state;
+  }
+  const invitations = state.invitations.map((entry) =>
+    entry.id === invitation.id
+      ? {
+          ...entry,
+          claimedByAccountId: action.account.id,
+          inviteeId: action.account.id,
+          inviteeName: action.account.name,
+        }
+      : entry
+  );
+  return { ...state, invitations };
 }
 
 function respondToInvitation(state: AppState, action: Extract<AppAction, { type: "invitation/respond" }>): AppState {
@@ -452,7 +544,10 @@ function inviteMembers(state: AppState, action: Extract<AppAction, { type: "grou
         ((entry.inviteeId && existing.inviteeId === entry.inviteeId) ||
           (!entry.inviteeId &&
             entry.inviteeEmail &&
-            existing.inviteeEmail === entry.inviteeEmail))
+            existing.inviteeEmail === entry.inviteeEmail) ||
+          (!entry.inviteeId &&
+            entry.inviteePhone &&
+            existing.inviteePhone === entry.inviteePhone))
     );
     if (duplicate) continue;
 
@@ -464,6 +559,8 @@ function inviteMembers(state: AppState, action: Extract<AppAction, { type: "grou
       inviteeId: entry.inviteeId,
       inviteeName: entry.inviteeName,
       inviteeEmail: entry.inviteeEmail,
+      inviteePhone: entry.inviteePhone,
+      inviteeRole: entry.inviteeRole,
       invitedById: action.actor.id,
       invitedByName: action.actor.name,
       status: "pending",
@@ -531,6 +628,9 @@ function updateAdminConfig(state: AppState, patch: AdminConfigPatch): AppState {
       mandatoryCircles: patch.mandatoryCircles
         ? patch.mandatoryCircles.map((entry) => ({ ...entry }))
         : state.adminConfig.mandatoryCircles.map((entry) => ({ ...entry })),
+      mandatoryGroups: patch.mandatoryGroups
+        ? patch.mandatoryGroups.map((entry) => ({ ...entry }))
+        : state.adminConfig.mandatoryGroups.map((entry) => ({ ...entry })),
       partnerDefaults: patch.partnerDefaults
         ? { ...state.adminConfig.partnerDefaults, ...patch.partnerDefaults }
         : state.adminConfig.partnerDefaults,
@@ -636,6 +736,10 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     }
     case "invitation/respond":
       return respondToInvitation(state, action);
+    case "invitation/claim":
+      return claimInvitation(state, action);
+    case "account/register":
+      return registerAccount(state, action);
     case "admin/update-config": {
       const next = updateAdminConfig(state, action.patch);
       return next;

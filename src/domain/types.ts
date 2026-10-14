@@ -180,6 +180,13 @@ export type InvitationStatus = "pending" | "accepted" | "declined" | "cancelled"
 
 export type InvitationKind = "invite" | "request";
 
+/**
+ * The role an invited person gets when they accept. Determined by the
+ * invitation (the owner chooses it when inviting) — never inferred from the
+ * group, and never owner/admin. An invited consumer stays a consumer.
+ */
+export type ParticipantRole = "business-invitee" | "consumer";
+
 export interface Invitation {
   id: string;
   /** Target group. Absent when the invitation targets a circle instead. */
@@ -191,11 +198,33 @@ export interface Invitation {
   inviteeId?: string;
   inviteeName: string;
   inviteeEmail?: string;
+  /** Alternative delivery channel — the invitation was sent by SMS. */
+  inviteePhone?: string;
+  /** Role the invitee receives on acceptance. Absent for legacy/demo rows. */
+  inviteeRole?: ParticipantRole;
+  /**
+   * Set once a pending invitation has been bound to a platform account through
+   * the public invite link. A second account cannot claim the same invitation.
+   */
+  claimedByAccountId?: string;
   invitedById: string;
   invitedByName: string;
   status: InvitationStatus;
   createdAt: string;
   respondedAt?: string;
+}
+
+/**
+ * A registered platform account. Created through the invitation-first
+ * onboarding flow (or seeded) — email and phone are unique across accounts.
+ */
+export interface PlatformAccount {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  role: ParticipantRole;
+  createdAt: string;
 }
 
 export type GroupActivityKind =
@@ -306,6 +335,7 @@ export interface AdminConfig {
   paymentRules: GroupPaymentRules;
   circleTypes: CircleTypeConfigEntry[];
   mandatoryCircles: MandatoryCircleRule[];
+  mandatoryGroups: MandatoryGroupRule[];
   partnerDefaults: PartnerPermissions;
   auditLog: AuditLogEntry[];
 }
@@ -317,6 +347,7 @@ export interface AdminConfigPatch {
   paymentRules?: Partial<GroupPaymentRules>;
   circleTypes?: CircleTypeConfigEntry[];
   mandatoryCircles?: MandatoryCircleRule[];
+  mandatoryGroups?: MandatoryGroupRule[];
   partnerDefaults?: Partial<PartnerPermissions>;
   auditLog?: AuditLogEntry[];
 }
@@ -330,6 +361,7 @@ export interface AdminGroupFilters {
   owner: string;
   programme: string;
   source: "all" | GroupSource;
+  pricing?: "all" | GroupPricingMode;
   query: string;
 }
 
@@ -498,4 +530,28 @@ export interface MandatoryCircleRule {
   appliesToTier: "All" | "Free" | "Paid";
   minMemberCount: number;
   autoEnforce: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Mandatory groups a business owner must create first
+// ---------------------------------------------------------------------------
+
+/**
+ * How a mandatory group is priced when the owner creates it.
+ *
+ * - "owner-choice" — the owner picks free or paid in the wizard, but the paid
+ *   option only appears while the administrator's Allow paid groups switch is
+ *   on. Used by the required Marketing and Advertising groups.
+ * - "paid" — the administrator's switch that makes this required group a paid
+ *   group. Used by the Partner group, on by default.
+ */
+export type MandatoryGroupPricing = "owner-choice" | "paid";
+
+export interface MandatoryGroupRule {
+  /** The group type the owner is required to create. */
+  type: UserGroupType;
+  /** Admin switch — when on, the owner must create this group before any other type. */
+  required: boolean;
+  /** How the group is priced when it is created. */
+  pricing: MandatoryGroupPricing;
 }

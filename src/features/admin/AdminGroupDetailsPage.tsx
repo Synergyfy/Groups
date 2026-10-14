@@ -28,11 +28,15 @@ import { useAppStore } from "../../store/context";
 import { useDemoLoading } from "../../lib/demoDelay";
 import { SkeletonCard, SkeletonRows } from "../../components/ui/Skeleton";
 import { memberCountOf } from "../groups/groupUtils";
+import AdminGroupContributionCard from "./AdminGroupContributionCard";
+import AdminGroupCircleVisualization from "./AdminGroupCircleVisualization";
 
-type TabId = "overview" | "members" | "activity" | "relationships" | "settings";
+type TabId = "overview" | "circle" | "contributions" | "members" | "activity" | "relationships" | "settings";
 
 const TABS: { id: TabId; label: string; to?: string }[] = [
   { id: "overview", label: "Overview" },
+  { id: "circle", label: "Circle View" },
+  { id: "contributions", label: "Contribution Process" },
   { id: "members", label: "Members", to: "members" },
   { id: "activity", label: "Activity", to: "activity" },
   { id: "relationships", label: "Relationships", to: "relationships" },
@@ -222,6 +226,30 @@ export default function AdminGroupDetailsPage() {
                 </Card>
               ) : null}
 
+              {/* Paid Group Contribution Process & Ledger */}
+              <AdminGroupContributionCard group={group} showHeader={true} />
+
+              {/* Circle Hierarchy Quick Access Card */}
+              <Card className="border border-gold-500/30 bg-ink-900/60">
+                <CardBody className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+                      <span className="size-2 rounded-full bg-gold-400" /> Circular Member Network
+                    </h4>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      View all {memberCountOf(group)} members positioned in orbital concentric rings around group owner <strong>{group.ownerName}</strong> at the center.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setTab("circle")}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-gold-500/40 bg-gold-500/15 px-3 py-1.5 text-xs font-semibold text-gold-300 hover:bg-gold-500/25 transition-colors"
+                  >
+                    Open Circle View <ArrowRight className="size-3.5" />
+                  </button>
+                </CardBody>
+              </Card>
+
               <div className="grid gap-4 lg:grid-cols-2">
                 <Card>
                   <CardBody className="flex flex-col gap-3">
@@ -288,6 +316,27 @@ export default function AdminGroupDetailsPage() {
                 </CardBody>
               </Card>
             </div>
+          )}
+
+          {tab === "circle" && (
+            <Card>
+              <CardBody className="flex flex-col gap-4">
+                <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                  <div>
+                    <CardTitle>Group Members — Circular Network</CardTitle>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Owner <strong>{group.ownerName}</strong> is positioned at the central hub with connected member orbits.
+                    </p>
+                  </div>
+                  <Badge variant="gold">Owner at Center</Badge>
+                </div>
+                <AdminGroupCircleVisualization group={group} />
+              </CardBody>
+            </Card>
+          )}
+
+          {tab === "contributions" && (
+            <AdminGroupContributionCard group={group} showHeader={true} />
           )}
 
           {tab === "settings" && <GroupSettingsPanel group={group} />}
