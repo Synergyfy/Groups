@@ -5,11 +5,41 @@ import type {
   CampaignRecord,
   CircleTypeConfigEntry,
   MandatoryCircleRule,
+  MandatoryGroupRule,
   PartnerPermissions,
   PartnerRecord,
+  PlatformAccount,
   ProgrammeRecord,
   RelationshipRecord,
 } from "../domain/types";
+
+// ---------------------------------------------------------------------------
+// Seeded platform accounts
+//
+// These exist so the invitation-first onboarding flow has something to find:
+// an invitee who opens /invite/:id can sign in with one of these emails (or
+// hit the duplicate guard when registering with them), and anyone else can
+// register a brand-new account.
+// ---------------------------------------------------------------------------
+
+export const PLATFORM_ACCOUNTS: PlatformAccount[] = [
+  {
+    id: "acc-westside",
+    name: "Westside Events",
+    email: "events@westside.example",
+    phone: "+44 7700 900700",
+    role: "business-invitee",
+    createdAt: "2026-09-20T09:00:00",
+  },
+  {
+    id: "cons-john",
+    name: "John Doe",
+    email: "john.doe@example.com",
+    phone: "+44 7700 900800",
+    role: "consumer",
+    createdAt: "2026-09-21T10:00:00",
+  },
+];
 
 // ---------------------------------------------------------------------------
 // Default partner permissions
@@ -68,6 +98,23 @@ export const DEFAULT_MANDATORY_CIRCLES: MandatoryCircleRule[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Mandatory groups every business owner creates first
+//
+// Marketing and Advertising are priced by the owner — free or paid — which is
+// only offered while the Allow paid groups switch below is on.
+//
+// Partner defaults to a paid group: the administrator's switch is on unless it
+// is explicitly turned off. The global Allow paid groups switch still wins —
+// with it off, no group (Partner included) can be created as paid.
+// ---------------------------------------------------------------------------
+
+export const DEFAULT_MANDATORY_GROUPS: MandatoryGroupRule[] = [
+  { type: "Marketing", required: true, pricing: "owner-choice" },
+  { type: "Advertising", required: true, pricing: "owner-choice" },
+  { type: "Partner", required: true, pricing: "paid" },
+];
+
+// ---------------------------------------------------------------------------
 // Default admin config
 // ---------------------------------------------------------------------------
 
@@ -98,6 +145,7 @@ export const DEFAULT_ADMIN_CONFIG: AdminConfig = {
   },
   circleTypes: DEFAULT_CIRCLE_TYPES.map((entry) => ({ ...entry, allowedDurations: [...entry.allowedDurations] })),
   mandatoryCircles: DEFAULT_MANDATORY_CIRCLES.map((entry) => ({ ...entry })),
+  mandatoryGroups: DEFAULT_MANDATORY_GROUPS.map((entry) => ({ ...entry })),
   partnerDefaults: { ...FREE_PARTNER_PERMISSIONS },
   auditLog: [],
 };

@@ -29,6 +29,8 @@ function loadState(): AppState {
         },
         groupTypes: parsed.adminConfig?.groupTypes ?? initial.adminConfig.groupTypes,
         stageLabels: parsed.adminConfig?.stageLabels ?? initial.adminConfig.stageLabels,
+        mandatoryGroups:
+          parsed.adminConfig?.mandatoryGroups ?? initial.adminConfig.mandatoryGroups,
         paymentRules: {
           ...initial.adminConfig.paymentRules,
           ...parsed.adminConfig?.paymentRules,

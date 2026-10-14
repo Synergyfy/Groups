@@ -41,7 +41,7 @@ export default function DashboardShell({ sectionLabel, nav, bottomNav }: Dashboa
       <div className="mx-auto flex w-full max-w-[1440px] flex-1">
         <aside
           data-tour="nav"
-          className="hidden w-60 shrink-0 border-r border-white/10 bg-ink-950/60 lg:sticky lg:top-[3.75rem] lg:block lg:h-[calc(100vh-3.75rem)] lg:overflow-y-auto"
+          className="hidden w-64 shrink-0 border-r border-white/10 bg-ink-950/60 lg:sticky lg:top-[3.75rem] lg:block lg:h-[calc(100vh-3.75rem)] lg:overflow-y-auto"
         >
           <Sidebar sections={nav} onNavigate={() => setMenuOpen(false)} />
           {showJourney && <JourneyRail />}

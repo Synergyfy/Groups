@@ -10,11 +10,14 @@ import type {
   GroupThreshold,
   GroupCircle,
   Invitation,
+  MandatoryGroupPricing,
   NetworkContact,
   PartnerRecord,
+  PlatformAccount,
   ProgrammeRecord,
   RelationshipRecord,
   AuditLogEntry,
+  UserGroupType,
 } from "../domain/types";
 import {
   circleTypeFallback,
@@ -36,6 +39,74 @@ export function selectMyGroups(state: AppState, actorId: string): Group[] {
 
 export function selectOwnedGroups(state: AppState, actorId: string): Group[] {
   return state.groups.filter((group) => group.ownerId === actorId);
+}
+
+// ---------------------------------------------------------------------------
+// Platform accounts (invitation-first onboarding)
+// ---------------------------------------------------------------------------
+
+export function selectAccounts(state: AppState): PlatformAccount[] {
+  return state.accounts;
+}
+
+export function findAccountByEmail(
+  state: AppState,
+  email: string
+): PlatformAccount | undefined {
+  const needle = email.trim().toLowerCase();
+  if (!needle) return undefined;
+  return state.accounts.find((account) => account.email.trim().toLowerCase() === needle);
+}
+
+export function findAccountByPhone(
+  state: AppState,
+  phone: string
+): PlatformAccount | undefined {
+  const normalize = (value: string) => value.replace(/[^0-9]/g, "");
+  const needle = normalize(phone);
+  if (!needle) return undefined;
+  return state.accounts.find(
+    (account) => account.phone !== undefined && normalize(account.phone) === needle
+  );
+}
+
+export function findAccountById(state: AppState, id: string): PlatformAccount | undefined {
+  return state.accounts.find((account) => account.id === id);
+}
+
+// ---------------------------------------------------------------------------
+// Mandatory ("create first") groups
+// ---------------------------------------------------------------------------
+
+export interface MandatoryGroupStatus {
+  type: UserGroupType;
+  required: boolean;
+  pricing: MandatoryGroupPricing;
+  /** True once the actor owns a group of this type. */
+  satisfied: boolean;
+  group?: Group;
+}
+
+/**
+ * The administrator's required-group rules resolved against what this actor
+ * already owns — the single source of truth for the business checklist and
+ * the Create Group wizard's hard mandate.
+ */
+export function selectMandatoryGroupStatuses(
+  state: AppState,
+  actorId: string
+): MandatoryGroupStatus[] {
+  const owned = selectOwnedGroups(state, actorId);
+  return state.adminConfig.mandatoryGroups.map((rule) => {
+    const group = owned.find((entry) => entry.type === rule.type);
+    return {
+      type: rule.type,
+      required: rule.required,
+      pricing: rule.pricing,
+      satisfied: Boolean(group),
+      group,
+    };
+  });
 }
 
 export function selectExploreGroups(state: AppState, actorId: string): Group[] {
@@ -101,6 +172,10 @@ export function selectAdminFilteredGroups(
     if (filters.programme !== "all" && (group.programmeId ?? "") !== filters.programme)
       return false;
     if (filters.source !== "all" && group.source !== filters.source) return false;
+    if (filters.pricing && filters.pricing !== "all") {
+      const mode = group.pricing ?? "free";
+      if (mode !== filters.pricing) return false;
+    }
     if (query) {
       const haystack = `${group.name} ${group.purpose} ${group.ownerName} ${group.type}`.toLowerCase();
       if (!haystack.includes(query)) return false;
@@ -223,6 +298,11 @@ export function useMyGroups(actorId: string): Group[] {
 export function useOwnedGroups(actorId: string): Group[] {
   const state = useAppState();
   return useMemo(() => selectOwnedGroups(state, actorId), [state, actorId]);
+}
+
+export function useMandatoryGroupStatuses(actorId: string): MandatoryGroupStatus[] {
+  const state = useAppState();
+  return useMemo(() => selectMandatoryGroupStatuses(state, actorId), [state, actorId]);
 }
 
 export function useExploreGroups(actorId: string): Group[] {

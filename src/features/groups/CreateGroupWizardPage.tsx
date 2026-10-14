@@ -24,7 +24,7 @@ import { CITY_NAMES, areasOf } from "../../data/locationsData";
 import { INTERACTION_LEVELS } from "../../domain/constants";
 import { useAppStore } from "../../store/context";
 import { useOwnedGroups, useAppState } from "../../store/selectors";
-import { creatableGroupTypes, nonCreatableGroupTypes } from "./groupUtils";
+import { creatableGroupTypes, nonCreatableGroupTypes, pendingMandatoryTypes, typeForcedPaid } from "./groupUtils";
 
 const ACTOR_ID = CURRENT_BUSINESS.id;
 
@@ -111,6 +111,18 @@ function CreateGroupWizard({
   );
   const paymentRules = adminConfig.paymentRules;
 
+  // Hard mandate: while required groups are missing, only those types are offered.
+  const creatableSet = useMemo(() => new Set(types.map((entry) => entry.type)), [types]);
+  const pendingTypes = useMemo(
+    () =>
+      pendingMandatoryTypes(adminConfig, ownedTypes).filter((entry) =>
+        creatableSet.has(entry)
+      ),
+    [adminConfig, ownedTypes, creatableSet]
+  );
+  const mandateActive = pendingTypes.length > 0;
+  const pendingSet = useMemo(() => new Set(pendingTypes), [pendingTypes]);
+
   const rawStep = Number(searchParams.get("step") ?? "0");
   const step = Number.isFinite(rawStep)
     ? Math.min(Math.max(rawStep, 0), STEPS.length - 1)
@@ -119,7 +131,15 @@ function CreateGroupWizard({
     const clamped = Math.min(Math.max(next, 0), STEPS.length - 1);
     setSearchParams(clamped === 0 ? {} : { step: String(clamped) }, { replace: true });
   };
-  const [type, setType] = useState<UserGroupType | "">("");
+  // The dashboard's "Create" links deep-link here with ?type= — preselect it,
+  // but only when it is creatable, still required (or the mandate is satisfied)
+  // and not already owned.
+  const presetCandidate = (searchParams.get("type") ?? "") as UserGroupType;
+  const validPreset =
+    creatableSet.has(presetCandidate) &&
+    !ownedTypes.has(presetCandidate) &&
+    (!mandateActive || pendingSet.has(presetCandidate));
+  const [type, setType] = useState<UserGroupType | "">(validPreset ? presetCandidate : "");
   const [name, setName] = useState("");
   const [purpose, setPurpose] = useState("");
   const [city, setCity] = useState(CURRENT_BUSINESS.city);
@@ -128,7 +148,9 @@ function CreateGroupWizard({
   const [visibility, setVisibility] = useState<GroupVisibility>("directory");
   const [interactionLevel, setInteractionLevel] = useState<InteractionLevel>("message");
   const [requiredSize, setRequiredSize] = useState("");
-  const [pricing, setPricing] = useState<GroupPricingMode>("free");
+  const [pricing, setPricing] = useState<GroupPricingMode>(
+    validPreset && typeForcedPaid(adminConfig, presetCandidate) ? "paid" : "free"
+  );
   const [presetAmount, setPresetAmount] = useState<number | null>(null);
   const [customAmount, setCustomAmount] = useState("");
   const [frequencyMode, setFrequencyMode] = useState<"once" | "recurring">("once");
@@ -147,14 +169,18 @@ function CreateGroupWizard({
   const hasCustom = customAmount.trim() !== "";
   const paidAmount = hasCustom ? customValue : presetAmount;
   const effectivePricing: GroupPricingMode = paymentRules?.allowPaid ? pricing : "free";
+  // A required group the administrator set to paid (Partner, by default) is
+  // always created as a paid group — the wizard locks pricing for that type.
+  const forcedPaid = Boolean(type) && typeForcedPaid(adminConfig, type);
+  const finalPricing: GroupPricingMode = forcedPaid ? "paid" : effectivePricing;
   const amountInRange =
     paidAmount !== null &&
     Number.isFinite(paidAmount) &&
     paidAmount >= (paymentRules?.minAmount ?? 0) &&
     paidAmount <= (paymentRules?.maxAmount ?? 0);
-  const paidValid = effectivePricing === "free" || amountInRange;
+  const paidValid = finalPricing === "free" || amountInRange;
   const amountError =
-    effectivePricing === "paid" && !paidValid
+    finalPricing === "paid" && !paidValid
       ? hasCustom
         ? `Enter an amount between £${paymentRules?.minAmount ?? 0} and £${paymentRules?.maxAmount ?? 0}.`
         : "Choose a contribution amount to continue."
@@ -173,6 +199,17 @@ function CreateGroupWizard({
     setPricing(mode);
     if (mode === "paid" && presetAmount === null && inRangePresets.length > 0) {
       setPresetAmount(inRangePresets[0]);
+    }
+  };
+
+  const selectType = (entry: UserGroupType) => {
+    setType(entry);
+    if (typeForcedPaid(adminConfig, entry)) {
+      // Administrators require this group to be paid — lock the choice in.
+      setPricing("paid");
+      if (!hasCustom && presetAmount === null && inRangePresets.length > 0) {
+        setPresetAmount(inRangePresets[0]);
+      }
     }
   };
 
@@ -195,11 +232,11 @@ function CreateGroupWizard({
         accessType,
         visibility,
         interactionLevel,
-        pricing: effectivePricing,
-        ...(effectivePricing === "paid" && amountInRange && paidAmount !== null
+        pricing: finalPricing,
+        ...(finalPricing === "paid" && amountInRange && paidAmount !== null
           ? { contribution: paidAmount }
           : {}),
-        ...(effectivePricing === "paid"
+        ...(finalPricing === "paid"
           ? { contributionFrequency: frequencyMode === "recurring" ? recurringEvery : ("once" as const) }
           : {}),
         ...(city ? { city, ...(localArea ? { localArea } : {}) } : {}),
@@ -220,18 +257,32 @@ function CreateGroupWizard({
           {step === 1 && (
             <div className="flex flex-col gap-3">
               <CardTitle>Choose a group type</CardTitle>
+              {mandateActive && (
+                <div className="flex items-start gap-2 rounded-xl border border-gold-500/30 bg-gold-500/10 p-3 text-[11px] leading-relaxed text-gold-200">
+                  <Lock className="mt-px size-3.5 shrink-0" />
+                  <span>
+                    <span className="font-semibold">Required groups first.</span> Administrators
+                    require your business to create {pendingTypes.join(", ")} before any other
+                    group type — every other type unlocks as soon as these exist.
+                  </span>
+                </div>
+              )}
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {types.map((entry) => {
                   const selected = type === entry.type;
                   const alreadyOwned = ownedTypes.has(entry.type);
+                  const lockedByMandate =
+                    mandateActive && !alreadyOwned && !pendingSet.has(entry.type);
+                  const forcedEntryPaid = typeForcedPaid(adminConfig, entry.type);
+                  const disabled = alreadyOwned || lockedByMandate;
                   return (
                     <button
                       key={entry.type}
                       type="button"
-                      disabled={alreadyOwned}
-                      onClick={() => setType(entry.type)}
+                      disabled={disabled}
+                      onClick={() => selectType(entry.type)}
                       className={`rounded-xl border p-4 text-left transition-colors ${
-                        alreadyOwned
+                        disabled
                           ? "cursor-not-allowed border-white/5 bg-ink-950/40 opacity-45"
                           : `cursor-pointer ${
                               selected
@@ -244,16 +295,25 @@ function CreateGroupWizard({
                         <span className="text-sm font-semibold text-white">{entry.type}</span>
                         {alreadyOwned ? (
                           <Badge variant="muted">Already have one</Badge>
+                        ) : lockedByMandate ? (
+                          <Badge variant="warning">Locked</Badge>
                         ) : selected ? (
                           <Check className="size-4 text-gold-400" />
                         ) : (
                           <span className="size-4 rounded-full border border-white/20" />
                         )}
                       </div>
+                      {!disabled && forcedEntryPaid && (
+                        <span className="mt-1.5 inline-flex">
+                          <Badge variant="gold">Paid group required</Badge>
+                        </span>
+                      )}
                       <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
                         {alreadyOwned
                           ? `Your business already owns a ${entry.type} group — one group per owner and type.`
-                          : `Create and own a ${entry.type} group. The type is fixed once created.`}
+                          : lockedByMandate
+                            ? `Available once ${pendingTypes.join(", ")} have been created — administrators require those first.`
+                            : `Create and own a ${entry.type} group. The type is fixed once created.`}
                       </p>
                     </button>
                   );
@@ -262,6 +322,11 @@ function CreateGroupWizard({
               <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
                 <Info className="size-3.5" />
                 <span>Only types enabled for creation in administrator configuration are listed.</span>
+                {mandateActive && (
+                  <span className="text-gold-200">
+                    Required groups must be created before any other type.
+                  </span>
+                )}
                 {ownedTypes.size > 0 && (
                   <span className="text-slate-400">
                     Types your business already owns are faded out.
@@ -425,6 +490,17 @@ function CreateGroupWizard({
                 much, and how often. Everything here follows the administrator payment rules, and
                 you can review your choice at the end before creating.
               </p>
+              {mandateActive && (
+                <div className="flex items-start gap-2 rounded-xl border border-white/10 bg-ink-950/60 p-3 text-[11px] leading-relaxed text-slate-400">
+                  <Info className="mt-px size-3.5 shrink-0 text-gold-400" />
+                  <span>
+                    You still have to create {pendingTypes.join(", ")} — your choice below applies
+                    to them and to every group in this wizard. A required group administrators have
+                    set to paid is always created as a paid group; the wizard locks its pricing when
+                    you pick that type.
+                  </span>
+                </div>
+              )}
               <div className="flex flex-col gap-2.5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
@@ -438,25 +514,34 @@ function CreateGroupWizard({
                 <div className="grid gap-3 sm:grid-cols-2">
                   <button
                     type="button"
+                    disabled={forcedPaid}
                     onClick={() => choosePricing("free")}
-                    className={`cursor-pointer rounded-xl border p-3 text-left transition-colors ${
-                      effectivePricing === "free"
-                        ? "border-gold-500/50 bg-gold-500/10"
-                        : "border-white/10 bg-ink-950/60 hover:border-white/20"
+                    className={`rounded-xl border p-3 text-left transition-colors ${
+                      forcedPaid
+                        ? "cursor-not-allowed border-white/5 bg-ink-950/40 opacity-45"
+                        : `cursor-pointer ${
+                            effectivePricing === "free"
+                              ? "border-gold-500/50 bg-gold-500/10"
+                              : "border-white/10 bg-ink-950/60 hover:border-white/20"
+                          }`
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="flex items-center gap-1.5 text-xs font-semibold text-white">
                         <Users className="size-3.5 text-gold-400" /> Free group
                       </span>
-                      {effectivePricing === "free" ? (
+                      {forcedPaid ? (
+                        <Badge variant="gold">Paid required</Badge>
+                      ) : effectivePricing === "free" ? (
                         <Check className="size-4 text-gold-400" />
                       ) : (
                         <span className="size-4 rounded-full border border-white/20" />
                       )}
                     </div>
                     <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
-                      Membership costs nothing — no money changes hands when members join.
+                      {forcedPaid
+                        ? `The ${type} group is required to be a paid group — administrators have switched this on.`
+                        : "Membership costs nothing — no money changes hands when members join."}
                     </p>
                   </button>
                   <button
@@ -727,7 +812,7 @@ function CreateGroupWizard({
                 <ReviewRow
                   label="Contribution"
                   value={
-                    effectivePricing === "paid" && amountInRange && paidAmount !== null
+                    finalPricing === "paid" && amountInRange && paidAmount !== null
                       ? `£${paidAmount} ${
                           frequencyMode === "recurring"
                             ? `${recurringEvery} per member`
@@ -737,14 +822,26 @@ function CreateGroupWizard({
                   }
                 />
               </div>
+              {type && pendingSet.has(type) && (
+                <div className="flex items-start gap-2 rounded-xl border border-info-500/30 bg-info-500/10 p-3 text-[11px] leading-relaxed text-info-400">
+                  <Info className="mt-px size-3.5 shrink-0" />
+                  <span>
+                    <span className="font-semibold">Required group.</span> {type} is one of the
+                    groups administrators require your business to create first.
+                  </span>
+                </div>
+              )}
               <div className="flex items-start gap-2 rounded-xl border border-gold-500/30 bg-gold-500/10 p-3 text-[11px] leading-relaxed text-gold-200">
                 <Info className="mt-px size-3.5 shrink-0" />
                 You become the owner of this group. The type, source and access rules cannot be
                 changed afterwards — only an administrator can reconfigure group types.
               </div>
-              {effectivePricing === "paid" && amountInRange && paidAmount !== null && (
+              {finalPricing === "paid" && amountInRange && paidAmount !== null && (
                 <div className="flex items-start gap-2 rounded-xl border border-white/10 bg-ink-950/60 p-3 text-[11px] leading-relaxed text-slate-400">
                   <CircleDollarSign className="mt-px size-3.5 shrink-0 text-gold-400" />
+                  {forcedPaid
+                    ? `Administrators require this group to be paid. `
+                    : ""}
                   {frequencyMode === "recurring"
                     ? `Payment process: members pay £${paidAmount} ${recurringEvery} — the first payment is due when they join, each payment is recorded in the group activity feed, and you track upcoming and paid contributions from the members list.`
                     : `Payment process: members pay £${paidAmount} once when they join, each payment is recorded in the group activity feed, and you track paid vs outstanding contributions from the members list.`}

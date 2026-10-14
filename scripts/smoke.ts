@@ -88,6 +88,10 @@ const cases: SmokeCase[] = [
   { path: "/business/groups", expect: "Create a Group", reject: "Your group figures" },
   { path: "/business/groups", expect: "Automatic Network Group" },
   { path: "/business/groups", expect: "3 more members needed" },
+  { path: "/business/groups", expect: "Required groups" },
+  { path: "/business/groups", expect: "Advertising group" },
+  { path: "/business/groups", expect: "Partner group" },
+  { path: "/business/groups", expect: "1 / 3 created" },
   { path: "/business/groups/mine", expect: "02 — My Groups" },
   { path: "/business/groups/mine", expect: "My Created Groups" },
   { path: "/business/groups/mine", expect: "Joined Groups" },
@@ -112,6 +116,9 @@ const cases: SmokeCase[] = [
   { path: "/business/groups/create", expect: "Free group or paid group?" },
   { path: "/business/groups/create?step=1", expect: "Choose a group type" },
   { path: "/business/groups/create?step=1", expect: "Only types enabled for creation" },
+  { path: "/business/groups/create?step=1", expect: "Required groups first." },
+  { path: "/business/groups/create?step=1", expect: "Locked" },
+  { path: "/business/groups/create?type=Partner", expect: "Paid required" },
   // Wizard steps are routed via ?step=
   { path: "/business/groups/create?step=2", expect: "Group ≠ Location" },
   { path: "/business/groups/create?step=3", expect: "Membership rules" },
@@ -180,6 +187,8 @@ const cases: SmokeCase[] = [
   { path: "/admin/groups/g-1/relationships", expect: "19 — Admin Group Relationships" },
   { path: "/admin/config/automatic", expect: "20 — Automatic Group Rules" },
   { path: "/admin/config/types", expect: "21 — Group Type Configuration" },
+  { path: "/admin/config/types", expect: "Required groups for business owners" },
+  { path: "/admin/config/types", expect: "Paid by default" },
   { path: "/admin/locations", expect: "Location Relationships" },
   { path: "/admin/locations", expect: "Groups without a location" },
   { path: "/admin/partner-groups", expect: "Partner Groups" },
@@ -302,6 +311,24 @@ const cases: SmokeCase[] = [
   { path: "/business/groups/grp-smith-marketing/settings", expect: "Manage invitations" },
   // §12 invitations inbox — pending invitation: View Group → Accept / Decline
   { path: "/business/invitations", expect: "View group" },
+  // Consumer Dashboard routes
+  { path: "/consumer", expect: "Consumer Space" },
+  { path: "/consumer/my-groups", expect: "My Groups" },
+  { path: "/consumer/discover", expect: "Discover Groups" },
+  { path: "/consumer/invitations", expect: "Invitations" },
+  { path: "/consumer/account", expect: "My Profile" },
+  // Participant Dashboard routes
+  { path: "/participant", expect: "CHS Groups" },
+  { path: "/participant/groups", expect: "Invited Groups" },
+  { path: "/participant/onboarding", expect: "Business Onboarding" },
+  { path: "/participant/my-groups", expect: "My Groups" },
+  { path: "/participant/discover", expect: "Discover Groups" },
+  { path: "/participant/invitations", expect: "Invitations" },
+  { path: "/participant/account", expect: "My Profile" },
+  // Auth & Onboarding routes
+  { path: "/get-started", expect: "Sign up with CHS" },
+  { path: "/register", expect: "Sign up with CHS" },
+  { path: "/login", expect: "Login with CHS" },
 ];
 
 const container = dom.window.document.createElement("div");

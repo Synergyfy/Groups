@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { Plus, X } from "lucide-react";
+import Badge from "../../components/ui/Badge";
 import Card, { CardBody, CardTitle } from "../../components/ui/Card";
 import FieldHint from "../../components/ui/FieldHint";
 import SectionHeader from "../../components/ui/SectionHeader";
 import StatCard from "../../components/ui/StatCard";
 import TipIcon from "../../components/ui/TipIcon";
-import type { GroupPaymentRules } from "../../domain/types";
+import type { GroupPaymentRules, MandatoryGroupRule } from "../../domain/types";
 import { useAppStore } from "../../store/context";
 import { useAppState } from "../../store/selectors";
 
@@ -50,12 +51,20 @@ export default function GroupTypeConfigPage() {
   const groupTypes = state.adminConfig.groupTypes;
   const stageLabels = state.adminConfig.stageLabels;
   const paymentRules = state.adminConfig.paymentRules;
+  const mandatoryGroups = state.adminConfig.mandatoryGroups;
 
   const updateType = (index: number, patch: Partial<(typeof groupTypes)[number]>) => {
     const next = groupTypes.map((entry, position) =>
       position === index ? { ...entry, ...patch } : entry
     );
     dispatch({ type: "admin/update-config", patch: { groupTypes: next } });
+  };
+
+  const updateMandatory = (index: number, patch: Partial<MandatoryGroupRule>) => {
+    const next = mandatoryGroups.map((entry, position) =>
+      position === index ? { ...entry, ...patch } : entry
+    );
+    dispatch({ type: "admin/update-config", patch: { mandatoryGroups: next } });
   };
 
   const addStage = () => {
@@ -103,6 +112,7 @@ export default function GroupTypeConfigPage() {
   const enabledCount = groupTypes.filter((entry) => entry.enabled).length;
   const creatableCount = groupTypes.filter((entry) => entry.enabled && entry.allowCreate).length;
   const joinableCount = groupTypes.filter((entry) => entry.enabled && entry.allowJoin).length;
+  const requiredCount = mandatoryGroups.filter((entry) => entry.required).length;
 
   return (
     <div className="flex flex-col gap-4">
@@ -175,6 +185,68 @@ export default function GroupTypeConfigPage() {
           </Card>
         ))}
       </div>
+
+      <Card data-tour="mandatory-groups">
+        <CardBody className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5">
+              <CardTitle>Required groups for business owners</CardTitle>
+              <TipIcon text="While a required group is missing, the Create Group wizard only offers the required types — every other type waits until all of them exist." />
+            </div>
+            <span className="text-[11px] text-slate-500">
+              {requiredCount} of {mandatoryGroups.length} switched on
+            </span>
+          </div>
+          <p className="text-[11px] leading-relaxed text-slate-400">
+            Business owners must create these groups first in their group dashboard. Marketing and
+            Advertising are priced by the owner — free or paid — and the paid option only appears
+            while <span className="font-semibold text-gold-300">Allow paid groups</span> below is
+            switched on. A group set to paid here must be created as a paid group.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {mandatoryGroups.map((rule, index) => (
+              <div
+                key={rule.type}
+                className="flex flex-col gap-2 rounded-xl border border-white/10 bg-ink-950/60 px-3 py-2.5"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-white">{rule.type} group</span>
+                  {rule.pricing === "paid" ? (
+                    <Badge variant={rule.required ? "gold" : "muted"}>Paid by default</Badge>
+                  ) : (
+                    <Badge variant="muted">Free or paid</Badge>
+                  )}
+                </div>
+                <Toggle
+                  label="Required first"
+                  hint={`Owners must create ${rule.type} before any other group type.`}
+                  tip="Only affects the owner's own ordering — groups they already own are never touched."
+                  checked={rule.required}
+                  onChange={(next) => updateMandatory(index, { required: next })}
+                />
+                {rule.pricing === "paid" ? (
+                  <Toggle
+                    label="Paid group"
+                    hint="Owners create this group with a contribution — it cannot be created free."
+                    tip="Needs Allow paid groups below to stay on — that switch is the master control."
+                    checked
+                    onChange={(next) =>
+                      updateMandatory(index, {
+                        pricing: next ? "paid" : "owner-choice",
+                      })
+                    }
+                  />
+                ) : (
+                  <p className="text-[11px] leading-relaxed text-slate-500">
+                    Pricing is the owner's choice — free or paid — and follows the Allow paid
+                    groups switch below.
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        </CardBody>
+      </Card>
 
       <div className="grid gap-4 lg:grid-cols-3" data-tour="stages">
         <Card className="lg:col-span-2">
@@ -276,7 +348,7 @@ export default function GroupTypeConfigPage() {
           <Toggle
             label="Allow paid groups"
             hint="Off means every new group is free — the wizard hides the paid option."
-            tip="One switch for every enabled group type — there is no per-type payment setting."
+            tip="Master switch for every group type, including a required group set to paid — that setting only applies while this is on."
             checked={paymentRules.allowPaid}
             onChange={(next) => updatePayments({ allowPaid: next })}
           />
