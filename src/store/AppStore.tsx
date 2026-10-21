@@ -20,6 +20,10 @@ function loadState(): AppState {
       ...initial,
       ...parsed,
       version: STORE_VERSION,
+      membership: {
+        ...initial.membership,
+        ...parsed.membership,
+      },
       adminConfig: {
         ...initial.adminConfig,
         ...parsed.adminConfig,
@@ -35,6 +39,22 @@ function loadState(): AppState {
           ...initial.adminConfig.paymentRules,
           ...parsed.adminConfig?.paymentRules,
         },
+        groupCreationRules: (() => {
+          const current =
+            parsed.adminConfig?.groupCreationRules ?? initial.adminConfig.groupCreationRules;
+          return {
+            ...initial.adminConfig.groupCreationRules,
+            ...current,
+            allowedTiers: [...current.allowedTiers],
+            allowedVariants: [...current.allowedVariants],
+            recruitmentTargets: {
+              Bronze: { ...current.recruitmentTargets.Bronze },
+              Silver: { ...current.recruitmentTargets.Silver },
+              Gold: { ...current.recruitmentTargets.Gold },
+              Platinum: { ...current.recruitmentTargets.Platinum },
+            },
+          };
+        })(),
       },
     };
   } catch {
