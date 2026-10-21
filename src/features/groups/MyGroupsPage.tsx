@@ -6,7 +6,7 @@ import Badge from "../../components/ui/Badge";
 import { SkeletonRows } from "../../components/ui/Skeleton";
 import GroupListItem from "./GroupListItem";
 import { CURRENT_BUSINESS } from "../../data/businessData";
-import { useActor, useAutomaticProgress } from "../../store/selectors";
+import { useActor, useAutomaticProgress, useGroupActivationLookup } from "../../store/selectors";
 import { useDemoLoading } from "../../lib/demoDelay";
 import type { Group } from "../../domain/types";
 
@@ -49,6 +49,7 @@ export default function MyGroupsPage() {
   const loading = useDemoLoading();
   const { myGroups } = useActor(ACTOR_ID);
   const automatic = useAutomaticProgress(ACTOR_ID);
+  const activationOf = useGroupActivationLookup();
 
   const activeSection = SECTIONS.find((entry) => entry.key === section);
 
@@ -92,28 +93,49 @@ export default function MyGroupsPage() {
       ) : activeSection ? (
         <div data-tour="list" className="flex flex-col gap-2">
           {lists[activeSection.key].length > 0 ? (
-            lists[activeSection.key].map((group) => (
-              <GroupListItem
-                key={group.id}
-                group={group}
-                to={`/business/groups/${group.id}`}
-                state={{
-                  from: `/business/groups/mine/${activeSection.key}`,
-                  fromLabel: activeSection.title,
-                }}
-                progress={
-                  activeSection.key === "automatic" &&
-                  automatic.enabled &&
-                  group.id === automatic.group?.id
-                    ? {
-                        current: automatic.current,
-                        required: automatic.threshold,
-                        remaining: automatic.remaining,
-                      }
-                    : undefined
-                }
-              />
-            ))
+            lists[activeSection.key].map((group) => {
+              const activation = activationOf(group);
+              const awaitingActivation =
+                activeSection.key === "created" && activation.gated && !activation.active;
+              const automaticProgress =
+                activeSection.key === "automatic" &&
+                automatic.enabled &&
+                group.id === automatic.group?.id;
+              return (
+                <GroupListItem
+                  key={group.id}
+                  group={group}
+                  to={`/business/groups/${group.id}`}
+                  state={{
+                    from: `/business/groups/mine/${activeSection.key}`,
+                    fromLabel: activeSection.title,
+                  }}
+                  progress={
+                    automaticProgress
+                      ? {
+                          current: automatic.current,
+                          required: automatic.threshold,
+                          remaining: automatic.remaining,
+                        }
+                      : awaitingActivation
+                        ? {
+                            current: activation.current,
+                            required: activation.target,
+                            remaining: activation.remaining,
+                          }
+                        : undefined
+                  }
+                  progressLabel={
+                    automaticProgress ? undefined : "Members toward activation"
+                  }
+                  inactiveNote={
+                    awaitingActivation
+                      ? "Non-functional until the administrator's threshold is reached."
+                      : undefined
+                  }
+                />
+              );
+            })
           ) : (
             sectionEmpty(activeSection.empty)
           )}
