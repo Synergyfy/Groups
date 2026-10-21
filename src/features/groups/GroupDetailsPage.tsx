@@ -21,7 +21,7 @@ import EmptyState from "../../components/ui/EmptyState";
 import LinkButton from "../../components/ui/LinkButton";
 import Toast from "../../components/ui/Toast";
 import { CURRENT_BUSINESS, CAMPAIGNS, PROGRAMMES, RELATIONSHIPS, findDirectoryEntry } from "../../data/businessData";
-import { useAppState, useGroup, useGroupActivity, useGroupInvitations } from "../../store/selectors";
+import { useAppState, useGroup, useGroupActivity, useGroupInvitations, selectGroupActivation } from "../../store/selectors";
 import { useAppStore } from "../../store/context";
 import { useDemoLoading } from "../../lib/demoDelay";
 import { SkeletonCard, SkeletonRows } from "../../components/ui/Skeleton";
@@ -52,7 +52,8 @@ export default function GroupDetailsPage() {
   const group = useGroup(groupId);
   const activity = useGroupActivity(groupId);
   const invitations = useGroupInvitations(groupId);
-  const { adminConfig } = useAppState();
+  const state = useAppState();
+  const { adminConfig } = state;
   const { dispatch } = useAppStore();
   const loading = useDemoLoading();
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -74,6 +75,7 @@ export default function GroupDetailsPage() {
 
   const isOwner = group.ownerId === ACTOR_ID;
   const isMember = group.memberIds.includes(ACTOR_ID) || isOwner;
+  const activation = selectGroupActivation(state, group);
   const pendingInvites = invitations.filter(
     (invitation) => invitation.status === "pending"
   ).length;
@@ -178,6 +180,23 @@ export default function GroupDetailsPage() {
         title="04 — Group Details"
         subtitle="Group identity, ownership and the tabs for members, activity, invitations and settings."
       />
+
+      {activation.gated && !activation.active && (
+        <div className="flex items-start gap-3 rounded-2xl border border-warning-500/30 bg-warning-500/10 p-4">
+          <Lock className="mt-0.5 size-5 shrink-0 text-warning-400" />
+          <div>
+            <p className="text-xs font-semibold text-white">
+              Not active yet — {activation.current} of {activation.target} members
+            </p>
+            <p className="mt-1 text-[11px] leading-relaxed text-slate-300">
+              Administrators keep this group non-functional until it reaches the recruitment
+              threshold for a {activation.tier} {activation.variant} membership. Recruit{" "}
+              {activation.remaining} more member{activation.remaining === 1 ? "" : "s"} and it
+              switches on automatically.
+            </p>
+          </div>
+        </div>
+      )}
 
       <Card data-tour="group-circle">
         <CardBody className="flex flex-col gap-3">
