@@ -11,12 +11,15 @@ import type {
   GroupCircle,
   Invitation,
   MandatoryGroupPricing,
+  MembershipAccess,
   NetworkContact,
   PartnerRecord,
+  PlanVariant,
   PlatformAccount,
   ProgrammeRecord,
   RelationshipRecord,
   AuditLogEntry,
+  Tier,
   UserGroupType,
 } from "../domain/types";
 import {
@@ -265,6 +268,110 @@ export function selectNetworkStats(state: AppState): NetworkStats {
 }
 
 // ---------------------------------------------------------------------------
+// Membership-based group creation rules
+// ---------------------------------------------------------------------------
+
+/** The signed-in business's paid access record. */
+export function selectMembership(state: AppState): MembershipAccess {
+  return state.membership;
+}
+
+/** True when the membership (tier + variant) may create its own groups. */
+export function selectCanCreateGroups(state: AppState): boolean {
+  const rules = state.adminConfig.groupCreationRules;
+  const membership = state.membership;
+  if (!membership.agreementAccepted) return false;
+  if (rules.requirePaidAccess && !membership.paid) return false;
+  return (
+    rules.allowedTiers.includes(membership.tier) &&
+    rules.allowedVariants.includes(membership.variant)
+  );
+}
+
+/**
+ * A one-line summary of who may create groups, e.g.
+ * "Platinum Pro+ memberships only".
+ */
+export function selectCreationRightsLabel(state: AppState): string {
+  const rules = state.adminConfig.groupCreationRules;
+  const combos = rules.allowedTiers.flatMap((tier) =>
+    rules.allowedVariants.map((variant) => `${tier} ${variant}`)
+  );
+  if (combos.length === 0) return "No membership can create groups";
+  if (combos.length > 4) {
+    return `${combos.slice(0, 4).join(", ")} and ${combos.length - 4} more`;
+  }
+  return `${combos.join(", ")}${combos.length === 1 ? " membership" : " memberships"} only`;
+}
+
+function membershipOfOwner(
+  state: AppState,
+  ownerId: string
+): { tier: Tier; variant: PlanVariant } {
+  const membership = state.membership;
+  if (ownerId === membership.ownerId) {
+    return { tier: membership.tier, variant: membership.variant };
+  }
+  const business = state.businesses.find((entry) => entry.id === ownerId);
+  const tier: Tier = !business || business.tier === "Free" ? "Bronze" : business.tier;
+  return { tier, variant: "Standard" };
+}
+
+export interface GroupActivation {
+  /** Members the administrator requires for this owner's membership. */
+  target: number;
+  current: number;
+  remaining: number;
+  percent: number;
+  /** False once the group has reached the threshold and can operate. */
+  active: boolean;
+  /** Whether the threshold applies at all (system groups use split rules). */
+  gated: boolean;
+  tier: Tier;
+  variant: PlanVariant;
+}
+
+/**
+ * The activation threshold for a group: the administrator-set recruitment
+ * requirement for the owner's membership. User-created groups stay
+ * non-functional until they reach it; automatic groups are excluded because
+ * they follow the automatic-split threshold instead.
+ */
+export function selectGroupActivation(state: AppState, group: Group): GroupActivation {
+  const rules = state.adminConfig.groupCreationRules;
+  const current = group.memberCount ?? group.memberIds.length;
+  const { tier, variant } = membershipOfOwner(state, group.ownerId);
+  const target = rules.recruitmentTargets[tier][variant];
+  const gated =
+    rules.activationEnabled &&
+    group.source === "user-created" &&
+    group.status !== "Suspended" &&
+    group.status !== "Closed";
+  const active = !gated || current >= target;
+  return {
+    target,
+    current,
+    remaining: Math.max(target - current, 0),
+    percent: Math.min(Math.round((current / Math.max(target, 1)) * 100), 100),
+    active,
+    gated,
+    tier,
+    variant,
+  };
+}
+
+/** The platform group administrators assign non-creating members to. */
+export function selectPlatformGroup(state: AppState): Group | undefined {
+  const id = state.adminConfig.groupCreationRules.platformGroupId;
+  return id ? state.groups.find((group) => group.id === id) : undefined;
+}
+
+/** Pre-populated, incomplete "head start" groups waiting in the dashboard. */
+export function selectHeadStartGroups(state: AppState): Group[] {
+  return state.groups.filter((group) => group.headStart === true);
+}
+
+// ---------------------------------------------------------------------------
 // Hooks
 // ---------------------------------------------------------------------------
 
@@ -303,6 +410,44 @@ export function useOwnedGroups(actorId: string): Group[] {
 export function useMandatoryGroupStatuses(actorId: string): MandatoryGroupStatus[] {
   const state = useAppState();
   return useMemo(() => selectMandatoryGroupStatuses(state, actorId), [state, actorId]);
+}
+
+export function useMembership(): MembershipAccess {
+  return useAppState().membership;
+}
+
+export function useCanCreateGroups(): boolean {
+  const state = useAppState();
+  return useMemo(() => selectCanCreateGroups(state), [state]);
+}
+
+export function useCreationRightsLabel(): string {
+  const state = useAppState();
+  return useMemo(() => selectCreationRightsLabel(state), [state]);
+}
+
+export function usePlatformGroup(): Group | undefined {
+  const state = useAppState();
+  return useMemo(() => selectPlatformGroup(state), [state]);
+}
+
+export function useHeadStartGroups(): Group[] {
+  const state = useAppState();
+  return useMemo(() => selectHeadStartGroups(state), [state]);
+}
+
+export function useGroupActivation(group: Group): GroupActivation {
+  const state = useAppState();
+  return useMemo(() => selectGroupActivation(state, group), [state, group]);
+}
+
+/**
+ * Memoised `selectGroupActivation` lookup for rendering lists of groups, where
+ * hooks cannot be called inside `.map()`.
+ */
+export function useGroupActivationLookup(): (group: Group) => GroupActivation {
+  const state = useAppState();
+  return useMemo(() => (group: Group) => selectGroupActivation(state, group), [state]);
 }
 
 export function useExploreGroups(actorId: string): Group[] {

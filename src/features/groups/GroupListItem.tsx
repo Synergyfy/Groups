@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { ArrowRight, ChevronRight, Cpu, MapPin, UserRound, Users } from "lucide-react";
 import type { Group } from "../../domain/types";
 import ProgressBar from "../../components/ui/ProgressBar";
+import Badge from "../../components/ui/Badge";
 import {
   GroupSourceBadge,
   GroupStatusBadge,
@@ -22,9 +23,21 @@ interface GroupListItemProps {
   state?: unknown;
   footer?: ReactNode;
   progress?: GroupProgress;
+  /** Caption above the progress bar — split threshold vs activation threshold. */
+  progressLabel?: string;
+  /** Warning line shown under the progress bar (e.g. "non-functional until…"). */
+  inactiveNote?: string;
 }
 
-export default function GroupListItem({ group, to, state, footer, progress }: GroupListItemProps) {
+export default function GroupListItem({
+  group,
+  to,
+  state,
+  footer,
+  progress,
+  progressLabel = "Members toward the split threshold",
+  inactiveNote,
+}: GroupListItemProps) {
   const title = to ? (
     <Link
       to={to}
@@ -48,6 +61,7 @@ export default function GroupListItem({ group, to, state, footer, progress }: Gr
         <div className="mt-1.5 flex flex-wrap items-center gap-2">
           <GroupTypeBadge type={group.type} />
           <GroupSourceBadge source={group.source} />
+          {group.headStart && <Badge variant="info">Head start</Badge>}
           {group.stage && <BadgeMuted>{group.stage}</BadgeMuted>}
         </div>
         <span className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
@@ -79,15 +93,14 @@ export default function GroupListItem({ group, to, state, footer, progress }: Gr
         </span>
         {progress && (
           <div className="mt-2.5">
-            <ProgressBar
-              value={progress.current}
-              max={progress.required}
-              label="Members toward the split threshold"
-            />
+            <ProgressBar value={progress.current} max={progress.required} label={progressLabel} />
             {progress.remaining !== undefined && progress.remaining > 0 && (
               <p className="mt-1.5 text-[11px] font-semibold text-gold-300">
                 {progress.remaining} more member{progress.remaining === 1 ? "" : "s"} needed
               </p>
+            )}
+            {inactiveNote && (
+              <p className="mt-1 text-[11px] font-semibold text-warning-400">{inactiveNote}</p>
             )}
           </div>
         )}
