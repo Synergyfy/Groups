@@ -23,7 +23,14 @@ import { CURRENT_BUSINESS } from "../../data/businessData";
 import { CITY_NAMES, areasOf } from "../../data/locationsData";
 import { INTERACTION_LEVELS } from "../../domain/constants";
 import { useAppStore } from "../../store/context";
-import { useOwnedGroups, useAppState } from "../../store/selectors";
+import {
+  useCanCreateGroups,
+  useCreationRightsLabel,
+  useMembership,
+  useOwnedGroups,
+  useAppState,
+  usePlatformGroup,
+} from "../../store/selectors";
 import { creatableGroupTypes, nonCreatableGroupTypes, pendingMandatoryTypes, typeForcedPaid } from "./groupUtils";
 
 const ACTOR_ID = CURRENT_BUSINESS.id;
@@ -63,6 +70,10 @@ const FIELD_CLASS =
 
 export default function CreateGroupWizardPage() {
   const { adminConfig } = useAppState();
+  const canCreate = useCanCreateGroups();
+  const rightsLabel = useCreationRightsLabel();
+  const membership = useMembership();
+  const platformGroup = usePlatformGroup();
   const creatableTypes = creatableGroupTypes(adminConfig);
   const blockedTypes = nonCreatableGroupTypes(adminConfig);
 
@@ -75,7 +86,31 @@ export default function CreateGroupWizardPage() {
         backLabel="Groups"
       />
 
-      {creatableTypes.length === 0 ? (
+      {!canCreate ? (
+        <EmptyState
+          title="Your membership cannot create groups"
+          description={`${rightsLabel} may create groups. You are on ${membership.planName}, so administrators place your membership into ${
+            platformGroup?.name ?? "the admin-set platform group"
+          } instead — head start groups are still provided in your dashboard. Upgrade your membership to open this wizard.`}
+          icon={<Lock className="size-6" />}
+          action={
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              {platformGroup && (
+                <LinkButton
+                  to={`/business/groups/${platformGroup.id}`}
+                  variant="outline"
+                  size="sm"
+                >
+                  Open platform group
+                </LinkButton>
+              )}
+              <LinkButton to="/business/groups" size="sm">
+                Back to groups
+              </LinkButton>
+            </div>
+          }
+        />
+      ) : creatableTypes.length === 0 ? (
         <EmptyState
           title="No group types are available"
           description="Administrators have disabled every group type, so no group can be created right now."

@@ -10,14 +10,27 @@ import {
 } from "lucide-react";
 import Button from "../../components/ui/Button";
 import Card, { CardBody, CardTitle } from "../../components/ui/Card";
+import LinkButton from "../../components/ui/LinkButton";
 import SectionHeader from "../../components/ui/SectionHeader";
 import StatCard from "../../components/ui/StatCard";
 import Toast from "../../components/ui/Toast";
+import { MEMBERSHIP_PLANS } from "../../data/membershipPlans";
 import { useAppStore } from "../../store/context";
+import { selectCreationRightsLabel } from "../../store/selectors";
 
 export default function AdminAccessRulesPage() {
-  const { dispatch } = useAppStore();
+  const { state, dispatch } = useAppStore();
   const [feedback, setFeedback] = useState<string | null>(null);
+
+  // The persisted, enforced rules for who may create a group live on the
+  // Group Creation Rules screen — this page summarises them.
+  const creationRules = state.adminConfig.groupCreationRules;
+  const rightsLabel = selectCreationRightsLabel(state);
+  const eligiblePlanCount = MEMBERSHIP_PLANS.filter(
+    (plan) =>
+      creationRules.allowedTiers.includes(plan.tier) &&
+      creationRules.allowedVariants.includes(plan.variant)
+  ).length;
 
   // Temporary access settings state (Henry's 7-day or 14-day requirement)
   const [tempAccessDuration, setTempAccessDuration] = useState<"none" | "7" | "14" | "30">("14");
@@ -25,8 +38,6 @@ export default function AdminAccessRulesPage() {
   const [tempExpiryAction, setTempExpiryAction] = useState<"auto-leave" | "grace-period" | "prompt-upgrade">("auto-leave");
   const [requirePaymentForPermanent, setRequirePaymentForPermanent] = useState(true);
 
-  // Who can create groups
-  const [creationPolicy, setCreationPolicy] = useState<"all-verified" | "paid-only" | "admin-approved">("all-verified");
   // Who can join groups
   const [joiningPolicy, setJoiningPolicy] = useState<"invitation-first" | "open-request" | "strict-approval">("invitation-first");
   // Who can invite members
@@ -76,14 +87,8 @@ export default function AdminAccessRulesPage() {
         />
         <StatCard
           label="Group creation policy"
-          value={
-            creationPolicy === "all-verified"
-              ? "Verified Businesses"
-              : creationPolicy === "paid-only"
-                ? "Paid Tier Only"
-                : "Admin Approval"
-          }
-          hint="Authorized group creators"
+          value={eligiblePlanCount === 0 ? "Nobody" : `${eligiblePlanCount} plans`}
+          hint={rightsLabel}
           accent="info"
         />
         <StatCard
@@ -129,7 +134,7 @@ export default function AdminAccessRulesPage() {
                   <button
                     key={opt.value}
                     type="button"
-                    onClick={() => setTempAccessDuration(opt.value as any)}
+                    onClick={() => setTempAccessDuration(opt.value as "none" | "7" | "14" | "30")}
                     className={`flex flex-col rounded-xl border p-3 text-left transition-colors ${
                       tempAccessDuration === opt.value
                         ? "border-gold-500/50 bg-gold-500/10 text-white"
@@ -155,7 +160,7 @@ export default function AdminAccessRulesPage() {
                   <span>Interaction allowed during temporary access:</span>
                   <select
                     value={tempInteraction}
-                    onChange={(e) => setTempInteraction(e.target.value as any)}
+                    onChange={(e) => setTempInteraction(e.target.value as "read" | "message")}
                     className="h-8 rounded-lg border border-white/10 bg-ink-800 px-2 text-xs text-white focus:outline-none"
                   >
                     <option value="message">Participate &amp; Message</option>
@@ -167,7 +172,7 @@ export default function AdminAccessRulesPage() {
                   <span>Action upon period expiry:</span>
                   <select
                     value={tempExpiryAction}
-                    onChange={(e) => setTempExpiryAction(e.target.value as any)}
+                    onChange={(e) => setTempExpiryAction(e.target.value as "auto-leave" | "grace-period" | "prompt-upgrade")}
                     className="h-8 rounded-lg border border-white/10 bg-ink-800 px-2 text-xs text-white focus:outline-none"
                   >
                     <option value="auto-leave">Automatic Departure / Archive</option>
@@ -202,35 +207,31 @@ export default function AdminAccessRulesPage() {
               <CardTitle>Who Can Create Groups</CardTitle>
             </div>
             <p className="text-[11px] text-slate-400">
-              Specifies the business authorization required to spin up new groups.
+              Creation rights are membership-based and enforced by the Group Creation Rules
+              screen.
             </p>
             <div className="flex flex-col gap-2">
-              {[
-                { id: "all-verified", title: "All Verified Businesses", desc: "Any business with completed onboarding." },
-                { id: "paid-only", title: "Paid Partners Only", desc: "Restricted to Bronze tier and above." },
-                { id: "admin-approved", title: "Admin Pre-Approval", desc: "Every group requires moderator clearance." },
-              ].map((item) => (
-                <label
-                  key={item.id}
-                  className={`flex cursor-pointer items-start gap-2.5 rounded-lg border p-2.5 text-xs transition-colors ${
-                    creationPolicy === item.id
-                      ? "border-gold-500/40 bg-gold-500/10 text-white"
-                      : "border-white/10 bg-ink-950/60 text-slate-300 hover:bg-white/5"
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="creationPolicy"
-                    checked={creationPolicy === item.id}
-                    onChange={() => setCreationPolicy(item.id as any)}
-                    className="mt-0.5 accent-gold-500"
-                  />
-                  <div>
-                    <span className="font-semibold">{item.title}</span>
-                    <p className="text-[10px] text-slate-400">{item.desc}</p>
-                  </div>
-                </label>
-              ))}
+              <div className="rounded-lg border border-gold-500/40 bg-gold-500/10 p-2.5 text-xs text-white">
+                <span className="font-semibold">{rightsLabel}</span>
+                <p className="mt-0.5 text-[10px] text-slate-400">
+                  {eligiblePlanCount} of {MEMBERSHIP_PLANS.length} published plans may run the
+                  Create Group wizard.
+                </p>
+              </div>
+              <div className="rounded-lg border border-white/10 bg-ink-950/60 p-2.5 text-xs text-slate-300">
+                <span className="font-semibold text-white">Everyone else</span>
+                <p className="mt-0.5 text-[10px] text-slate-400">
+                  {creationRules.restrictToPlatformGroup
+                    ? "Joins the admin-set platform group on dashboard entry."
+                    : "Can browse and join groups but cannot create one."}{" "}
+                  Recruitment thresholds: Bronze ~
+                  {creationRules.recruitmentTargets.Bronze.Standard} members, Platinum ~
+                  {creationRules.recruitmentTargets.Platinum["Pro+"]}.
+                </p>
+              </div>
+              <LinkButton to="/admin/config/group-rules" variant="outline" size="sm">
+                Open Group Creation Rules
+              </LinkButton>
             </div>
           </CardBody>
         </Card>
@@ -262,7 +263,7 @@ export default function AdminAccessRulesPage() {
                     type="radio"
                     name="joiningPolicy"
                     checked={joiningPolicy === item.id}
-                    onChange={() => setJoiningPolicy(item.id as any)}
+                    onChange={() => setJoiningPolicy(item.id as "invitation-first" | "open-request" | "strict-approval")}
                     className="mt-0.5 accent-gold-500"
                   />
                   <div>
@@ -302,7 +303,7 @@ export default function AdminAccessRulesPage() {
                     type="radio"
                     name="invitingPolicy"
                     checked={invitingPolicy === item.id}
-                    onChange={() => setInvitingPolicy(item.id as any)}
+                    onChange={() => setInvitingPolicy(item.id as "owners-only" | "all-members" | "admin-assisted")}
                     className="mt-0.5 accent-gold-500"
                   />
                   <div>
