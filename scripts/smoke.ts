@@ -66,6 +66,32 @@ const { AppStoreProvider } = await import("../src/store/AppStore");
 const { default: JourneyProvider } = await import("../src/journey/JourneyProvider");
 const { createRoot } = await import("react-dom/client");
 const { createElement } = await import("react");
+const { createInitialAppState } = await import("../src/store/reducer");
+
+const STORAGE_KEY = "247gbs.group.store.v2";
+
+type MembershipSeed = "platinum" | "bronze";
+
+/**
+ * Pre-seed the persisted store so dashboard cases render behind the paid
+ * access agreement gate exactly like a business that already paid. `fresh`
+ * cases clear storage instead to exercise the gate itself.
+ */
+function seedStore(membership: MembershipSeed = "platinum") {
+  const base = createInitialAppState();
+  const seeded = {
+    ...base,
+    membership: {
+      ...base.membership,
+      tier: membership === "bronze" ? ("Bronze" as const) : ("Platinum" as const),
+      variant: membership === "bronze" ? ("Standard" as const) : ("Pro+" as const),
+      planName: membership === "bronze" ? "Bronze Standard" : "Platinum Pro+",
+      paid: true,
+      agreementAccepted: true,
+    },
+  };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded));
+}
 
 interface SmokeCase {
   path: string;
@@ -73,6 +99,10 @@ interface SmokeCase {
   reject?: string;
   open?: boolean;
   click?: string;
+  /** Clear the persisted store instead of seeding it (access gate check). */
+  fresh?: boolean;
+  /** Membership the seeded store carries for this case. */
+  membership?: MembershipSeed;
 }
 
 const cases: SmokeCase[] = [
@@ -329,6 +359,45 @@ const cases: SmokeCase[] = [
   { path: "/get-started", expect: "Sign up with CHS" },
   { path: "/register", expect: "Sign up with CHS" },
   { path: "/login", expect: "Login with CHS" },
+
+  // Paid access agreement gate — no accepted agreement + payment, no dashboard
+  {
+    path: "/business/overview",
+    fresh: true,
+    expect: "Paid Access Agreement",
+    reject: "Connect with businesses and members through groups.",
+  },
+  {
+    path: "/business/groups/create",
+    fresh: true,
+    expect: "Pay £25 & enter dashboard",
+    reject: "Free group or paid group?",
+  },
+  // Membership-based creation rules: Bronze Standard cannot create groups
+  { path: "/business/groups", membership: "bronze", expect: "Membership locked" },
+  {
+    path: "/business/groups/create",
+    membership: "bronze",
+    expect: "administrators place your membership into",
+    reject: "Free group or paid group?",
+  },
+  // Head start groups seeded on dashboard entry
+  { path: "/business/groups", expect: "Head start groups" },
+  {
+    path: "/business/groups",
+    membership: "bronze",
+    expect: "Non-functional until the administrator's threshold is reached.",
+  },
+  { path: "/business/groups/grp-headstart-b2b", expect: "04 — Group Details" },
+
+  // Admin — Group Creation Rules screen
+  { path: "/admin/config/group-rules", expect: "Group Creation Rules" },
+  { path: "/admin/config/group-rules", expect: "Who can create a group" },
+  { path: "/admin/config/group-rules", expect: "Recruitment requirements per membership" },
+  { path: "/admin/config/group-rules", expect: "Bronze Standard business must recruit 6 members" },
+  { path: "/admin/config/group-rules", expect: "Paid entry & agreement" },
+  { path: "/admin/config/group-rules", expect: "Group activation" },
+  { path: "/admin/config/group-rules", expect: "How the rules combine" },
 ];
 
 const container = dom.window.document.createElement("div");
@@ -337,6 +406,11 @@ dom.window.document.body.appendChild(container);
 let failures = 0;
 
 for (const smokeCase of cases) {
+  if (smokeCase.fresh) {
+    localStorage.removeItem(STORAGE_KEY);
+  } else {
+    seedStore(smokeCase.membership);
+  }
   const smokeRouter = createMemoryRouter(routes, { initialEntries: [smokeCase.path] });
   const root = createRoot(container);
   root.render(

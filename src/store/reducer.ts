@@ -20,23 +20,28 @@ import type {
   InteractionLevel,
   Invitation,
   InvitationStatus,
+  MembershipAccess,
   NetworkContact,
   PartnerRecord,
   ParticipantRole,
+  PlanVariant,
   PlatformAccount,
   ProgrammeRecord,
   RelationshipRecord,
+  Tier,
 } from "../domain/types";
 import {
   BUSINESSES,
   CAMPAIGNS_ADMIN,
   DEFAULT_ADMIN_CONFIG,
+  DEFAULT_GROUP_CREATION_RULES,
   PARTNERS,
   PLATFORM_ACCOUNTS,
   PROGRAMMES_ADMIN,
   RELATIONSHIPS_ADMIN,
 } from "../data/adminData";
 import { GROUPS, GROUP_ACTIVITIES, GROUP_INVITATIONS } from "../data/groupsData";
+import { HEAD_START_GROUPS } from "../data/headStartGroups";
 import { ACTIVITY, CIRCLES } from "../data/mockData";
 
 export const STORE_VERSION = 2;
@@ -55,6 +60,8 @@ export interface AppState {
   circleActivities: ActivityEvent[];
   activeCircleId: string;
   adminConfig: AdminConfig;
+  /** The signed-in business's paid access and access agreement. */
+  membership: MembershipAccess;
   networkContacts: NetworkContact[];
   accounts: PlatformAccount[];
   partners: PartnerRecord[];
@@ -97,6 +104,7 @@ export interface NewNetworkContactInput {
 
 export type AppAction =
   | { type: "group/create"; input: NewGroupInput; owner: Actor }
+  | { type: "group/head-start" }
   | { type: "group/join"; groupId: string; actor: Actor }
   | { type: "group/leave"; groupId: string; actor: Actor }
   | { type: "group/invite"; groupId: string; entries: InvitationEntry[]; actor: Actor }
@@ -116,6 +124,14 @@ export type AppAction =
       account: Actor;
     }
   | { type: "account/register"; account: PlatformAccount }
+  | {
+      type: "membership/activate";
+      tier: Tier;
+      variant: PlanVariant;
+      planName: string;
+      accessDays: number;
+      accessFee: number;
+    }
   | { type: "admin/update-config"; patch: AdminConfigPatch }
   | { type: "admin/group-update"; groupId: string; patch: Partial<Group>; actor: Actor }
   | { type: "admin/group-delete"; groupId: string; actor: Actor }
@@ -220,6 +236,26 @@ export function newPlatformAccount(input: NewAccountInput): PlatformAccount {
   };
 }
 
+/**
+ * The signed-in business starts with no paid access and no accepted
+ * agreement — both are required before the dashboard can be entered.
+ * (`biz-smith` is the demo business every seeded group already uses.)
+ */
+function defaultMembershipAccess(): MembershipAccess {
+  const rules = DEFAULT_GROUP_CREATION_RULES;
+  return {
+    ownerId: "biz-smith",
+    tier: "Bronze",
+    variant: "Standard",
+    planName: "Bronze Standard",
+    status: "Pending",
+    paid: false,
+    accessDays: rules.entryAccessDays,
+    accessFee: rules.entryAccessFee,
+    agreementAccepted: false,
+  };
+}
+
 export function createInitialAppState(): AppState {
   return {
     version: STORE_VERSION,
@@ -231,6 +267,7 @@ export function createInitialAppState(): AppState {
     activeCircleId: CIRCLES[0]?.id ?? "",
     networkContacts: [],
     accounts: PLATFORM_ACCOUNTS.map((account) => ({ ...account })),
+    membership: defaultMembershipAccess(),
     adminConfig: {
       ...DEFAULT_ADMIN_CONFIG,
       automaticGrouping: { ...DEFAULT_ADMIN_CONFIG.automaticGrouping },
@@ -239,6 +276,17 @@ export function createInitialAppState(): AppState {
       paymentRules: {
         ...DEFAULT_ADMIN_CONFIG.paymentRules,
         presets: [...DEFAULT_ADMIN_CONFIG.paymentRules.presets],
+      },
+      groupCreationRules: {
+        ...DEFAULT_ADMIN_CONFIG.groupCreationRules,
+        allowedTiers: [...DEFAULT_ADMIN_CONFIG.groupCreationRules.allowedTiers],
+        allowedVariants: [...DEFAULT_ADMIN_CONFIG.groupCreationRules.allowedVariants],
+        recruitmentTargets: {
+          Bronze: { ...DEFAULT_ADMIN_CONFIG.groupCreationRules.recruitmentTargets.Bronze },
+          Silver: { ...DEFAULT_ADMIN_CONFIG.groupCreationRules.recruitmentTargets.Silver },
+          Gold: { ...DEFAULT_ADMIN_CONFIG.groupCreationRules.recruitmentTargets.Gold },
+          Platinum: { ...DEFAULT_ADMIN_CONFIG.groupCreationRules.recruitmentTargets.Platinum },
+        },
       },
       circleTypes: DEFAULT_ADMIN_CONFIG.circleTypes.map((entry) => ({
         ...entry,
@@ -325,6 +373,55 @@ function registerAccount(
   );
   if (duplicate) return state;
   return { ...state, accounts: [account, ...state.accounts] };
+}
+
+/**
+ * Pays the access fee and accepts the access agreement in one step — the
+ * combination required before dashboard entry and mandatory group activation.
+ */
+function activateMembership(
+  state: AppState,
+  action: Extract<AppAction, { type: "membership/activate" }>
+): AppState {
+  return {
+    ...state,
+    membership: {
+      ...state.membership,
+      tier: action.tier,
+      variant: action.variant,
+      planName: action.planName,
+      status: "Active",
+      paid: true,
+      accessDays: action.accessDays,
+      accessFee: action.accessFee,
+      agreementAccepted: true,
+      agreedAt: nowIso(),
+    },
+  };
+}
+
+/**
+ * Hands the business its pre-populated, incomplete "head start" groups the
+ * first time the dashboard is entered. Idempotent — once they exist in the
+ * store the action is a no-op, and a store reset makes them available again.
+ */
+function seedHeadStartGroups(state: AppState): AppState {
+  if (state.groups.some((group) => group.headStart)) return state;
+  const now = nowIso();
+  const groups = HEAD_START_GROUPS.map((group) => ({ ...group, memberIds: [...group.memberIds] }));
+  const groupActivities: GroupActivity[] = groups.map((group) => ({
+    id: uid("ga"),
+    groupId: group.id,
+    actorName: "Platform",
+    kind: "created",
+    message: `Platform provided a head start group — ${group.name}`,
+    at: now,
+  }));
+  return {
+    ...state,
+    groups: [...groups, ...state.groups],
+    groupActivities: [...groupActivities, ...state.groupActivities],
+  };
 }
 
 /**
@@ -622,6 +719,24 @@ function updateAdminConfig(state: AppState, patch: AdminConfigPatch): AppState {
           ? [...patch.paymentRules.presets]
           : [...(state.adminConfig.paymentRules?.presets ?? [])],
       },
+      groupCreationRules: (() => {
+        const current = state.adminConfig.groupCreationRules ?? DEFAULT_GROUP_CREATION_RULES;
+        const next = { ...current, ...patch.groupCreationRules };
+        const targets = patch.groupCreationRules?.recruitmentTargets ?? current.recruitmentTargets;
+        return {
+          ...next,
+          allowedTiers: [...(patch.groupCreationRules?.allowedTiers ?? current.allowedTiers)],
+          allowedVariants: [
+            ...(patch.groupCreationRules?.allowedVariants ?? current.allowedVariants),
+          ],
+          recruitmentTargets: {
+            Bronze: { ...targets.Bronze },
+            Silver: { ...targets.Silver },
+            Gold: { ...targets.Gold },
+            Platinum: { ...targets.Platinum },
+          },
+        };
+      })(),
       circleTypes: patch.circleTypes
         ? patch.circleTypes.map((entry) => ({ ...entry, allowedDurations: [...entry.allowedDurations] }))
         : state.adminConfig.circleTypes.map((entry) => ({ ...entry, allowedDurations: [...entry.allowedDurations] })),
@@ -738,8 +853,12 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return respondToInvitation(state, action);
     case "invitation/claim":
       return claimInvitation(state, action);
+    case "group/head-start":
+      return seedHeadStartGroups(state);
     case "account/register":
       return registerAccount(state, action);
+    case "membership/activate":
+      return activateMembership(state, action);
     case "admin/update-config": {
       const next = updateAdminConfig(state, action.patch);
       return next;
