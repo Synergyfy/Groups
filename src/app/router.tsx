@@ -40,6 +40,7 @@ import AdminGroupMembersPage from "../features/admin/AdminGroupMembersPage";
 import AdminGroupActivityPage from "../features/admin/AdminGroupActivityPage";
 import AdminGroupRelationshipsPage from "../features/admin/AdminGroupRelationshipsPage";
 import AutomaticGroupRulesPage from "../features/admin/AutomaticGroupRulesPage";
+import AdminGroupRulesPage from "../features/admin/AdminGroupRulesPage";
 import GroupTypeConfigPage from "../features/admin/GroupTypeConfigPage";
 import AdminReportsPage from "../features/admin/AdminReportsPage";
 import LocationRelationshipsPage from "../features/admin/LocationRelationshipsPage";
@@ -247,6 +248,10 @@ const adminRoutes = [
   {
     path: "config/automatic",
     element: <AutomaticGroupRulesPage />,
+  },
+  {
+    path: "config/group-rules",
+    element: <AdminGroupRulesPage />,
   },
   {
     path: "config/types",

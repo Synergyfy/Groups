@@ -8,16 +8,19 @@ import {
   Compass,
   Info,
   ListChecks,
+  Lock,
   Mail,
   MapPinned,
   Network,
   Plus,
+  Rocket,
   Users,
 } from "lucide-react";
 import Badge from "../../components/ui/Badge";
 import LinkButton from "../../components/ui/LinkButton";
 import SectionHeader from "../../components/ui/SectionHeader";
 import { SkeletonRows } from "../../components/ui/Skeleton";
+import GroupListItem from "./GroupListItem";
 import { CURRENT_BUSINESS } from "../../data/businessData";
 import type { MandatoryGroupPricing } from "../../domain/types";
 import { useDemoLoading } from "../../lib/demoDelay";
@@ -25,8 +28,13 @@ import {
   useActor,
   useAppState,
   useAutomaticProgress,
+  useCanCreateGroups,
+  useCreationRightsLabel,
   useGroup,
+  useGroupActivationLookup,
+  useHeadStartGroups,
   useMandatoryGroupStatuses,
+  usePlatformGroup,
 } from "../../store/selectors";
 
 const ACTOR_ID = CURRENT_BUSINESS.id;
@@ -48,6 +56,11 @@ export default function GroupsOverviewPage() {
   const mandatoryStatuses = useMandatoryGroupStatuses(ACTOR_ID);
   const requiredGroups = mandatoryStatuses.filter((entry) => entry.required);
   const missingGroups = requiredGroups.filter((entry) => !entry.satisfied);
+  const canCreate = useCanCreateGroups();
+  const rightsLabel = useCreationRightsLabel();
+  const headStartGroups = useHeadStartGroups();
+  const activationOf = useGroupActivationLookup();
+  const platformGroup = usePlatformGroup();
 
   return (
     <div className="flex flex-col gap-4">
@@ -123,6 +136,69 @@ export default function GroupsOverviewPage() {
               </ul>
             </div>
           )}
+
+          {headStartGroups.length > 0 && (
+            <div data-tour="head-start" className="rounded-2xl border border-info-500/30 bg-ink-900 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  <Rocket className="size-4 text-info-400" />
+                  <p className="text-sm font-semibold text-white">Head start groups</p>
+                  <Badge variant="info">Pre-filled</Badge>
+                </div>
+                <span className="text-[11px] text-slate-400">
+                  Provided on entry — incomplete until the recruitment threshold is reached.
+                </span>
+              </div>
+              <div className="mt-3 flex flex-col gap-2">
+                {headStartGroups.map((group) => {
+                  const activation = activationOf(group);
+                  return (
+                    <GroupListItem
+                      key={group.id}
+                      group={group}
+                      to={`/business/groups/${group.id}`}
+                      progress={{
+                        current: activation.current,
+                        required: activation.target,
+                        remaining: activation.remaining,
+                      }}
+                      progressLabel="Members toward activation"
+                      inactiveNote={
+                        activation.active
+                          ? undefined
+                          : "Non-functional until the administrator's threshold is reached."
+                      }
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {!canCreate && (
+            <p className="flex items-start gap-2 rounded-2xl border border-info-500/30 bg-info-500/10 p-3.5 text-xs leading-relaxed text-info-200">
+              <Lock className="mt-0.5 size-4 shrink-0 text-info-400" />
+              <span>
+                <span className="font-semibold">Group creation is membership-based.</span>{" "}
+                {rightsLabel} can create a group — every other membership joins the platform group
+                set by administrators
+                {platformGroup ? (
+                  <>
+                    :{" "}
+                    <Link
+                      to={`/business/groups/${platformGroup.id}`}
+                      className="font-semibold underline hover:text-info-100"
+                    >
+                      {platformGroup.name}
+                    </Link>
+                  </>
+                ) : (
+                  "."
+                )}
+              </span>
+            </p>
+          )}
+
           <div className="flex flex-col gap-2" data-tour="actions">
             <NavRow
               to="/business/groups/mine"
@@ -156,7 +232,13 @@ export default function GroupsOverviewPage() {
               to="/business/groups/create"
               icon={<Plus className="size-5" />}
               title="Create a Group"
-              description="Optional — start a group only when you need one."
+              description={
+                canCreate
+                  ? "Optional — start a group only when you need one."
+                  : `Locked for your membership — ${rightsLabel} only. Other memberships join the admin platform group.`
+              }
+              badge={canCreate ? undefined : "Membership locked"}
+              badgeVariant="warning"
             />
             <NavRow
               to="/business/invitations"

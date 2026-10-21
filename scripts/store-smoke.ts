@@ -10,13 +10,18 @@ import {
   findAccountByPhone,
   selectAdminFilteredGroups,
   selectAutomaticProgress,
+  selectCanCreateGroups,
+  selectCreationRightsLabel,
   selectExploreGroups,
+  selectGroupActivation,
   selectGroupStats,
+  selectHeadStartGroups,
   selectMandatoryGroupStatuses,
   selectMyGroups,
   selectNetworkContacts,
   selectNetworkStats,
   selectOwnedGroups,
+  selectPlatformGroup,
 } from "../src/store/selectors";
 import {
   contributionLabel,
@@ -1126,6 +1131,104 @@ check(
   "deleting a circle type writes an audit entry",
   typeDeleted.adminConfig.auditLog.some((e) => e.action === "circle-type-deleted")
 );
+
+// --- Paid entry, membership-based creation rules, head start groups ---------
+const defaultRules = initial.adminConfig.groupCreationRules;
+check("initial membership is unpaid and unagreed", initial.membership.paid === false && initial.membership.agreementAccepted === false);
+check("default membership (Bronze Standard) cannot create groups", selectCanCreateGroups(initial) === false);
+check(
+  "creation rights label names the eligible membership",
+  selectCreationRightsLabel(initial).includes("Platinum Pro+"),
+  selectCreationRightsLabel(initial)
+);
+check("default rules only allow Platinum Pro+", defaultRules.allowedTiers.length === 1 && defaultRules.allowedTiers[0] === "Platinum" && defaultRules.allowedVariants.length === 1 && defaultRules.allowedVariants[0] === "Pro+");
+check("default rules enforce activation", defaultRules.activationEnabled === true);
+check("default rules require paid entry", defaultRules.requirePaidAccess === true && defaultRules.entryAccessDays === 90 && defaultRules.entryAccessFee === 25);
+check("default rules place other memberships in a platform group", defaultRules.restrictToPlatformGroup === true && defaultRules.platformGroupId === "grp-local-partners");
+check("admin platform group exists", selectPlatformGroup(initial)?.id === "grp-local-partners", selectPlatformGroup(initial)?.id);
+check("biz-smith starts in the admin platform group", selectPlatformGroup(initial)?.memberIds.includes(ACTOR.id) ?? false);
+
+const entered = appReducer(initial, {
+  type: "membership/activate",
+  tier: "Platinum",
+  variant: "Pro+",
+  planName: "Platinum Pro+",
+  accessDays: defaultRules.entryAccessDays,
+  accessFee: defaultRules.entryAccessFee,
+});
+check("membership activation settles the access fee", entered.membership.paid === true);
+check("membership activation accepts the agreement", entered.membership.agreementAccepted === true);
+check("membership activation records the plan", entered.membership.tier === "Platinum" && entered.membership.variant === "Pro+" && entered.membership.planName === "Platinum Pro+");
+check("membership activation records the paid period", entered.membership.accessDays === defaultRules.entryAccessDays && entered.membership.accessFee === defaultRules.entryAccessFee);
+check("membership activation flips status to Active", entered.membership.status === "Active");
+check("paid Platinum Pro+ may create groups", selectCanCreateGroups(entered) === true);
+check("membership activation leaves groups untouched", entered.groups.length === initial.groups.length);
+
+// Head start groups — handed over on dashboard entry
+check("initial state ships no head start groups", initial.groups.filter((g) => g.headStart === true).length === 0);
+const seeded = appReducer(entered, { type: "group/head-start" });
+const headStart = seeded.groups.filter((g) => g.headStart === true);
+check("head start action seeds 2 groups", headStart.length === 2, `${headStart.length}`);
+check("head start groups are owned by biz-smith", headStart.every((g) => g.ownerId === ACTOR.id));
+check("head start groups are pre-populated but incomplete", headStart.every((g) => g.memberIds.length === 3), headStart.map((g) => g.memberIds.length).join(","));
+check("head start groups do not replace existing groups", seeded.groups.length === initial.groups.length + 2, `${seeded.groups.length}`);
+check("head start groups appear in my groups", selectMyGroups(seeded, ACTOR.id).length === 9, `${selectMyGroups(seeded, ACTOR.id).length}`);
+check("head start groups count as owned", selectOwnedGroups(seeded, ACTOR.id).length === 4, `${selectOwnedGroups(seeded, ACTOR.id).length}`);
+check("head start action logs a created activity per group", seeded.groupActivities.filter((a) => a.message.includes("head start group")).length === 2);
+check("head start selector finds both groups", selectHeadStartGroups(seeded).length === 2);
+const seededAgain = appReducer(seeded, { type: "group/head-start" });
+check("head start action is idempotent", seededAgain === seeded);
+
+// Activation gating against the recruitment threshold
+const seededB2b = seeded.groups.find((g) => g.id === "grp-headstart-b2b");
+const seededActivation = seededB2b ? selectGroupActivation(seeded, seededB2b) : undefined;
+check("head start group is gated by the rules", seededActivation?.gated === true);
+check("head start group is active for Platinum Pro+ (3 of 2)", seededActivation?.active === true && seededActivation.target === 2, `target=${seededActivation?.target} active=${seededActivation?.active}`);
+check("head start group reports tier-based threshold", seededActivation?.tier === "Platinum" && seededActivation?.variant === "Pro+");
+
+// Admin raises the Platinum Pro+ threshold: the group must switch back off
+const raisedTargets = {
+  Bronze: { ...defaultRules.recruitmentTargets.Bronze },
+  Silver: { ...defaultRules.recruitmentTargets.Silver },
+  Gold: { ...defaultRules.recruitmentTargets.Gold },
+  Platinum: { ...defaultRules.recruitmentTargets.Platinum, "Pro+": 5 },
+};
+const raised = appReducer(entered, {
+  type: "admin/update-config",
+  patch: { groupCreationRules: { recruitmentTargets: raisedTargets } },
+});
+check("admin rule patch persists the new threshold", raised.adminConfig.groupCreationRules.recruitmentTargets.Platinum["Pro+"] === 5);
+check("admin rule patch leaves other tiers intact", raised.adminConfig.groupCreationRules.recruitmentTargets.Bronze.Standard === defaultRules.recruitmentTargets.Bronze.Standard);
+const raisedSeeded = appReducer(raised, { type: "group/head-start" });
+const raisedB2b = raisedSeeded.groups.find((g) => g.id === "grp-headstart-b2b");
+const raisedActivation = raisedB2b ? selectGroupActivation(raisedSeeded, raisedB2b) : undefined;
+check("raising the threshold deactivates the group", raisedActivation?.target === 5 && raisedActivation?.active === false && raisedActivation?.remaining === 2, `target=${raisedActivation?.target} remaining=${raisedActivation?.remaining}`);
+
+// Bronze Standard — the inverse-scaled threshold (6 recruits)
+const bronzeEntered = appReducer(initial, {
+  type: "membership/activate",
+  tier: "Bronze",
+  variant: "Standard",
+  planName: "Bronze Standard",
+  accessDays: defaultRules.entryAccessDays,
+  accessFee: defaultRules.entryAccessFee,
+});
+check("Bronze Standard cannot create groups", selectCanCreateGroups(bronzeEntered) === false);
+check("Bronze Standard joins the platform group", (defaultRules.restrictToPlatformGroup && defaultRules.platformGroupId === "grp-local-partners") || !defaultRules.restrictToPlatformGroup);
+const bronzeSeeded = appReducer(bronzeEntered, { type: "group/head-start" });
+const bronzeB2b = bronzeSeeded.groups.find((g) => g.id === "grp-headstart-b2b");
+const bronzeActivation = bronzeB2b ? selectGroupActivation(bronzeSeeded, bronzeB2b) : undefined;
+check("Bronze Standard head start group needs 6 members", bronzeActivation?.target === 6 && bronzeActivation?.active === false && bronzeActivation?.remaining === 3, `target=${bronzeActivation?.target} remaining=${bronzeActivation?.remaining}`);
+
+// Admin can lock creation for every membership
+const locked = appReducer(entered, {
+  type: "admin/update-config",
+  patch: { groupCreationRules: { allowedTiers: [], allowedVariants: [] } },
+});
+check("admins can lock group creation for every membership", selectCanCreateGroups(locked) === false);
+check("locked rules leave the platform group in place", locked.adminConfig.groupCreationRules.restrictToPlatformGroup === true);
+const lockedLabel = selectCreationRightsLabel(locked);
+check("locked rules report that nobody may create groups", lockedLabel === "No membership can create groups", lockedLabel);
 
 console.log(`\n${passed}/${passed + failed} store assertions passed`);
 process.exit(failed > 0 ? 1 : 0);
