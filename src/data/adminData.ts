@@ -4,6 +4,7 @@ import type {
   BusinessRecord,
   CampaignRecord,
   CircleTypeConfigEntry,
+  GroupCreationRules,
   MandatoryCircleRule,
   MandatoryGroupRule,
   PartnerPermissions,
@@ -115,6 +116,36 @@ export const DEFAULT_MANDATORY_GROUPS: MandatoryGroupRule[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Default group creation rules
+//
+// Only the highest membership may create groups by default — Platinum Pro+.
+// Every other membership is placed into the admin-set platform group instead.
+//
+// Recruitment requirements scale inversely with the membership level: a
+// Bronze business must recruit ~6 members before its groups become functional,
+// a Platinum business only ~2. Groups stay non-functional until they reach
+// their threshold, and entry to the dashboard is gated by a paid 90-day or
+// 180-day access fee plus the access agreement.
+// ---------------------------------------------------------------------------
+
+export const DEFAULT_GROUP_CREATION_RULES: GroupCreationRules = {
+  allowedTiers: ["Platinum"],
+  allowedVariants: ["Pro+"],
+  restrictToPlatformGroup: true,
+  platformGroupId: "grp-local-partners",
+  recruitmentTargets: {
+    Bronze: { Standard: 6, Pro: 5, "Pro+": 4 },
+    Silver: { Standard: 5, Pro: 4, "Pro+": 3 },
+    Gold: { Standard: 4, Pro: 3, "Pro+": 2 },
+    Platinum: { Standard: 3, Pro: 2, "Pro+": 2 },
+  },
+  activationEnabled: true,
+  requirePaidAccess: true,
+  entryAccessDays: 90,
+  entryAccessFee: 25,
+};
+
+// ---------------------------------------------------------------------------
 // Default admin config
 // ---------------------------------------------------------------------------
 
@@ -142,6 +173,17 @@ export const DEFAULT_ADMIN_CONFIG: AdminConfig = {
     maxAmount: 500,
     presets: [10, 25, 50, 100],
     allowCustom: true,
+  },
+  groupCreationRules: {
+    ...DEFAULT_GROUP_CREATION_RULES,
+    allowedTiers: [...DEFAULT_GROUP_CREATION_RULES.allowedTiers],
+    allowedVariants: [...DEFAULT_GROUP_CREATION_RULES.allowedVariants],
+    recruitmentTargets: {
+      Bronze: { ...DEFAULT_GROUP_CREATION_RULES.recruitmentTargets.Bronze },
+      Silver: { ...DEFAULT_GROUP_CREATION_RULES.recruitmentTargets.Silver },
+      Gold: { ...DEFAULT_GROUP_CREATION_RULES.recruitmentTargets.Gold },
+      Platinum: { ...DEFAULT_GROUP_CREATION_RULES.recruitmentTargets.Platinum },
+    },
   },
   circleTypes: DEFAULT_CIRCLE_TYPES.map((entry) => ({ ...entry, allowedDurations: [...entry.allowedDurations] })),
   mandatoryCircles: DEFAULT_MANDATORY_CIRCLES.map((entry) => ({ ...entry })),

@@ -1,6 +1,7 @@
 import {
   Crown,
   FolderKanban,
+  Gauge,
   KeyRound,
   LayoutDashboard,
   Mail,
@@ -43,6 +44,12 @@ const ADMIN_NAV: NavSection[] = [
         to: "/admin/access-rules",
         label: "Access Rules",
         icon: <KeyRound className="size-4" />,
+        end: true,
+      },
+      {
+        to: "/admin/config/group-rules",
+        label: "Group Rules",
+        icon: <Gauge className="size-4" />,
         end: true,
       },
       {

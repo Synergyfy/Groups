@@ -61,6 +61,29 @@ export type ActivityStatus = "active" | "inactive";
 
 export type Tier = "Bronze" | "Silver" | "Gold" | "Platinum";
 
+export const TIERS_ORDERED: Tier[] = ["Bronze", "Silver", "Gold", "Platinum"];
+
+/** Every tier ships three subscription variants. */
+export type PlanVariant = "Standard" | "Pro" | "Pro+";
+
+export const PLAN_VARIANTS: PlanVariant[] = ["Standard", "Pro", "Pro+"];
+
+/** A subscription plan as published on the Memberships screen. */
+export interface MembershipPlan {
+  id: string;
+  tier: Tier;
+  variant: PlanVariant;
+  name: string;
+  priceMonthly: number;
+  billingFrequency: "Monthly" | "Annual";
+  status: "Active" | "Draft" | "Closed";
+  groupQuota: number;
+  circleQuota: number;
+  revenueSharePercent: number;
+  features: string[];
+  subscriberCount: number;
+}
+
 export interface CircleMember {
   id: string;
   fullName: string;
@@ -140,6 +163,13 @@ export interface Group {
   name: string;
   type: GroupType;
   source: GroupSource;
+  /**
+   * Set on the pre-populated, incomplete groups a business finds waiting in
+   * its dashboard on entry ("head start" groups). They are still owned by the
+   * business — they simply arrive half-built and must be recruited up to the
+   * administrator's activation threshold before they become functional.
+   */
+  headStart?: boolean;
   purpose: string;
   ownerId: string;
   ownerName: string;
@@ -328,11 +358,62 @@ export interface GroupPaymentRules {
   allowCustom: boolean;
 }
 
+/**
+ * Administrator rules for how businesses create groups.
+ *
+ * - `allowedTiers` / `allowedVariants` decide which memberships may create a
+ *   group. Everyone else is placed into the admin-set platform group instead.
+ * - `recruitmentTargets` is the recruitment requirement per membership, and it
+ *   scales inversely with the membership level (Bronze ~6 recruits down to
+ *   Platinum ~2). Groups stay non-functional until they reach their target.
+ * - `entryAccessDays` / `entryAccessFee` are the paid access models (90-day or
+ *   180-day) that must be paid — and agreed to — before dashboard entry.
+ */
+export interface GroupCreationRules {
+  allowedTiers: Tier[];
+  allowedVariants: PlanVariant[];
+  /** Place members without creation rights into the admin platform group. */
+  restrictToPlatformGroup: boolean;
+  /** The group administrators assign those members to. */
+  platformGroupId: string | null;
+  /** Members needed per membership before a group becomes functional. */
+  recruitmentTargets: Record<Tier, Record<PlanVariant, number>>;
+  /** When off, groups are functional immediately regardless of size. */
+  activationEnabled: boolean;
+  /** Paid access (the entry fee below) is required before dashboard entry. */
+  requirePaidAccess: boolean;
+  /** Length of the paid access period — 90-day or 180-day access model. */
+  entryAccessDays: 90 | 180;
+  /** Fee charged for that access period. */
+  entryAccessFee: number;
+}
+
+/**
+ * The signed-in business's paid access: its plan, whether the access fee has
+ * been paid, and whether the mandatory access agreement has been accepted.
+ * Both the fee and the agreement are required before dashboard entry.
+ */
+export interface MembershipAccess {
+  ownerId: string;
+  tier: Tier;
+  variant: PlanVariant;
+  planName: string;
+  status: "Active" | "Pending" | "Expired";
+  paid: boolean;
+  /** Length of the paid access period, in days. */
+  accessDays: number;
+  /** Access fee settled on activation. */
+  accessFee: number;
+  agreementAccepted: boolean;
+  agreedAt?: string;
+}
+
 export interface AdminConfig {
   automaticGrouping: AutomaticGroupConfig;
   groupTypes: GroupTypeConfig[];
   stageLabels: string[];
   paymentRules: GroupPaymentRules;
+  groupCreationRules: GroupCreationRules;
   circleTypes: CircleTypeConfigEntry[];
   mandatoryCircles: MandatoryCircleRule[];
   mandatoryGroups: MandatoryGroupRule[];
@@ -345,6 +426,7 @@ export interface AdminConfigPatch {
   groupTypes?: GroupTypeConfig[];
   stageLabels?: string[];
   paymentRules?: Partial<GroupPaymentRules>;
+  groupCreationRules?: Partial<GroupCreationRules>;
   circleTypes?: CircleTypeConfigEntry[];
   mandatoryCircles?: MandatoryCircleRule[];
   mandatoryGroups?: MandatoryGroupRule[];
