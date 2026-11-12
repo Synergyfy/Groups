@@ -8,28 +8,29 @@ import {
   LogOut,
   Bell,
 } from "lucide-react";
-import { useAppState, useIncomingInvitations, selectMyGroups } from "../../store/selectors";
-import { readParticipantSession } from "../../app/authSession";
+import { useConsumerData } from "../../consumer/ConsumerDataProvider";
+import { readParticipantSession, clearAuthSession } from "../../app/authSession";
+import { authApi } from "../../app/api";
 
 export default function ConsumerLayout() {
   const navigate = useNavigate();
   const session = readParticipantSession();
-  const state = useAppState();
+  const { groups, invitations } = useConsumerData();
 
-  const consumerId = session?.role === "consumer" ? (session.accountId || "cons-john") : "cons-john";
   const consumerName = session?.role === "consumer" ? session.name : "John Doe";
 
-  const invitations = useIncomingInvitations(consumerId);
   const pendingInvites = invitations.filter(
     (inv) => inv.kind === "invite" && inv.status === "pending"
   );
-  const myGroups = selectMyGroups(state, consumerId).filter(
-    (group) => group.ownerId !== "system" || group.memberIds.includes(consumerId)
-  );
+  const myGroups = groups;
 
-  const handleSignOut = () => {
-    sessionStorage.removeItem("chs-auth-state");
-    navigate("/");
+  const handleSignOut = async () => {
+    try {
+      await authApi.logout();
+    } finally {
+      clearAuthSession();
+      navigate("/");
+    }
   };
 
   return (

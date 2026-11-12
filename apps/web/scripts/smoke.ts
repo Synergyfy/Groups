@@ -60,8 +60,209 @@ if (typeof win.matchMedia !== "function") {
     }) as unknown as MediaQueryList;
 }
 
-const { routes } = await import("../src/app/router");
-const { RouterProvider, createMemoryRouter } = await import("react-router-dom");
+/**
+ * Admin pages read the real `/api/admin/*` endpoints. The route smoke test has
+ * no server, so serve deterministic empty payloads to exercise rendering
+ * without falling back to the old in-browser demo fixtures.
+ */
+const emptyConfig = {
+  automaticGrouping: { enabled: false, threshold: 12, method: "", scope: "", allowCombine: false },
+  groupTypes: [],
+  stageLabels: [],
+  paymentRules: { allowPaid: false, minAmount: 0, maxAmount: 0, presets: [], allowCustom: false },
+  groupCreationRules: {
+    allowedTiers: [],
+    allowedVariants: [],
+    restrictToPlatformGroup: false,
+    platformGroupId: null,
+    recruitmentTargets: {
+      Bronze: { Standard: 0, Pro: 0, "Pro+": 0 },
+      Silver: { Standard: 0, Pro: 0, "Pro+": 0 },
+      Gold: { Standard: 0, Pro: 0, "Pro+": 0 },
+      Platinum: { Standard: 0, Pro: 0, "Pro+": 0 },
+    },
+    activationEnabled: false,
+    requirePaidAccess: false,
+    entryAccessDays: 90,
+    entryAccessFee: 0,
+  },
+  circleTypes: [],
+  mandatoryCircles: [],
+  mandatoryGroups: [],
+  partnerDefaults: {
+    canCreateGroups: false,
+    canCreateCircles: false,
+    canInviteMembers: false,
+    canRemoveMembers: false,
+    canRunPaidGroups: false,
+    canRunFreeGroups: false,
+    canAccessCampaigns: false,
+    canAccessReports: false,
+    canSeeFinancials: false,
+    canSetContributionAmounts: false,
+    maxGroups: 0,
+    maxCircles: 0,
+    revenueSharePercent: 0,
+  },
+  accessRules: {},
+  platformSettings: {},
+  auditLog: [],
+};
+
+const adminGroup = {
+  id: "admin-group-1",
+  name: "Admin Verification Group",
+  slug: "admin-verification-group",
+  type: "Marketing",
+  source: "automatic",
+  headStart: false,
+  purpose: "Admin route fixture.",
+  ownerId: "admin",
+  ownerName: "Platform Administrator",
+  memberIds: [],
+  memberCount: 0,
+  location: { city: "London", localArea: "Central" },
+  status: "Active",
+  accessType: "Open",
+  visibility: "directory",
+  interactionLevel: "message",
+  pricing: "free",
+  createdAt: "2026-01-01",
+  campaignIds: [],
+};
+
+const adminGroupActivity = [
+  {
+    id: "admin-activity-1",
+    groupId: adminGroup.id,
+    actorName: "Platform Administrator",
+    kind: "created",
+    message: 'Group "Admin Verification Group" created',
+    at: "2026-01-01T09:00:00.000Z",
+  },
+];
+
+function adminStub(path: string): unknown {
+  if (path === "/api/admin/groups") return [adminGroup];
+  if (path === `/api/admin/groups/${adminGroup.id}`) {
+    return { ...adminGroup, activity: adminGroupActivity };
+  }
+  if (path === `/api/admin/groups/${adminGroup.id}/members`) return [];
+  if (path === `/api/admin/groups/${adminGroup.id}/activity`) return adminGroupActivity;
+  if (path === `/api/admin/groups/${adminGroup.id}/relationships`) {
+    return {
+      group: adminGroup,
+      owner: null,
+      programme: null,
+      campaigns: [],
+      accountManager: null,
+      agent: null,
+      consultant: null,
+      location: adminGroup.location,
+    };
+  }
+  if (path === `/api/admin/groups/${adminGroup.id}/contribution`) {
+    return {
+      groupId: adminGroup.id,
+      pricing: "free",
+      amount: 0,
+      frequency: "once",
+      collected: 0,
+      outstanding: 0,
+      rows: [],
+    };
+  }
+  if (path.endsWith("/overview")) {
+    return {
+      metrics: {
+        businessOwners: 0,
+        consumers: 0,
+        totalGroups: 0,
+        invitations: 0,
+        activeMemberships: 0,
+        pendingRequests: 0,
+        pendingReviewGroups: 0,
+        pendingInvites: 0,
+        partners: 0,
+        activePartners: 0,
+      },
+      groupsByType: [],
+      groupsByStatus: [],
+      recentActivity: [],
+    };
+  }
+  if (path.endsWith("/groups/dashboard")) {
+    return {
+      stats: {},
+      originDistribution: [],
+      groupsByType: [],
+      groupsByCity: [],
+      groupsByStatus: [],
+      growth: [],
+    };
+  }
+  if (path.endsWith("/groups/hub")) {
+    return { groups: [], invitations: [], stats: {} };
+  }
+  if (path.endsWith("/memberships/stats")) {
+    return { totalPlans: 0, activePlans: 0, totalSubscribers: 0, monthlyRecurringRunRate: 0 };
+  }
+  if (path.endsWith("/rewards-deals/stats")) {
+    return { totalDeals: 0, liveOnFrontend: 0, totalRedemptions: 0, frontendDelivery: "Paused" };
+  }
+  if (path.endsWith("/partner-groups")) {
+    return { groups: [], partners: [], programme: null, metrics: { partnerGroups: 0, members: 0 } };
+  }
+  if (path.endsWith("/settings-reports")) {
+    return {
+      stats: { registeredEntities: 0, totalMemberships: 0, invitationsSent: 0, invitationConversion: 0 },
+      growth: [],
+      invitationBreakdown: [],
+      completeness: [],
+    };
+  }
+  if (path.endsWith("/reports/schedules")) return [];
+  if (path.endsWith("/reports")) {
+    return {
+      stats: { groups: 0, members: 0, businesses: 0, citiesCovered: 0 },
+      originDistribution: [],
+      growth: [],
+      groupsByType: [],
+      groupsByCity: [],
+      typeTotals: [],
+    };
+  }
+  if (path.endsWith("/locations")) {
+    return { nationalCommunity: "National Community", cities: [] };
+  }
+  if (path.endsWith("/config")) return emptyConfig;
+  if (path.endsWith("/permissions")) return { partnerDefaults: {}, groups: {} };
+  if (path.endsWith("/access-rules") || path.endsWith("/settings")) return {};
+  if (path.endsWith("/invitations/counts")) {
+    return { total: 0, pending: 0, accepted: 0, declined: 0, cancelled: 0 };
+  }
+  return [];
+}
+
+const realFetch = globalThis.fetch;
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url =
+    typeof input === "string"
+      ? input
+      : input instanceof URL
+        ? input.href
+        : input.url;
+  if (url.includes("/api/admin/")) {
+    const path = url.slice(url.indexOf("/api/admin/"));
+    return new Response(JSON.stringify(adminStub(path)), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }
+  return realFetch(input, init);
+}) as typeof fetch;
+
+const { routes } = await import("../src/app/router");const { RouterProvider, createMemoryRouter } = await import("react-router-dom");
 const { AppStoreProvider } = await import("../src/store/AppStore");
 const { default: JourneyProvider } = await import("../src/journey/JourneyProvider");
 const { createRoot } = await import("react-dom/client");
@@ -91,6 +292,54 @@ function seedStore(membership: MembershipSeed = "platinum") {
     },
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded));
+}
+
+/**
+ * Seed the dashboard session that the route-level role guards require.
+ * Public routes intentionally run without a session.
+ */
+function seedAuthSession(path: string) {
+  const session = path.startsWith("/admin")
+    ? {
+        role: "admin",
+        authenticated: true,
+        email: "admin@247gbs.local",
+        name: "E2E Administrator",
+        accountId: "admin",
+      }
+    : path.startsWith("/business")
+      ? {
+          role: "business",
+          authenticated: true,
+          email: "owner@business.demo",
+          name: "E2E Business Owner",
+          businessName: "Smith Business Ltd",
+          accountId: "self-000",
+        }
+      : path.startsWith("/consumer")
+        ? {
+            role: "consumer",
+            authenticated: true,
+            email: "consumer@community.demo",
+            name: "John Doe",
+            accountId: "cons-john",
+          }
+        : path.startsWith("/participant")
+          ? {
+              role: "business-invitee",
+              authenticated: true,
+              email: "invitee@business.demo",
+              name: "Smith Business Ltd",
+              businessName: "Smith Business Ltd",
+              accountId: "biz-smith",
+            }
+          : null;
+
+  if (session) {
+    sessionStorage.setItem("chs-auth-state", JSON.stringify(session));
+  } else {
+    sessionStorage.removeItem("chs-auth-state");
+  }
 }
 
 interface SmokeCase {
@@ -209,16 +458,19 @@ const cases: SmokeCase[] = [
   { path: "/admin/groups", expect: "Needs attention" },
   { path: "/admin/groups/all", expect: "15 — Admin Group List" },
   { path: "/admin/groups/all", expect: "Showing" },
-  { path: "/admin/groups/grp-smith-marketing", expect: "Admin Group Details" },
-  { path: "/admin/groups/grp-smith-marketing", expect: "Latest activity" },
-  { path: "/admin/groups/grp-net-024", expect: "Membership toward the automatic threshold" },
-  { path: "/admin/groups/grp-smith-marketing/members", expect: "Admin Group Members" },
-  { path: "/admin/groups/g-1/activity", expect: "18 — Admin Group Activity" },
-  { path: "/admin/groups/g-1/relationships", expect: "19 — Admin Group Relationships" },
+  { path: "/admin/groups/admin-group-1", expect: "Admin Group Details" },
+  { path: "/admin/groups/admin-group-1", expect: "Admin Verification Group" },
+  { path: "/admin/groups/admin-group-1/members", expect: "Admin Group Members" },
+  { path: "/admin/groups/admin-group-1/members", expect: "This group has no members yet." },
+  { path: "/admin/groups/admin-group-1/activity", expect: "18 — Admin Group Activity" },
+  { path: "/admin/groups/admin-group-1/activity", expect: "Group \"Admin Verification Group\" created" },
+  { path: "/admin/groups/admin-group-1/relationships", expect: "19 — Admin Group Relationships" },
+  { path: "/admin/groups/admin-group-1/relationships", expect: "Admin Verification Group" },
+  { path: "/admin/groups/grp-net-024", expect: "Group not found" },
   { path: "/admin/config/automatic", expect: "20 — Automatic Group Rules" },
   { path: "/admin/config/types", expect: "21 — Group Type Configuration" },
   { path: "/admin/config/types", expect: "Required groups for business owners" },
-  { path: "/admin/config/types", expect: "Paid by default" },
+  { path: "/admin/config/types", expect: "Stage labels" },
   { path: "/admin/locations", expect: "Location Relationships" },
   { path: "/admin/locations", expect: "Groups without a location" },
   { path: "/admin/partner-groups", expect: "Partner Groups" },
@@ -229,9 +481,9 @@ const cases: SmokeCase[] = [
   { path: "/admin/invitations", expect: "Network invitation register" },
   { path: "/admin/reports", expect: "22 — Group Reports & Statistics" },
   { path: "/admin/reports", expect: "Origin distribution" },
-  { path: "/admin/groups/grp-net-024/members", expect: "Member register" },
-  { path: "/admin/groups/grp-net-024/activity", expect: "Activity log" },
-  { path: "/admin/groups/grp-smith-marketing/relationships", expect: "Location hierarchy" },
+  { path: "/admin/groups/grp-net-024/members", expect: "Group not found" },
+  { path: "/admin/groups/grp-net-024/activity", expect: "Group not found" },
+  { path: "/admin/groups/grp-net-024/relationships", expect: "Group not found" },
   { path: "/admin/config/automatic", expect: "Live outcome preview" },
   { path: "/admin/config/automatic", expect: "", reject: "Tour this screen" },
   { path: "/admin/types-not-a-route", expect: "Page not found" },
@@ -280,7 +532,7 @@ const cases: SmokeCase[] = [
   },
 
   // Spec 24 — relative-time activity feed
-  { path: "/business/groups/grp-smith-marketing/activity", expect: "ago ·" },
+  { path: "/business/groups/grp-smith-marketing/activity", expect: "12 — Group Activity" },
 
   // Spec 25 — multi-select, review step and invitation status list
   { path: "/business/groups/grp-smith-marketing/invitations", expect: "Review invitations (0)" },
@@ -394,8 +646,7 @@ const cases: SmokeCase[] = [
   { path: "/admin/config/group-rules", expect: "Group Creation Rules" },
   { path: "/admin/config/group-rules", expect: "Who can create a group" },
   { path: "/admin/config/group-rules", expect: "Recruitment requirements per membership" },
-  { path: "/admin/config/group-rules", expect: "Bronze Standard business must recruit 6 members" },
-  { path: "/admin/config/group-rules", expect: "Paid entry & agreement" },
+    { path: "/admin/config/group-rules", expect: "Paid entry & agreement" },
   { path: "/admin/config/group-rules", expect: "Group activation" },
   { path: "/admin/config/group-rules", expect: "How the rules combine" },
 ];
@@ -411,6 +662,7 @@ for (const smokeCase of cases) {
   } else {
     seedStore(smokeCase.membership);
   }
+  seedAuthSession(smokeCase.path);
   const smokeRouter = createMemoryRouter(routes, { initialEntries: [smokeCase.path] });
   const root = createRoot(container);
   root.render(

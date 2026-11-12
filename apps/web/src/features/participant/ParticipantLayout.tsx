@@ -10,7 +10,8 @@ import {
 import { useState } from "react";
 import { getParticipantIdentity } from "./participantIdentity";
 import { useAppState, useIncomingInvitations, selectMyGroups } from "../../store/selectors";
-import { readParticipantSession } from "../../app/authSession";
+import { readParticipantSession, clearAuthSession } from "../../app/authSession";
+import { authApi } from "../../app/api";
 import ChsBusinessVerificationModal from "../../components/ui/ChsBusinessVerificationModal";
 
 export default function ParticipantLayout() {
@@ -30,9 +31,13 @@ export default function ParticipantLayout() {
     (group) => group.ownerId !== "system" || group.memberIds.includes(identity.id)
   );
 
-  const handleSignOut = () => {
-    sessionStorage.removeItem("chs-auth-state");
-    navigate("/");
+  const handleSignOut = async () => {
+    try {
+      await authApi.logout();
+    } finally {
+      clearAuthSession();
+      navigate("/");
+    }
   };
 
   return (

@@ -18,12 +18,18 @@ import Card, { CardBody, CardTitle } from "../../components/ui/Card";
 import EmptyState from "../../components/ui/EmptyState";
 import LinkButton from "../../components/ui/LinkButton";
 import SectionHeader from "../../components/ui/SectionHeader";
+import Toast from "../../components/ui/Toast";
 import { CURRENT_BUSINESS } from "../../data/businessData";
 import type { InteractionLevel } from "../../domain/types";
 import { useAppStore } from "../../store/context";
 import { useGroup, useInvitation, useProgrammes } from "../../store/selectors";
 import { contributionLabel, memberCountOf } from "../groups/groupUtils";
 import { getParticipantIdentity } from "../participant/participantIdentity";
+import { errorMessage } from "../../app/api";
+import {
+  businessApi,
+  useOptionalBusinessData,
+} from "../../business/BusinessDataProvider";
 
 const ACCESS_LABELS: Record<string, string> = {
   open: "Open — anyone can join",
@@ -65,6 +71,7 @@ export default function InvitationReviewPage() {
   const invitationsPath = `${base}/invitations`;
 
   const { dispatch } = useAppStore();
+  const business = useOptionalBusinessData();
   const invitation = useInvitation(invitationId);
   const group = useGroup(invitation?.groupId);
   const programmes = useProgrammes();
@@ -72,10 +79,41 @@ export default function InvitationReviewPage() {
   const actor =
     scope === "participant"
       ? getParticipantIdentity()
-      : { id: CURRENT_BUSINESS.id, name: CURRENT_BUSINESS.businessName };
+      : business?.profile
+        ? { id: business.profile.business.id, name: business.profile.business.name }
+        : { id: CURRENT_BUSINESS.id, name: CURRENT_BUSINESS.businessName };
 
   const [confirmed, setConfirmed] = useState(false);
   const [joined, setJoined] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  const respond = async (accept: boolean) => {
+    if (scope === "business" && business) {
+      try {
+        await businessApi.respondInvitation(invitation!.id, accept);
+        await business.refresh();
+        if (accept) {
+          setJoined(true);
+        } else {
+          navigate(invitationsPath);
+        }
+      } catch (cause) {
+        setFeedback(errorMessage(cause));
+      }
+      return;
+    }
+    dispatch({
+      type: "invitation/respond",
+      invitationId: invitation!.id,
+      accept,
+      responder: { id: actor.id, name: actor.name },
+    });
+    if (accept) {
+      setJoined(true);
+    } else {
+      navigate(invitationsPath);
+    }
+  };
 
   // --- Guard states -------------------------------------------------------
   const backAction = (
@@ -89,7 +127,7 @@ export default function InvitationReviewPage() {
       <div className="flex flex-col gap-4">
         <EmptyState
           title="Invitation not found"
-          description="This invitation link is not valid, or it has been removed from the demo store."
+          description="This invitation link is not valid, or it has been removed."
           icon={<ShieldQuestion className="size-6" />}
           action={backAction}
         />
@@ -374,15 +412,7 @@ export default function InvitationReviewPage() {
               variant="primary"
               size="md"
               disabled={!confirmed}
-              onClick={() => {
-                dispatch({
-                  type: "invitation/respond",
-                  invitationId: invitation.id,
-                  accept: true,
-                  responder: { id: actor.id, name: actor.name },
-                });
-                setJoined(true);
-              }}
+              onClick={() => respond(true)}
             >
               <Check className="size-4" /> Yes, join this group
             </Button>
@@ -392,15 +422,7 @@ export default function InvitationReviewPage() {
             <Button
               variant="danger"
               size="md"
-              onClick={() => {
-                dispatch({
-                  type: "invitation/respond",
-                  invitationId: invitation.id,
-                  accept: false,
-                  responder: { id: actor.id, name: actor.name },
-                });
-                navigate(invitationsPath);
-              }}
+              onClick={() => respond(false)}
             >
               <X className="size-4" /> Decline invitation
             </Button>
@@ -413,6 +435,7 @@ export default function InvitationReviewPage() {
           )}
         </CardBody>
       </Card>
+      {feedback && <Toast message={feedback} onDismiss={() => setFeedback(null)} />}
     </div>
   );
 }

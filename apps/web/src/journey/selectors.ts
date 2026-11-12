@@ -1,5 +1,6 @@
 import { useLocation } from "react-router-dom";
 import { useAppState } from "../store/selectors";
+import { useOptionalBusinessData } from "../business/BusinessDataProvider";
 import { useJourney } from "./context";
 import { ADMIN_STEPS, BUSINESS_STEPS, type JourneyScope, type JourneyStep } from "./steps";
 import { matchPath, routeNote } from "./routes";
@@ -24,15 +25,22 @@ export interface JourneyStatus {
 export function useJourneyStatus(): JourneyStatus {
   const location = useLocation();
   const state = useAppState();
+  const business = useOptionalBusinessData();
   const { visited, manual } = useJourney();
 
   const scope: JourneyScope = location.pathname.startsWith("/admin") ? "admin" : "business";
   const steps = scope === "admin" ? ADMIN_STEPS : BUSINESS_STEPS;
   const detectContext = { state, visited };
+  // The API owns the authoritative completion state. Local detection and manual
+  // overrides only fill gaps so the checklist still works without a provider.
+  const serverDone = scope === "business" ? (business?.journey?.done ?? {}) : {};
 
   const done: Record<string, boolean> = {};
   for (const step of steps) {
-    done[step.id] = Boolean(step.detect?.(detectContext)) || manual.includes(step.id);
+    done[step.id] =
+      Boolean(serverDone[step.id]) ||
+      Boolean(step.detect?.(detectContext)) ||
+      manual.includes(step.id);
   }
 
   const firstOpen = steps.findIndex((step) => !done[step.id]);

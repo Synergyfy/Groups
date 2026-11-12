@@ -17,9 +17,7 @@ import {
   X,
 } from "lucide-react";
 import Badge from "../../components/ui/Badge";
-import { selectMyGroups, useAppState, useIncomingInvitations } from "../../store/selectors";
-import { useAppStore } from "../../store/context";
-import { findDirectoryEntry } from "../../data/businessData";
+import { useConsumerData } from "../../consumer/ConsumerDataProvider";
 import { readParticipantSession } from "../../app/authSession";
 import type { Group } from "../../domain/types";
 
@@ -28,14 +26,11 @@ export default function ConsumerMyGroupsPage() {
     document.title = "CHS Groups | My Groups";
   }, []);
 
-  const state = useAppState();
-  const { dispatch } = useAppStore();
+  const { groups, invitations, leave, respond } = useConsumerData();
   const session = readParticipantSession();
 
-  const consumerId = session?.role === "consumer" ? (session.accountId || "cons-john") : "cons-john";
-  const consumerName = (session?.role === "consumer" && session.name) ? session.name : "John Doe";
+  const consumerId = session?.role === "consumer" ? (session.accountId || session.email || "") : "";
 
-  const invitations = useIncomingInvitations(consumerId);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<"all" | "local" | "invites">("all");
@@ -54,10 +49,8 @@ export default function ConsumerMyGroupsPage() {
 
   // Groups joined by this consumer
   const myGroups = useMemo(() => {
-    return selectMyGroups(state, consumerId).filter(
-      (group) => group.ownerId !== "system" || group.memberIds.includes(consumerId)
-    );
-  }, [state, consumerId]);
+    return groups;
+  }, [groups]);
 
   // Total members connected across joined groups
   const totalConnectedMembers = useMemo(() => {
@@ -85,22 +78,13 @@ export default function ConsumerMyGroupsPage() {
 
   const handleLeaveGroup = (group: Group) => {
     if (window.confirm(`Are you sure you want to leave "${group.name}"?`)) {
-      dispatch({
-        type: "group/leave",
-        groupId: group.id,
-        actor: { id: consumerId, name: consumerName },
-      });
+      void leave(group.id);
       showToast(`You have left ${group.name}.`);
     }
   };
 
   const handleAcceptInvite = (invitationId: string) => {
-    dispatch({
-      type: "invitation/respond",
-      invitationId,
-      accept: true,
-      responder: { id: consumerId, name: consumerName },
-    });
+    void respond(invitationId, true);
     showToast("Invitation accepted! Group joined.");
   };
 
@@ -229,7 +213,7 @@ export default function ConsumerMyGroupsPage() {
 
           <div className="grid gap-3 sm:grid-cols-2">
             {pendingInvites.map((inv) => {
-              const group = inv.groupId ? state.groups.find((g) => g.id === inv.groupId) : null;
+              const group = inv.groupId ? groups.find((g) => g.id === inv.groupId) : null;
               return (
                 <div
                   key={inv.id}
@@ -301,9 +285,7 @@ export default function ConsumerMyGroupsPage() {
             <div className="grid gap-4 sm:grid-cols-2">
               {filteredGroups.map((group) => {
                 const memberPreview = group.memberIds.slice(0, 5).map((id) => {
-                  const entry = findDirectoryEntry(id);
-                  const account = state.accounts.find((row) => row.id === id);
-                  const name = account?.name ?? entry.name;
+                  const name = id;
                   return { id, name };
                 });
 
@@ -449,12 +431,10 @@ export default function ConsumerMyGroupsPage() {
             <div className="mt-3 flex-1 overflow-y-auto pr-1">
               <div className="grid gap-2">
                 {selectedGroupMembersModal.memberIds.map((id) => {
-                  const entry = findDirectoryEntry(id);
-                  const account = state.accounts.find((row) => row.id === id);
-                  const name = account?.name ?? entry.name;
+                  const name = id;
                   const isOwner = id === selectedGroupMembersModal.ownerId;
                   const isSelf = id === consumerId;
-                  const city = entry.city || selectedGroupMembersModal.location?.city || "United Kingdom";
+                  const city = selectedGroupMembersModal.location?.city || "United Kingdom";
 
                   return (
                     <div

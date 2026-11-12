@@ -4,12 +4,17 @@ import Card, { CardBody, CardTitle } from "../../components/ui/Card";
 import SectionHeader from "../../components/ui/SectionHeader";
 import StatCard from "../../components/ui/StatCard";
 import TipIcon from "../../components/ui/TipIcon";
-import { LOCATIONS } from "../../data/locationsData";
 import { useAppState } from "../../store/selectors";
+import { useAdminData } from "../../admin/AdminDataProvider";
 import { memberCountOf } from "../groups/groupUtils";
 
 export default function LocationRelationshipsPage() {
   const state = useAppState();
+  const { data } = useAdminData();
+  const LOCATIONS = data?.locations ?? {
+    nationalCommunity: "National Community",
+    cities: [],
+  };
   const groups = state.groups;
 
   const locationGroups = groups.filter((group) => group.location?.city);
@@ -157,7 +162,7 @@ export default function LocationRelationshipsPage() {
             <TipIcon text="Attach a city later and the group moves into the right card above automatically." />
           </div>
           {noLocation.length === 0 ? (
-            <p className="text-xs text-slate-400">Every group in the demo store has a city.</p>
+            <p className="text-xs text-slate-400">Every group has a city.</p>
           ) : (
             <div className="flex flex-wrap gap-2">
               {noLocation.map((group) => (

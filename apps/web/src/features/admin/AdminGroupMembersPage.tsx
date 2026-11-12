@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import {
   Banknote,
@@ -15,10 +15,10 @@ import Table from "../../components/ui/Table";
 import TipIcon from "../../components/ui/TipIcon";
 import Toast from "../../components/ui/Toast";
 import type { TableColumn } from "../../components/ui/Table";
-import { findDirectoryEntry } from "../../data/businessData";
 import { useAppState, useGroup } from "../../store/selectors";
+import { useAdminDirectoryEntry } from "../../admin/AdminDataProvider";
+import { adminApi } from "../../admin/adminApi";
 import { useAppStore } from "../../store/context";
-import { useDemoLoading } from "../../lib/demoDelay";
 import { SkeletonCard, SkeletonRows } from "../../components/ui/Skeleton";
 import { memberCountOf } from "../groups/groupUtils";
 import AdminGroupTabsHeader, { AdminGroupMissingState } from "./AdminGroupTabsHeader";
@@ -43,15 +43,43 @@ export default function AdminGroupMembersPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const group = useGroup(groupId);
   const state = useAppState();
+  const findDirectoryEntry = useAdminDirectoryEntry();
   const { dispatch } = useAppStore();
-  const loading = useDemoLoading();
+  const loading = false;
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [contributions, setContributions] = useState<
+    Record<string, { status: string; amount: number }>
+  >({});
   const [addOpen, setAddOpen] = useState(false);
   const [addSearch, setAddSearch] = useState("");
   const [showLedger, setShowLedger] = useState(false);
 
   const initialView = searchParams.get("view") === "circle" ? "circle" : "table";
   const [viewMode, setViewMode] = useState<"table" | "circle">(initialView);
+
+  useEffect(() => {
+    if (!group) return;
+    let active = true;
+    adminApi
+      .groupContribution(group.id)
+      .then((result) => {
+        if (!active) return;
+        setContributions(
+          Object.fromEntries(
+            result.rows.map((row) => [
+              row.memberId,
+              { status: row.status, amount: row.amount },
+            ]),
+          ),
+        );
+      })
+      .catch(() => {
+        if (active) setContributions({});
+      });
+    return () => {
+      active = false;
+    };
+  }, [group]);
 
   if (loading) {
     return (
@@ -74,12 +102,14 @@ export default function AdminGroupMembersPage() {
   const isPaid = group.pricing === "paid";
   const amount = group.contribution ?? 0;
 
-  const rows: MemberRow[] = group.memberIds.map((id, index) => {
+  const rows: MemberRow[] = group.memberIds.map((id) => {
     const entry = findDirectoryEntry(id);
     const isOwner = id === group.ownerId;
-    let contributionStatus: "paid" | "pending" | "overdue" = "paid";
-    if (!isOwner && index % 4 === 1) contributionStatus = "pending";
-    else if (!isOwner && index % 7 === 0) contributionStatus = "overdue";
+    const contribution = contributions[id];
+    const contributionStatus: "paid" | "pending" | "overdue" =
+      contribution?.status === "pending" || contribution?.status === "overdue"
+        ? contribution.status
+        : "paid";
 
     return {
       id,
@@ -89,7 +119,7 @@ export default function AdminGroupMembersPage() {
       city: entry.city,
       role: isOwner ? "Owner" : "Member",
       contributionStatus,
-      amount,
+      amount: contribution?.amount ?? amount,
     };
   });
 
@@ -362,4 +392,3 @@ export default function AdminGroupMembersPage() {
     </div>
   );
 }
-

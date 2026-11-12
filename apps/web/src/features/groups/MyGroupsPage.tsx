@@ -5,12 +5,8 @@ import SectionHeader from "../../components/ui/SectionHeader";
 import Badge from "../../components/ui/Badge";
 import { SkeletonRows } from "../../components/ui/Skeleton";
 import GroupListItem from "./GroupListItem";
-import { CURRENT_BUSINESS } from "../../data/businessData";
-import { useActor, useAutomaticProgress, useGroupActivationLookup } from "../../store/selectors";
-import { useDemoLoading } from "../../lib/demoDelay";
+import { useActor, useAutomaticProgress, useBusinessId, useGroupActivationLookup } from "../../store/selectors";
 import type { Group } from "../../domain/types";
-
-const ACTOR_ID = CURRENT_BUSINESS.id;
 
 interface SectionDef {
   key: string;
@@ -46,9 +42,10 @@ const SECTIONS: SectionDef[] = [
 
 export default function MyGroupsPage() {
   const { section } = useParams();
-  const loading = useDemoLoading();
-  const { myGroups } = useActor(ACTOR_ID);
-  const automatic = useAutomaticProgress(ACTOR_ID);
+  const loading = false;
+  const actorId = useBusinessId();
+  const { myGroups } = useActor(actorId);
+  const automatic = useAutomaticProgress(actorId);
   const activationOf = useGroupActivationLookup();
 
   const activeSection = SECTIONS.find((entry) => entry.key === section);
@@ -57,10 +54,10 @@ export default function MyGroupsPage() {
     .filter((group) => group.source === "automatic")
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const createdGroups = myGroups
-    .filter((group) => group.ownerId === ACTOR_ID)
+    .filter((group) => group.ownerId === actorId)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const joinedGroups = myGroups
-    .filter((group) => group.source !== "automatic" && group.ownerId !== ACTOR_ID)
+    .filter((group) => group.source !== "automatic" && group.ownerId !== actorId)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
   const lists: Record<string, Group[]> = {

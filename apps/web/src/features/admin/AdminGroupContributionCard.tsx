@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Banknote,
   CheckCircle2,
@@ -15,7 +15,8 @@ import ProgressBar from "../../components/ui/ProgressBar";
 import Table, { type TableColumn } from "../../components/ui/Table";
 import Toast from "../../components/ui/Toast";
 import type { Group } from "../../domain/types";
-import { findDirectoryEntry } from "../../data/businessData";
+import { useAdminDirectoryEntry } from "../../admin/AdminDataProvider";
+import { adminApi } from "../../admin/adminApi";
 
 export interface MemberContributionRecord {
   memberId: string;
@@ -31,39 +32,39 @@ export interface MemberContributionRecord {
   paymentMethod: string;
 }
 
-export function generateMemberLedger(group: Group): MemberContributionRecord[] {
-  const amount = group.contribution ?? 0;
-  const ids = [...new Set([group.ownerId, ...group.memberIds])].filter((id) => id !== "system");
-
-  return ids.map((id, index) => {
-    const entry = findDirectoryEntry(id);
-    const isOwner = id === group.ownerId;
-    // Pseudo-deterministic realistic status
-    let status: "paid" | "pending" | "overdue" = "paid";
-    let paidDate = "2026-10-02";
-    if (!isOwner && index % 4 === 1) {
-      status = "pending";
-      paidDate = undefined as any;
-    } else if (!isOwner && index % 7 === 0) {
-      status = "overdue";
-      paidDate = undefined as any;
-    }
-
-    const methods = ["Direct Debit", "Card on file (Visa)", "Bank Transfer (BACS)", "Stripe Auto-pay"];
-    const paymentMethod = methods[index % methods.length];
-
+function mapContributionRows(
+  rows: Array<{
+    memberId: string;
+    fullName: string;
+    status: string;
+    amount: number;
+  }>,
+  group: Group,
+  findDirectoryEntry: (id: string) => {
+    name: string;
+    contactName: string;
+    category: string;
+    city: string;
+  },
+): MemberContributionRecord[] {
+  return rows.map((row) => {
+    const entry = findDirectoryEntry(row.memberId);
+    const status =
+      row.status === "pending" || row.status === "overdue"
+        ? row.status
+        : "paid";
     return {
-      memberId: id,
-      name: entry.name,
+      memberId: row.memberId,
+      name: row.fullName || entry.name,
       contactName: entry.contactName,
       category: entry.category,
       city: entry.city,
-      role: isOwner ? "Owner" : "Member",
-      amount,
+      role: row.memberId === group.ownerId ? "Owner" : "Member",
+      amount: row.amount,
       status,
-      paidDate,
-      dueDate: "2026-11-01",
-      paymentMethod,
+      paidDate: status === "paid" ? new Date().toISOString().slice(0, 10) : undefined,
+      dueDate: "—",
+      paymentMethod: status === "paid" ? "Recorded" : "Awaiting payment",
     };
   });
 }
@@ -76,9 +77,24 @@ export default function AdminGroupContributionCard({
   showHeader?: boolean;
 }) {
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [ledger, setLedger] = useState<MemberContributionRecord[]>(() =>
-    generateMemberLedger(group)
-  );
+  const findDirectoryEntry = useAdminDirectoryEntry();
+  const [ledger, setLedger] = useState<MemberContributionRecord[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    adminApi
+      .groupContribution(group.id)
+      .then((result) => {
+        if (!active) return;
+        setLedger(mapContributionRows(result.rows, group, findDirectoryEntry));
+      })
+      .catch(() => {
+        if (active) setLedger([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [group, findDirectoryEntry]);
 
   const isPaid = group.pricing === "paid";
   const amount = group.contribution ?? 0;

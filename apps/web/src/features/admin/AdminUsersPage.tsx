@@ -11,6 +11,8 @@ import StatCard from "../../components/ui/StatCard";
 import Table, { type TableColumn } from "../../components/ui/Table";
 import Toast from "../../components/ui/Toast";
 import { useAppState } from "../../store/selectors";
+import { adminApi } from "../../admin/adminApi";
+import { useAdminData } from "../../admin/AdminDataProvider";
 
 export type AdminUserRole = "business" | "consumer" | "business-invitee" | "admin";
 export type AdminUserStatus = "Active" | "Pending" | "Suspended";
@@ -43,6 +45,7 @@ const ROLE_LABELS: Record<AdminUserRole, string> = {
 
 export default function AdminUsersPage() {
   const state = useAppState();
+  const { refresh } = useAdminData();
 
   const [activeTab, setActiveTab] = useState<"all" | "business" | "consumer" | "registrations">("all");
   const [search, setSearch] = useState("");
@@ -50,7 +53,7 @@ export default function AdminUsersPage() {
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [feedback, setFeedback] = useState<string | null>(null);
 
-  // Local overrides for status / verified toggles in demo
+  // Local overrides for status / verified toggles in this admin console
   const [statusOverrides, setStatusOverrides] = useState<Record<string, AdminUserStatus>>({});
   const [verifiedOverrides, setVerifiedOverrides] = useState<Record<string, boolean>>({});
 
@@ -85,23 +88,11 @@ export default function AdminUsersPage() {
           role: a.role as AdminUserRole,
           status: "Active",
           verified: true,
-          registeredAt: a.createdAt.slice(0, 10),
+          registeredAt: a.createdAt ? a.createdAt.slice(0, 10) : "—",
           source: "invitation-onboarding",
         });
       }
     }
-
-    // 3. Demo Admin account
-    list.push({
-      id: "admin-root",
-      name: "Platform Administrator",
-      email: "admin@centralsolution.demo",
-      role: "admin",
-      status: "Active",
-      verified: true,
-      registeredAt: "2026-01-01",
-      source: "seeded",
-    });
 
     return list;
   }, [state.businesses, state.accounts]);
@@ -137,17 +128,29 @@ export default function AdminUsersPage() {
       });
   }, [unifiedUsers, activeTab, statusFilter, roleFilter, search, statusOverrides, verifiedOverrides]);
 
-  const toggleStatus = (user: UnifiedUser) => {
+  const toggleStatus = async (user: UnifiedUser) => {
     const current = statusOverrides[user.id] ?? user.status;
     const next: AdminUserStatus = current === "Active" ? "Suspended" : "Active";
-    setStatusOverrides((prev) => ({ ...prev, [user.id]: next }));
-    setFeedback(`${user.name} status updated to ${next}`);
+    try {
+      await adminApi.updateUser(user.id, { status: next });
+      await refresh();
+      setStatusOverrides((prev) => ({ ...prev, [user.id]: next }));
+      setFeedback(`${user.name} status updated to ${next}`);
+    } catch {
+      setFeedback(`Could not update ${user.name}.`);
+    }
   };
 
-  const toggleVerified = (user: UnifiedUser) => {
+  const toggleVerified = async (user: UnifiedUser) => {
     const current = verifiedOverrides[user.id] ?? user.verified;
-    setVerifiedOverrides((prev) => ({ ...prev, [user.id]: !current }));
-    setFeedback(`${user.name} verification toggled`);
+    try {
+      await adminApi.updateUser(user.id, { verified: !current });
+      await refresh();
+      setVerifiedOverrides((prev) => ({ ...prev, [user.id]: !current }));
+      setFeedback(`${user.name} verification toggled`);
+    } catch {
+      setFeedback(`Could not update verification for ${user.name}.`);
+    }
   };
 
   const businessCount = unifiedUsers.filter((u) => u.role === "business").length;

@@ -84,7 +84,7 @@ export default function ChsBusinessVerificationModal({
     writeAuthSession({
       role: "business",
       authenticated: true,
-      email: currentSession?.email || "owner@business.demo",
+      email: currentSession?.email || "",
       name: currentSession?.name || "Business Owner",
       businessName: businessName.trim(),
       accountId: currentSession?.accountId || "owner",

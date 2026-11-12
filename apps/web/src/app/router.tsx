@@ -1,9 +1,9 @@
 import { Navigate, createBrowserRouter, type RouteObject } from "react-router-dom";
 import BusinessLayout from "./BusinessLayout";
+import { BusinessDataProvider } from "../business/BusinessDataProvider";
 import AdminLayout from "./AdminLayout";
 import PublicLayout from "./PublicLayout";
 import NotFoundPage from "./NotFoundPage";
-import PlaceholderPage from "./PlaceholderPage";
 import CirclesWorkspacePage from "../features/circles/CirclesWorkspacePage";
 import CircleCreatePage from "../features/circles/CircleCreatePage";
 import CircleWorkspaceDetailPage from "../features/circles/CircleWorkspaceDetailPage";
@@ -17,6 +17,7 @@ import GroupActivityPage from "../features/groups/GroupActivityPage";
 import GroupInvitationsPage from "../features/groups/GroupInvitationsPage";
 import GroupSettingsPage from "../features/groups/GroupSettingsPage";
 import InvitationReviewPage from "../features/invitations/InvitationReviewPage";
+import InvitationDetailPage from "../features/invitations/InvitationDetailPage";
 import InvitationsInboxPage from "../features/invitations/InvitationsInboxPage";
 import ExploreGroupsPage from "../features/groups/ExploreGroupsPage";
 import CreateGroupWizardPage from "../features/groups/CreateGroupWizardPage";
@@ -25,6 +26,7 @@ import NationalCommunityPage from "../features/platform/NationalCommunityPage";
 import MyLocationPage from "../features/platform/MyLocationPage";
 import CampaignsPage from "../features/platform/CampaignsPage";
 import RewardsPage from "../features/platform/RewardsPage";
+import BusinessSettingsPage from "../features/settings/BusinessSettingsPage";
 import JourneyPage from "../journey/JourneyPage";
 import AdminOverviewPage from "../features/admin/AdminOverviewPage";
 import AdminUsersPage from "../features/admin/AdminUsersPage";
@@ -59,6 +61,9 @@ import AdminCircleConfigPage from "../features/admin/AdminCircleConfigPage";
 import AdminPermissionsPage from "../features/admin/AdminPermissionsPage";
 import LandingPage from "../features/public/LandingPage";
 import SignInPage from "../app/SignInPage";
+import AdminSignInPage from "../app/AdminSignInPage";
+import AuthCallbackPage from "../app/AuthCallbackPage";
+import RoleGuard from "../app/RoleGuard";
 import GetStartedPage from "../app/GetStartedPage";
 import GroupInvitationLandingPage from "../features/invitations/GroupInvitationLandingPage";
 import GroupAccessDashboardPage from "../features/groups/GroupAccessDashboardPage";
@@ -79,6 +84,7 @@ import DedicatedConsumerMyGroupsPage from "../features/consumer/ConsumerMyGroups
 import DedicatedConsumerDiscoverGroupsPage from "../features/consumer/ConsumerDiscoverGroupsPage";
 import ConsumerInvitationsPage from "../features/consumer/ConsumerInvitationsPage";
 import ConsumerAccountPage from "../features/consumer/ConsumerAccountPage";
+import { ConsumerDataProvider } from "../consumer/ConsumerDataProvider";
 
 const businessRoutes = [
   { index: true, element: <Navigate to="/business/groups" replace /> },
@@ -143,6 +149,10 @@ const businessRoutes = [
     element: <InvitationReviewPage />,
   },
   {
+    path: "invitations/:invitationId",
+    element: <InvitationDetailPage />,
+  },
+  {
     path: "network/lists",
     element: <MyNetworkListsPage />,
   },
@@ -176,14 +186,7 @@ const businessRoutes = [
   },
   {
     path: "settings",
-    element: (
-      <PlaceholderPage
-        title="Account Settings"
-        doc="Doc B §3"
-        phase="Stub"
-        description="Central Solution account area — outside the Group Building prototype scope."
-      />
-    ),
+    element: <BusinessSettingsPage />,
   },
   {
     path: "journey",
@@ -337,6 +340,14 @@ const publicRoutes: RouteObject[] = [
 export const routes: RouteObject[] = [
   ...publicRoutes,
   {
+    path: "/auth/callback",
+    element: <AuthCallbackPage />,
+  },
+  {
+    path: "/admin/login",
+    element: <AdminSignInPage />,
+  },
+  {
     path: "/groups/invitation/business/:invitationId",
     element: <GroupInvitationLandingPage targetAudience="business" />,
   },
@@ -390,17 +401,33 @@ export const routes: RouteObject[] = [
   },
   {
     path: "/business",
-    element: <BusinessLayout />,
+    element: (
+      <RoleGuard allow="business">
+        <BusinessDataProvider>
+          <BusinessLayout />
+        </BusinessDataProvider>
+      </RoleGuard>
+    ),
     children: [...businessRoutes, { path: "*", element: <NotFoundPage /> }],
   },
   {
     path: "/admin",
-    element: <AdminLayout />,
+    element: (
+      <RoleGuard allow="admin">
+        <AdminLayout />
+      </RoleGuard>
+    ),
     children: [...adminRoutes, { path: "*", element: <NotFoundPage /> }],
   },
   {
     path: "/consumer",
-    element: <ConsumerLayout />,
+    element: (
+      <RoleGuard allow="consumer">
+        <ConsumerDataProvider>
+          <ConsumerLayout />
+        </ConsumerDataProvider>
+      </RoleGuard>
+    ),
     children: [
       { index: true, element: <ConsumerDashboardPage /> },
       { path: "my-groups", element: <DedicatedConsumerMyGroupsPage /> },
@@ -415,7 +442,11 @@ export const routes: RouteObject[] = [
   },
   {
     path: "/participant",
-    element: <ParticipantLayout />,
+    element: (
+      <RoleGuard allow="business-invitee">
+        <ParticipantLayout />
+      </RoleGuard>
+    ),
     children: [
       { index: true, element: <ParticipantDashboardPage /> },
       { path: "groups", element: <ParticipantInvitedGroupsPage /> },

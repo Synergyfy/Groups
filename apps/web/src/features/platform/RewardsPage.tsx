@@ -4,14 +4,14 @@ import Card, { CardBody, CardTitle } from "../../components/ui/Card";
 import LinkButton from "../../components/ui/LinkButton";
 import SectionHeader from "../../components/ui/SectionHeader";
 import StatCard from "../../components/ui/StatCard";
-import type { Tier } from "../../domain/types";
-import { CAMPAIGNS, CURRENT_BUSINESS, PROGRAMMES, RELATIONSHIPS } from "../../data/businessData";
+import { useBusinessData } from "../../business/BusinessDataProvider";
 
-const TIER_VARIANT: Record<Tier, "gold" | "default" | "muted"> = {
+const TIER_VARIANT: Record<string, "gold" | "default" | "muted"> = {
   Platinum: "gold",
   Gold: "gold",
   Silver: "default",
   Bronze: "muted",
+  Free: "muted",
 };
 
 const STATUS_VARIANT: Record<string, "success" | "warning" | "muted"> = {
@@ -21,9 +21,14 @@ const STATUS_VARIANT: Record<string, "success" | "warning" | "muted"> = {
 };
 
 export default function RewardsPage() {
-  const active = PROGRAMMES.filter((entry) => entry.status === "Active");
-  const current = PROGRAMMES.find((entry) => entry.id === CURRENT_BUSINESS.programmeId);
-  const relationship = RELATIONSHIPS.find((entry) => entry.id === CURRENT_BUSINESS.accountManagerId);
+  const { rewards, profile } = useBusinessData();
+  const programmes = rewards?.programmes ?? [];
+  const campaigns = rewards?.campaigns ?? [];
+  const rewardDeals = rewards?.rewardDeals.items ?? [];
+  const active = programmes.filter((entry) => entry.status === "Active");
+  const current = rewards?.currentProgramme ?? null;
+  const relationship = profile?.relationships.accountManager ?? null;
+  const stats = rewards?.stats;
 
   return (
     <div className="flex flex-col gap-4">
@@ -65,18 +70,18 @@ export default function RewardsPage() {
       <div className="grid gap-3 sm:grid-cols-3">
         <StatCard
           label="Programmes"
-          value={PROGRAMMES.length}
+          value={stats?.programmes ?? programmes.length}
           hint="Available to your business"
         />
         <StatCard
           label="Active"
-          value={active.length}
+          value={stats?.activeProgrammes ?? active.length}
           hint="Currently in force"
           accent="success"
         />
         <StatCard
           label="Current tier"
-          value={current?.tier ?? "—"}
+          value={stats?.currentTier ?? current?.tier ?? "—"}
           hint="Set by the membership programme"
           accent="gold"
         />
@@ -87,8 +92,8 @@ export default function RewardsPage() {
           <CardBody className="flex h-full flex-col gap-3">
             <CardTitle>Membership programmes</CardTitle>
             <div className="flex flex-col gap-2">
-              {PROGRAMMES.map((programme) => {
-                const isCurrent = programme.id === CURRENT_BUSINESS.programmeId;
+              {programmes.map((programme) => {
+                const isCurrent = programme.id === current?.id;
                 return (
                   <div
                     key={programme.id}
@@ -173,7 +178,7 @@ export default function RewardsPage() {
             </div>
           </div>
           <div className="flex flex-col gap-2">
-            {CAMPAIGNS.map((campaign) => (
+            {campaigns.map((campaign) => (
               <div
                 key={campaign.id}
                 className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-ink-950/60 p-3"
@@ -193,8 +198,45 @@ export default function RewardsPage() {
           </div>
           <p className="text-[11px] leading-relaxed text-slate-500">
             Contribution and reward ledgers live on the FundOrDonate platform. This screen shows
-            the relationship only — no backend is involved in this prototype.
+            the relationship as reported by your business dashboard.
           </p>
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardBody className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <CardTitle>Reward deals</CardTitle>
+            <Badge variant="info">{stats?.liveDeals ?? 0} live</Badge>
+          </div>
+          {rewardDeals.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-white/15 p-4 text-center text-xs text-slate-500">
+              No reward deals are published for your tier yet.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {rewardDeals.map((deal) => (
+                <div
+                  key={deal.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-ink-950/60 p-3"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-semibold text-white">{deal.title}</p>
+                    <p className="mt-0.5 text-[11px] text-slate-500">
+                      {deal.sponsorBusiness} · {deal.category}
+                      {deal.code ? ` · Code ${deal.code}` : ""}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Badge variant="gold">{deal.discountValue}</Badge>
+                    <Badge variant={deal.liveOnFrontend ? "success" : "muted"}>
+                      {deal.status}
+                    </Badge>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </CardBody>
       </Card>
     </div>

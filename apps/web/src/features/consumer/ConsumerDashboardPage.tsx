@@ -10,13 +10,8 @@ import {
   MapPin,
 } from "lucide-react";
 import Badge from "../../components/ui/Badge";
-import {
-  selectMyGroups,
-  useAppState,
-  useCircles,
-  useIncomingInvitations,
-} from "../../store/selectors";
-import { useAppStore } from "../../store/context";
+import type { GroupCircle } from "../../domain/types";
+import { useConsumerData } from "../../consumer/ConsumerDataProvider";
 import {
   evaluateGroupEligibility,
   inferCityFromPostcode,
@@ -29,17 +24,15 @@ export default function ConsumerDashboardPage() {
     document.title = "CHS Groups | Consumer Home";
   }, []);
 
-  const state = useAppState();
-  const { dispatch } = useAppStore();
   const session = readParticipantSession();
+  const { groups, invitations, join } = useConsumerData();
 
-  const consumerId = session?.role === "consumer" ? (session.accountId || "cons-john") : "cons-john";
+  const consumerId = session?.role === "consumer" ? (session.accountId || session.email || "") : "";
   const consumerName = session?.role === "consumer" ? session.name : "John Doe";
   const postcode = session?.postcode || "B1 2AB";
   const city = session?.city || inferCityFromPostcode(postcode) || "Birmingham";
 
-  const circles = useCircles();
-  const invitations = useIncomingInvitations(consumerId);
+  const circles: GroupCircle[] = [];
 
   const userProfile: UserEligibilityProfile = useMemo(() => {
     return {
@@ -52,27 +45,21 @@ export default function ConsumerDashboardPage() {
   }, [consumerId, consumerName, city, postcode]);
 
   const myCircles = circles.filter((circle) => circle.memberIds.includes(consumerId));
-  const myGroups = selectMyGroups(state, consumerId).filter(
-    (group) => group.ownerId !== "system" || group.memberIds.includes(consumerId)
-  );
+  const myGroups = groups;
 
   const pendingInvites = invitations.filter((inv) => inv.kind === "invite" && inv.status === "pending");
   const pendingCircles = pendingInvites.filter((inv) => inv.circleId);
   const pendingGroups = pendingInvites.length - pendingCircles.length;
 
   const recommendedGroups = useMemo(() => {
-    return state.groups
-      .map((g) => evaluateGroupEligibility(g, userProfile, state.invitations))
+    return groups
+      .map((g) => evaluateGroupEligibility(g, userProfile, invitations))
       .filter((res) => res.isEligible && res.status !== "joined" && res.status !== "unavailable")
       .slice(0, 3);
-  }, [state.groups, state.invitations, userProfile]);
+  }, [groups, invitations, userProfile]);
 
   const handleQuickJoin = (groupId: string) => {
-    dispatch({
-      type: "group/join",
-      groupId,
-      actor: { id: consumerId, name: consumerName ?? "Consumer" },
-    });
+    void join(groupId);
   };
 
   return (
@@ -162,7 +149,7 @@ export default function ConsumerDashboardPage() {
                 ? circles.find((entry) => entry.id === invitation.circleId)
                 : undefined;
               const group = invitation.groupId
-                ? state.groups.find((g) => g.id === invitation.groupId)
+                ? groups.find((g) => g.id === invitation.groupId)
                 : undefined;
               return (
                 <li key={invitation.id}>

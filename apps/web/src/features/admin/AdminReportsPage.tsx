@@ -112,7 +112,7 @@ export default function AdminReportsPage() {
       <SectionHeader
         title="22 — Group Reports & Statistics"
         back="/admin/groups"
-        subtitle="National network reporting: totals, origin distribution and growth — every figure aggregated from the demo store, with origin always shown alongside volume."
+        subtitle="National network reporting: totals, origin distribution and growth — every figure aggregated live from the platform API, with origin always shown alongside volume."
         tip="Figures come straight from the store and update on their own — there is nothing to refresh."
       />
 
@@ -186,7 +186,7 @@ export default function AdminReportsPage() {
             </div>
             <BarChart data={growthBars} accent="#34d399" />
             <p className="text-[11px] leading-relaxed text-slate-500">
-              Creation dates come from the demo store; a month with no bar had no groups created.
+              Creation dates come from the platform API; a month with no bar had no groups created.
             </p>
           </CardBody>
         </Card>

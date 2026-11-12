@@ -5,6 +5,7 @@ import type {
   AuditActionKind,
   AuditLogEntry,
   BusinessRecord,
+  BusinessProfile,
   CampaignRecord,
   CircleTypeConfigEntry,
   ContactIntakeMethod,
@@ -30,20 +31,6 @@ import type {
   RelationshipRecord,
   Tier,
 } from "../domain/types";
-import {
-  BUSINESSES,
-  CAMPAIGNS_ADMIN,
-  DEFAULT_ADMIN_CONFIG,
-  DEFAULT_GROUP_CREATION_RULES,
-  PARTNERS,
-  PLATFORM_ACCOUNTS,
-  PROGRAMMES_ADMIN,
-  RELATIONSHIPS_ADMIN,
-} from "../data/adminData";
-import { GROUPS, GROUP_ACTIVITIES, GROUP_INVITATIONS } from "../data/groupsData";
-import { HEAD_START_GROUPS } from "../data/headStartGroups";
-import { ACTIVITY, CIRCLES } from "../data/mockData";
-
 export const STORE_VERSION = 2;
 
 export interface Actor {
@@ -69,6 +56,33 @@ export interface AppState {
   programmes: ProgrammeRecord[];
   campaigns: CampaignRecord[];
   relationships: RelationshipRecord[];
+  /** API-backed profile of the signed-in business (null until hydrated). */
+  businessProfile: BusinessProfile | null;
+  /** Accurate dashboard counters returned by the business API. */
+  businessStats: BusinessStats | null;
+}
+
+export interface BusinessStats {
+  total: number;
+  mine: number;
+  owned: number;
+  automatic: number;
+  userCreated: number;
+  pendingInvites: number;
+  openRequests: number;
+}
+
+export interface BusinessHydratePayload {
+  profile: BusinessProfile | null;
+  stats: BusinessStats | null;
+  groups: Group[];
+  invitations: Invitation[];
+  groupActivities: GroupActivity[];
+  circles: GroupCircle[];
+  circleActivities: ActivityEvent[];
+  activeCircleId?: string;
+  adminConfig: AdminConfig;
+  membership: MembershipAccess;
 }
 
 export interface NewGroupInput {
@@ -118,6 +132,7 @@ export type AppAction =
     }
   | { type: "group/update"; groupId: string; patch: Partial<Group>; actor: Actor }
   | { type: "invitation/respond"; invitationId: string; accept: boolean; responder: Actor }
+  | { type: "invitation/cancel"; invitationId: string; actor: Actor }
   | {
       type: "invitation/claim";
       invitationId: string;
@@ -157,6 +172,8 @@ export type AppAction =
   | { type: "circle/set-active"; circleId: string }
   | { type: "contact/add"; contact: NetworkContact }
   | { type: "contact/confirm"; contactId: string }
+  | { type: "business/hydrate"; payload: BusinessHydratePayload }
+  | { type: "business/reset" }
   | { type: "store/reset" };
 
 let sequence = 0;
@@ -239,19 +256,17 @@ export function newPlatformAccount(input: NewAccountInput): PlatformAccount {
 /**
  * The signed-in business starts with no paid access and no accepted
  * agreement — both are required before the dashboard can be entered.
- * (`biz-smith` is the demo business every seeded group already uses.)
  */
 function defaultMembershipAccess(): MembershipAccess {
-  const rules = DEFAULT_GROUP_CREATION_RULES;
   return {
-    ownerId: "biz-smith",
+    ownerId: "",
     tier: "Bronze",
     variant: "Standard",
-    planName: "Bronze Standard",
+    planName: "",
     status: "Pending",
     paid: false,
-    accessDays: rules.entryAccessDays,
-    accessFee: rules.entryAccessFee,
+    accessDays: 0,
+    accessFee: 0,
     agreementAccepted: false,
   };
 }
@@ -259,55 +274,63 @@ function defaultMembershipAccess(): MembershipAccess {
 export function createInitialAppState(): AppState {
   return {
     version: STORE_VERSION,
-    groups: GROUPS.map((group) => ({ ...group, memberIds: [...group.memberIds] })),
-    invitations: GROUP_INVITATIONS.map((invitation) => ({ ...invitation })),
-    groupActivities: GROUP_ACTIVITIES.map((activity) => ({ ...activity })),
-    circles: CIRCLES.map((circle) => ({ ...circle, memberIds: [...circle.memberIds] })),
-    circleActivities: ACTIVITY.map((event) => ({ ...event })),
-    activeCircleId: CIRCLES[0]?.id ?? "",
+    groups: [],
+    invitations: [],
+    groupActivities: [],
+    circles: [],
+    circleActivities: [],
+    activeCircleId: "",
     networkContacts: [],
-    accounts: PLATFORM_ACCOUNTS.map((account) => ({ ...account })),
+    accounts: [],
     membership: defaultMembershipAccess(),
     adminConfig: {
-      ...DEFAULT_ADMIN_CONFIG,
-      automaticGrouping: { ...DEFAULT_ADMIN_CONFIG.automaticGrouping },
-      groupTypes: DEFAULT_ADMIN_CONFIG.groupTypes.map((entry) => ({ ...entry })),
-      stageLabels: [...DEFAULT_ADMIN_CONFIG.stageLabels],
-      paymentRules: {
-        ...DEFAULT_ADMIN_CONFIG.paymentRules,
-        presets: [...DEFAULT_ADMIN_CONFIG.paymentRules.presets],
-      },
+      automaticGrouping: { enabled: false, threshold: 6, method: "", scope: "", allowCombine: false },
+      groupTypes: [],
+      stageLabels: [],
+      paymentRules: { allowPaid: false, minAmount: 0, maxAmount: 0, presets: [], allowCustom: false },
       groupCreationRules: {
-        ...DEFAULT_ADMIN_CONFIG.groupCreationRules,
-        allowedTiers: [...DEFAULT_ADMIN_CONFIG.groupCreationRules.allowedTiers],
-        allowedVariants: [...DEFAULT_ADMIN_CONFIG.groupCreationRules.allowedVariants],
+        allowedTiers: [],
+        allowedVariants: [],
+        restrictToPlatformGroup: false,
+        platformGroupId: null,
         recruitmentTargets: {
-          Bronze: { ...DEFAULT_ADMIN_CONFIG.groupCreationRules.recruitmentTargets.Bronze },
-          Silver: { ...DEFAULT_ADMIN_CONFIG.groupCreationRules.recruitmentTargets.Silver },
-          Gold: { ...DEFAULT_ADMIN_CONFIG.groupCreationRules.recruitmentTargets.Gold },
-          Platinum: { ...DEFAULT_ADMIN_CONFIG.groupCreationRules.recruitmentTargets.Platinum },
+          Bronze: { Standard: 0, Pro: 0, "Pro+": 0 },
+          Silver: { Standard: 0, Pro: 0, "Pro+": 0 },
+          Gold: { Standard: 0, Pro: 0, "Pro+": 0 },
+          Platinum: { Standard: 0, Pro: 0, "Pro+": 0 },
         },
+        activationEnabled: false,
+        requirePaidAccess: false,
+        entryAccessDays: 90,
+        entryAccessFee: 0,
       },
-      circleTypes: DEFAULT_ADMIN_CONFIG.circleTypes.map((entry) => ({
-        ...entry,
-        allowedDurations: [...entry.allowedDurations],
-      })),
-      mandatoryCircles: DEFAULT_ADMIN_CONFIG.mandatoryCircles.map((entry) => ({ ...entry })),
-      mandatoryGroups: DEFAULT_ADMIN_CONFIG.mandatoryGroups.map((entry) => ({ ...entry })),
-      partnerDefaults: { ...DEFAULT_ADMIN_CONFIG.partnerDefaults },
+      circleTypes: [],
+      mandatoryCircles: [],
+      mandatoryGroups: [],
+      partnerDefaults: {
+        canCreateGroups: false,
+        canCreateCircles: false,
+        canInviteMembers: false,
+        canRemoveMembers: false,
+        canRunPaidGroups: false,
+        canRunFreeGroups: false,
+        canAccessCampaigns: false,
+        canAccessReports: false,
+        canSeeFinancials: false,
+        canSetContributionAmounts: false,
+        maxGroups: 0,
+        maxCircles: 0,
+        revenueSharePercent: 0,
+      },
       auditLog: [],
     },
-    partners: PARTNERS.map((partner) => ({
-      ...partner,
-      permissions: { ...partner.permissions },
-    })),
-    businesses: BUSINESSES.map((business) => ({ ...business })),
-    programmes: PROGRAMMES_ADMIN.map((programme) => ({
-      ...programme,
-      benefits: [...programme.benefits],
-    })),
-    campaigns: CAMPAIGNS_ADMIN.map((campaign) => ({ ...campaign, groupIds: [...campaign.groupIds] })),
-    relationships: RELATIONSHIPS_ADMIN.map((rel) => ({ ...rel })),
+    partners: [],
+    businesses: [],
+    programmes: [],
+    campaigns: [],
+    relationships: [],
+    businessProfile: null,
+    businessStats: null,
   };
 }
 
@@ -405,25 +428,6 @@ function activateMembership(
  * first time the dashboard is entered. Idempotent — once they exist in the
  * store the action is a no-op, and a store reset makes them available again.
  */
-function seedHeadStartGroups(state: AppState): AppState {
-  if (state.groups.some((group) => group.headStart)) return state;
-  const now = nowIso();
-  const groups = HEAD_START_GROUPS.map((group) => ({ ...group, memberIds: [...group.memberIds] }));
-  const groupActivities: GroupActivity[] = groups.map((group) => ({
-    id: uid("ga"),
-    groupId: group.id,
-    actorName: "Platform",
-    kind: "created",
-    message: `Platform provided a head start group — ${group.name}`,
-    at: now,
-  }));
-  return {
-    ...state,
-    groups: [...groups, ...state.groups],
-    groupActivities: [...groupActivities, ...state.groupActivities],
-  };
-}
-
 /**
  * Binds a pending invitation to a platform account so that accepting it adds
  * *that* account to the group. The first account to open the link claims it —
@@ -720,7 +724,7 @@ function updateAdminConfig(state: AppState, patch: AdminConfigPatch): AppState {
           : [...(state.adminConfig.paymentRules?.presets ?? [])],
       },
       groupCreationRules: (() => {
-        const current = state.adminConfig.groupCreationRules ?? DEFAULT_GROUP_CREATION_RULES;
+        const current = state.adminConfig.groupCreationRules;
         const next = { ...current, ...patch.groupCreationRules };
         const targets = patch.groupCreationRules?.recruitmentTargets ?? current.recruitmentTargets;
         return {
@@ -851,10 +855,35 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     }
     case "invitation/respond":
       return respondToInvitation(state, action);
+    case "invitation/cancel": {
+      const invitation = state.invitations.find(
+        (entry) => entry.id === action.invitationId,
+      );
+      if (!invitation || invitation.status !== "pending") return state;
+      const invitations = state.invitations.map((entry) =>
+        entry.id === invitation.id
+          ? { ...entry, status: "cancelled" as const, respondedAt: nowIso() }
+          : entry,
+      );
+      const auditLog = withAuditLog(
+        state,
+        "invitation-cancelled",
+        action.actor,
+        "invitation",
+        invitation.id,
+        invitation.inviteeName,
+        `Admin cancelled the invitation for ${invitation.inviteeName}`,
+      );
+      return {
+        ...state,
+        invitations,
+        adminConfig: { ...state.adminConfig, auditLog },
+      };
+    }
     case "invitation/claim":
       return claimInvitation(state, action);
     case "group/head-start":
-      return seedHeadStartGroups(state);
+      return state;
     case "account/register":
       return registerAccount(state, action);
     case "membership/activate":
@@ -1091,6 +1120,29 @@ export function appReducer(state: AppState, action: AppAction): AppState {
             ? { ...contact, confirmation: "confirmed" }
             : contact
         ),
+      };
+    case "business/hydrate": {
+      const { payload } = action;
+      return {
+        ...state,
+        groups: payload.groups,
+        invitations: payload.invitations,
+        groupActivities: payload.groupActivities,
+        circles: payload.circles,
+        circleActivities: payload.circleActivities,
+        activeCircleId:
+          payload.activeCircleId ?? state.activeCircleId ?? payload.circles[0]?.id ?? "",
+        adminConfig: payload.adminConfig,
+        membership: payload.membership,
+        businessProfile: payload.profile,
+        businessStats: payload.stats,
+      };
+    }
+    case "business/reset":
+      return {
+        ...state,
+        businessProfile: null,
+        businessStats: null,
       };
     case "store/reset":
       return createInitialAppState();

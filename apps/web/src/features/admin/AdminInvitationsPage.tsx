@@ -14,7 +14,6 @@ import StatCard from "../../components/ui/StatCard";
 import Table, { type TableColumn } from "../../components/ui/Table";
 import Toast from "../../components/ui/Toast";
 import type { Invitation } from "../../domain/types";
-import { useDemoLoading } from "../../lib/demoDelay";
 import { useAppState } from "../../store/selectors";
 import { useAppStore } from "../../store/context";
 
@@ -30,7 +29,7 @@ const STATUS_VARIANTS: Record<string, BadgeVariant> = {
 const ADMIN_ACTOR = { id: "admin", name: "Administrator" };
 
 export default function AdminInvitationsPage() {
-  const loading = useDemoLoading();
+  const loading = false;
   const state = useAppState();
   const { dispatch } = useAppStore();
 

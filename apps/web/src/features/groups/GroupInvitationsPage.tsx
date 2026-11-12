@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Check, ChevronLeft, Link2, Mail, RotateCcw, Search, Send, UserMinus, X } from "lucide-react";
 import Badge from "../../components/ui/Badge";
@@ -13,15 +13,12 @@ import Table from "../../components/ui/Table";
 import type { TableColumn } from "../../components/ui/Table";
 import TipIcon from "../../components/ui/TipIcon";
 import Toast from "../../components/ui/Toast";
-import { CURRENT_BUSINESS, DIRECTORY } from "../../data/businessData";
-import { useAppStore } from "../../store/context";
 import { useGroup, useGroupInvitations } from "../../store/selectors";
-import { useDemoLoading } from "../../lib/demoDelay";
+import { errorMessage } from "../../app/api";
+import { businessApi, useBusinessData } from "../../business/BusinessDataProvider";
 import { SkeletonCard, SkeletonRows } from "../../components/ui/Skeleton";
 import type { Invitation, InvitationStatus, ParticipantRole } from "../../domain/types";
 import GroupTabsHeader, { GroupMissingState } from "./GroupTabsHeader";
-
-const ACTOR_ID = CURRENT_BUSINESS.id;
 
 const STATUS_VARIANTS: Record<InvitationStatus, BadgeVariant> = {
   pending: "warning",
@@ -29,8 +26,6 @@ const STATUS_VARIANTS: Record<InvitationStatus, BadgeVariant> = {
   declined: "danger",
   cancelled: "muted",
 };
-
-const DIRECTORY_INDEX = new Map(DIRECTORY.map((entry) => [entry.id, entry]));
 
 function initialsOf(name: string): string {
   return name
@@ -44,8 +39,8 @@ function initialsOf(name: string): string {
 export default function GroupInvitationsPage() {
   const { groupId } = useParams();
   const group = useGroup(groupId);
-  const invitations = useGroupInvitations(groupId);
-  const { dispatch } = useAppStore();
+  const storedInvitations = useGroupInvitations(groupId);
+  const { profile, directory, refresh } = useBusinessData();
 
   const [search, setSearch] = useState("");
   const [email, setEmail] = useState("");
@@ -55,9 +50,43 @@ export default function GroupInvitationsPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [phase, setPhase] = useState<"select" | "review">("select");
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [apiInvitations, setApiInvitations] = useState<Invitation[] | null>(null);
 
-  const isOwner = group?.ownerId === ACTOR_ID;
-  const actor = { id: ACTOR_ID, name: CURRENT_BUSINESS.businessName };
+  const actorId = profile?.business.id ?? "";
+  const isOwner = group?.ownerId === actorId;
+
+  const loadInvitations = useCallback(async () => {
+    if (!groupId) return;
+    try {
+      const rows = await businessApi.groupInvitations(groupId);
+      setApiInvitations(rows);
+    } catch {
+      setApiInvitations(null);
+    }
+  }, [groupId]);
+
+  useEffect(() => {
+    if (!groupId) return;
+    let alive = true;
+    businessApi
+      .groupInvitations(groupId)
+      .then((rows) => {
+        if (alive) setApiInvitations(rows);
+      })
+      .catch(() => {
+        if (alive) setApiInvitations(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [groupId, refresh]);
+
+  const invitations = apiInvitations ?? storedInvitations;
+
+  const directoryIndex = useMemo(
+    () => new Map(directory.map((entry) => [entry.id, entry])),
+    [directory]
+  );
 
   const pendingInviteeIds = useMemo(
     () =>
@@ -73,21 +102,21 @@ export default function GroupInvitationsPage() {
   const candidates = useMemo(() => {
     const term = search.trim().toLowerCase();
     const members = new Set(group?.memberIds ?? []);
-    return DIRECTORY.filter((entry) => {
+    return directory.filter((entry) => {
       if (members.has(entry.id) || pendingInviteeIds.has(entry.id)) return false;
       if (!term) return true;
       return `${entry.name} ${entry.contactName} ${entry.city} ${entry.category}`
         .toLowerCase()
         .includes(term);
     }).slice(0, 6);
-  }, [search, group, pendingInviteeIds]);
+  }, [search, group, pendingInviteeIds, directory]);
 
   const selectedEntries = useMemo(
     () =>
       selectedIds
-        .map((id) => DIRECTORY_INDEX.get(id))
+        .map((id) => directoryIndex.get(id))
         .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry)),
-    [selectedIds]
+    [selectedIds, directoryIndex]
   );
 
   const pendingInvites = invitations.filter(
@@ -98,7 +127,7 @@ export default function GroupInvitationsPage() {
   );
   const acceptedCount = invitations.filter((entry) => entry.status === "accepted").length;
 
-  const loading = useDemoLoading();
+  const loading = false;
 
   if (loading) {
     return (
@@ -119,28 +148,29 @@ export default function GroupInvitationsPage() {
     );
   };
 
-  const sendSelected = () => {
+  const sendSelected = async () => {
     if (selectedEntries.length === 0) return;
-    dispatch({
-      type: "group/invite",
-      groupId: group.id,
-      entries: selectedEntries.map((entry) => ({
-        inviteeId: entry.id,
-        inviteeName: entry.name,
-        inviteeRole: "business-invitee" as const,
-      })),
-      actor,
-    });
-    setFeedback(
-      `${selectedEntries.length} invitation${selectedEntries.length === 1 ? "" : "s"} sent from ${
-        group.name
-      }`
-    );
-    setSelectedIds([]);
-    setPhase("select");
+    try {
+      const result = await businessApi.invite(
+        group.id,
+        selectedEntries.map((entry) => ({
+          inviteeId: entry.id,
+          inviteeName: entry.name,
+          inviteeRole: "business-invitee",
+        })),
+      );
+      await Promise.all([loadInvitations(), refresh()]);
+      setFeedback(
+        `${result.created} invitation${result.created === 1 ? "" : "s"} sent from ${group.name}`
+      );
+      setSelectedIds([]);
+      setPhase("select");
+    } catch (cause) {
+      setFeedback(errorMessage(cause));
+    }
   };
 
-  const sendManualInvite = () => {
+  const sendManualInvite = async () => {
     const trimmedEmail = email.trim();
     const trimmedPhone = phone.trim();
     const hasEmail = trimmedEmail.includes("@");
@@ -153,69 +183,61 @@ export default function GroupInvitationsPage() {
       setFeedback("Enter a contact name — it is shown on an SMS invitation");
       return;
     }
-    dispatch({
-      type: "group/invite",
-      groupId: group.id,
-      entries: [
+    try {
+      await businessApi.invite(group.id, [
         {
           inviteeName: contactName.trim() || trimmedEmail,
           ...(hasEmail ? { inviteeEmail: trimmedEmail } : {}),
           ...(hasPhone ? { inviteePhone: trimmedPhone } : {}),
           inviteeRole: inviteAs,
         },
-      ],
-      actor,
-    });
-    setFeedback(
-      hasEmail
-        ? `Email invitation queued for ${trimmedEmail}`
-        : `SMS invitation queued for ${trimmedPhone}`
-    );
-    setEmail("");
-    setPhone("");
-    setContactName("");
+      ]);
+      await Promise.all([loadInvitations(), refresh()]);
+      setFeedback(
+        hasEmail
+          ? `Email invitation queued for ${trimmedEmail}`
+          : `SMS invitation queued for ${trimmedPhone}`
+      );
+      setEmail("");
+      setPhone("");
+      setContactName("");
+    } catch (cause) {
+      setFeedback(errorMessage(cause));
+    }
   };
 
-  const cancelInvitation = (invitation: Invitation) => {
-    dispatch({
-      type: "invitation/respond",
-      invitationId: invitation.id,
-      accept: false,
-      responder: actor,
-    });
-    setFeedback(`Invitation to ${invitation.inviteeName} cancelled`);
+  const cancelInvitation = async (invitation: Invitation) => {
+    try {
+      await businessApi.cancelInvitation(invitation.id);
+      await Promise.all([loadInvitations(), refresh()]);
+      setFeedback(`Invitation to ${invitation.inviteeName} cancelled`);
+    } catch (cause) {
+      setFeedback(errorMessage(cause));
+    }
   };
 
-  const resendInvitation = (invitation: Invitation) => {
-    dispatch({
-      type: "group/invite",
-      groupId: group.id,
-      entries: [
-        {
-          ...(invitation.inviteeId ? { inviteeId: invitation.inviteeId } : {}),
-          inviteeName: invitation.inviteeName,
-          ...(invitation.inviteeEmail ? { inviteeEmail: invitation.inviteeEmail } : {}),
-          ...(invitation.inviteePhone ? { inviteePhone: invitation.inviteePhone } : {}),
-          ...(invitation.inviteeRole ? { inviteeRole: invitation.inviteeRole } : {}),
-        },
-      ],
-      actor,
-    });
-    setFeedback(`Invitation to ${invitation.inviteeName} sent again`);
+  const resendInvitation = async (invitation: Invitation) => {
+    try {
+      await businessApi.resendInvitation(invitation.id);
+      await Promise.all([loadInvitations(), refresh()]);
+      setFeedback(`Invitation to ${invitation.inviteeName} sent again`);
+    } catch (cause) {
+      setFeedback(errorMessage(cause));
+    }
   };
 
-  const respondToRequest = (invitation: Invitation, accept: boolean) => {
-    dispatch({
-      type: "invitation/respond",
-      invitationId: invitation.id,
-      accept,
-      responder: actor,
-    });
-    setFeedback(
-      accept
-        ? `${invitation.inviteeName} added to ${group.name}`
-        : `Request from ${invitation.inviteeName} rejected`
-    );
+  const respondToRequest = async (invitation: Invitation, accept: boolean) => {
+    try {
+      await businessApi.respondInvitation(invitation.id, accept);
+      await Promise.all([loadInvitations(), refresh()]);
+      setFeedback(
+        accept
+          ? `${invitation.inviteeName} added to ${group.name}`
+          : `Request from ${invitation.inviteeName} rejected`
+      );
+    } catch (cause) {
+      setFeedback(errorMessage(cause));
+    }
   };
 
   const inviteColumns: TableColumn<Invitation>[] = [
@@ -537,7 +559,7 @@ export default function GroupInvitationsPage() {
               <p className="text-[11px] leading-relaxed text-slate-500">
                 Invitations stay pending until the recipient responds. Each pending invitation has
                 its own invite link in the status table below — open it to see exactly what the
-                recipient sees. No message is actually delivered in this demo.
+                recipient sees. Delivery is handled by the configured invitation service.
               </p>
 
               <div className="mt-2 rounded-xl border border-white/10 bg-ink-950/60 p-3">

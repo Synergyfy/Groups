@@ -19,7 +19,7 @@ export default function JourneyPage() {
         subtitle={
           status.scope === "admin"
             ? "The same platform, told from the administrator's side: see everything, set the rules everyone lives by, then prove it works."
-            : "The platform as a story — each chapter is one job you need to do, in order. Steps tick themselves off as you visit screens and as your demo state changes; you can always override them by hand."
+            : "The platform as a story — each chapter is one job you need to do, in order. Steps tick themselves off as you visit screens and as live data changes; you can always override them by hand."
         }
       />
 
@@ -177,7 +177,7 @@ export default function JourneyPage() {
       </div>
 
       <p className="text-[11px] leading-relaxed text-slate-500">
-        Steps complete automatically from the demo store (memberships, groups, invitations,
+        Steps complete automatically from live data (memberships, groups, invitations,
         thresholds) and from the screens you visit. “Mark done” overrides anything that cannot be
         detected — and “Mark not done” puts a step back so you can replay it.
       </p>

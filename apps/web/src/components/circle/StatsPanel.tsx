@@ -1,4 +1,4 @@
-import { Layers, MessageSquare, Plus, RefreshCw, Sparkles, UserPlus, Wallet } from "lucide-react";
+import { Layers, MessageSquare, Pencil, Plus, RefreshCw, Sparkles, Trash2, UserMinus, UserPlus, Wallet } from "lucide-react";
 import type { ActivityEvent, CircleMember, GroupCircle, NetworkList } from "../../domain/types";
 import { TIER_ORDER, TIERS } from "../../domain/constants";
 import { useCircleTypeMeta } from "../../store/selectors";
@@ -10,6 +10,9 @@ interface StatsPanelProps {
   sourceLists: NetworkList[];
   activity: ActivityEvent[];
   onAddMember: () => void;
+  onEditCircle?: () => void;
+  onDeleteCircle?: () => void;
+  onRemoveMember?: (member: CircleMember) => void;
   participantMode?: boolean;
 }
 
@@ -39,6 +42,9 @@ export default function StatsPanel({
   sourceLists,
   activity,
   onAddMember,
+  onEditCircle,
+  onDeleteCircle,
+  onRemoveMember,
   participantMode = false,
 }: StatsPanelProps) {
   const meta = useCircleTypeMeta(circle.type);
@@ -63,6 +69,28 @@ export default function StatsPanel({
           <span className={chipClass}>{circle.config.visibility}</span>
           <span className={chipClass}>{circle.config.interactionLevel}</span>
         </div>
+        {!participantMode && (onEditCircle || onDeleteCircle) && (
+          <div className="mt-3 flex flex-wrap gap-1.5 border-t border-white/10 pt-3">
+            {onEditCircle && (
+              <button
+                type="button"
+                onClick={onEditCircle}
+                className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[11px] font-medium text-slate-300 transition-colors hover:border-gold-500/40 hover:text-gold-200"
+              >
+                <Pencil className="size-3" /> Edit circle
+              </button>
+            )}
+            {onDeleteCircle && (
+              <button
+                type="button"
+                onClick={onDeleteCircle}
+                className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-danger-500/30 bg-danger-500/10 px-2.5 py-1.5 text-[11px] font-medium text-danger-400 transition-colors hover:bg-danger-500/20"
+              >
+                <Trash2 className="size-3" /> Delete
+              </button>
+            )}
+          </div>
+        )}
       </section>
 
       <section className="rounded-2xl border border-white/10 bg-ink-900/70 p-4">
@@ -88,6 +116,45 @@ export default function StatsPanel({
           {filteredCount} of {members.length} members match the current filters.
         </p>
       </section>
+
+      {!participantMode && onRemoveMember && (
+        <section className="rounded-2xl border border-white/10 bg-ink-900/70 p-4">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+            Member roster
+          </h3>
+          {members.length === 0 ? (
+            <p className="mt-3 text-[11px] text-slate-600">
+              No members in this circle yet.
+            </p>
+          ) : (
+            <ul className="mt-3 flex max-h-64 flex-col gap-2 overflow-y-auto pr-1">
+              {members.map((member) => (
+                <li
+                  key={member.id}
+                  className="flex items-center justify-between gap-2 rounded-xl bg-white/5 px-3 py-2"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-xs font-medium text-slate-200">
+                      {member.businessName || member.fullName}
+                    </span>
+                    <span className="block truncate text-[10px] capitalize text-slate-500">
+                      {member.role} · {member.status}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onRemoveMember(member)}
+                    title={`Remove ${member.fullName} from this circle`}
+                    className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-white/10 text-slate-400 transition-colors hover:border-danger-500/40 hover:text-danger-300"
+                  >
+                    <UserMinus className="size-3.5" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       <section className="rounded-2xl border border-white/10 bg-ink-900/70 p-4">
         <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">

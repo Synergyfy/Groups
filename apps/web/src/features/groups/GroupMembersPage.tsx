@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { UserMinus, Users } from "lucide-react";
 import Badge from "../../components/ui/Badge";
@@ -8,17 +8,15 @@ import StatCard from "../../components/ui/StatCard";
 import Table from "../../components/ui/Table";
 import type { TableColumn } from "../../components/ui/Table";
 import Toast from "../../components/ui/Toast";
-import { CURRENT_BUSINESS, findDirectoryEntry } from "../../data/businessData";
-import { useAppStore } from "../../store/context";
+import { findDirectoryEntry } from "../../data/businessData";
 import { useGroup } from "../../store/selectors";
-import { useDemoLoading } from "../../lib/demoDelay";
+import { errorMessage } from "../../app/api";
+import { businessApi, useBusinessData, type BusinessMember } from "../../business/BusinessDataProvider";
 import { SkeletonCard, SkeletonRows } from "../../components/ui/Skeleton";
 import MemberSearch, { type MemberSearchItem } from "../../components/members/MemberSearch";
 import MemberDetailModal from "../../components/members/MemberDetailModal";
 import { isOnline } from "../../lib/presence";
 import GroupTabsHeader, { GroupMissingState } from "./GroupTabsHeader";
-
-const ACTOR_ID = CURRENT_BUSINESS.id;
 
 interface MemberRow {
   id: string;
@@ -34,11 +32,29 @@ interface MemberRow {
 export default function GroupMembersPage() {
   const { groupId } = useParams();
   const group = useGroup(groupId);
-  const loading = useDemoLoading();
-  const { dispatch } = useAppStore();
+  const loading = false;
+  const { profile, directory, refresh } = useBusinessData();
   const [feedback, setFeedback] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [members, setMembers] = useState<BusinessMember[] | null>(null);
+  const actorId = profile?.business.id ?? "";
+
+  useEffect(() => {
+    if (!groupId) return;
+    let alive = true;
+    void businessApi
+      .groupMembers(groupId)
+      .then((result) => {
+        if (alive) setMembers(result.members);
+      })
+      .catch((cause) => {
+        if (alive) setFeedback(errorMessage(cause));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [groupId]);
 
   if (loading) {
     return (
@@ -53,31 +69,47 @@ export default function GroupMembersPage() {
     return <GroupMissingState title="11 — Group Members" />;
   }
 
-  const rows: MemberRow[] = group.memberIds.map((id) => {
+  const rows: MemberRow[] = (members ?? group.memberIds.map((id) => {
     const entry = findDirectoryEntry(id);
     return {
       id,
-      name: entry.name,
-      contactName: entry.contactName,
+      membershipId: id,
+      fullName: entry.contactName,
+      businessName: entry.name,
       category: entry.category,
-      city: entry.city,
+      location: entry.city,
+      status: "active",
+      role: id === group.ownerId ? "owner" : "peripheral",
+      tier: "Bronze",
       joinedAt: entry.joinedAt ?? group.createdAt,
-      isOwner: id === group.ownerId,
-      isSelf: id === ACTOR_ID,
+    } as BusinessMember;
+  })).map((member) => {
+    const fallback = directory.find((entry) => entry.id === member.id);
+    return {
+      id: member.id,
+      name: member.businessName ?? fallback?.name ?? member.fullName,
+      contactName: member.fullName,
+      category: member.category ?? fallback?.category ?? "—",
+      city: member.location ?? fallback?.city ?? "—",
+      joinedAt: member.joinedAt?.slice(0, 10) ?? group.createdAt,
+      isOwner: member.id === group.ownerId,
+      isSelf: member.id === actorId,
     };
   });
 
-  const isOwner = group.ownerId === ACTOR_ID;
+  const isOwner = group.ownerId === actorId;
 
-  const removeMember = (row: MemberRow) => {
-    dispatch({
-      type: "group/remove-member",
-      groupId: group.id,
-      memberId: row.id,
-      memberName: row.name,
-      actor: { id: ACTOR_ID, name: CURRENT_BUSINESS.businessName },
-    });
-    setFeedback(`${row.name} removed from ${group.name}`);
+  const removeMember = async (row: MemberRow) => {
+    try {
+      await businessApi.removeGroupMember(group.id, row.id);
+      await refresh();
+      setMembers((current) =>
+        current ? current.filter((member) => member.id !== row.id) : current
+      );
+      setFeedback(`${row.name} removed from ${group.name}`);
+    } catch (cause) {
+      setFeedback(errorMessage(cause));
+    }
   };
 
   const columns: TableColumn<MemberRow>[] = [
@@ -166,11 +198,11 @@ export default function GroupMembersPage() {
           label="Your role"
           value={rows.find((row) => row.isSelf)?.isOwner ? "Owner" : "Member"}
           hint={
-            group.ownerId === ACTOR_ID
+            group.ownerId === actorId
               ? "You can edit settings and invite"
               : "Read-only member view"
           }
-          accent={group.ownerId === ACTOR_ID ? "warning" : "success"}
+          accent={group.ownerId === actorId ? "warning" : "success"}
         />
         <StatCard
           label="Group source"
@@ -207,7 +239,7 @@ export default function GroupMembersPage() {
           <p className="text-xs leading-relaxed text-slate-400">
             {group.source === "automatic"
               ? "Automatic group — membership is maintained by the system (Doc A §16 member view). You see who is in the group and when they joined; there are no member admin controls here."
-              : group.ownerId === ACTOR_ID
+              : group.ownerId === actorId
                 ? "You own this group — use Remove in the Actions column to manage membership. Member records come from the shared business directory, the same identity used across National Community, city relationships and campaign participation."
                 : "Member records come from the shared business directory — the same identity used across National Community, city relationships and campaign participation. Member admin controls belong to the group owner."}
           </p>

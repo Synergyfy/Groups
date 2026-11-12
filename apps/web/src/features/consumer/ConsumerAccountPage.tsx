@@ -22,7 +22,7 @@ export default function ConsumerAccountPage() {
   const session = readParticipantSession();
 
   const consumerName = (session?.role === "consumer" && session.name) ? session.name : "John Doe";
-  const consumerEmail = session?.email || "consumer@community.demo";
+  const consumerEmail = session?.email || "";
 
   const [postcode, setPostcode] = useState(session?.postcode || "B1 2AB");
   const [city, setCity] = useState(session?.city || "Birmingham");

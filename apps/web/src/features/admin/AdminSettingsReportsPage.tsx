@@ -21,6 +21,8 @@ import BarChart from "../../components/ui/charts/BarChart";
 import Donut from "../../components/ui/charts/Donut";
 import { useAppState } from "../../store/selectors";
 import { memberCountOf } from "../groups/groupUtils";
+import { adminApi } from "../../admin/adminApi";
+import { useAdminData } from "../../admin/AdminDataProvider";
 
 const SIGN_OFF_RULES = [
   {
@@ -82,58 +84,69 @@ const SIGN_OFF_RULES = [
 
 export default function AdminSettingsReportsPage() {
   const state = useAppState();
+  const { data, refresh } = useAdminData();
   const [activeTab, setActiveTab] = useState<"settings" | "reports" | "completeness">("settings");
   const [feedback, setFeedback] = useState<string | null>(null);
 
-  // Settings state
-  const [defaultRequiredSize, setDefaultRequiredSize] = useState(12);
-  const [defaultPricing, setDefaultPricing] = useState<"free" | "paid">("free");
-  const [defaultVisibility, setDefaultVisibility] = useState<"directory" | "members">("directory");
-  const [defaultGreeting, setDefaultGreeting] = useState(
-    "You have been invited to join this group on Groups & Circles, the group platform from Central Hub Solution."
-  );
-  const [smsFallback, setSmsFallback] = useState(true);
-  const [notifyOnNewRegistration, setNotifyOnNewRegistration] = useState(true);
-  const [notifyOnModerationQueue, setNotifyOnModerationQueue] = useState(true);
+  const settings = (state.adminConfig.platformSettings ?? {}) as {
+    defaultRequiredSize?: number;
+    defaultPricing?: "free" | "paid";
+    defaultVisibility?: "directory" | "members";
+    defaultGreeting?: string;
+    smsFallback?: boolean;
+    notifyOnNewRegistration?: boolean;
+    notifyOnModerationQueue?: boolean;
+  };
 
-  const saveSettings = () => {
-    setFeedback("Platform settings and invitation defaults saved successfully.");
+  // Settings state
+  const [defaultRequiredSize, setDefaultRequiredSize] = useState(
+    settings.defaultRequiredSize ?? 12,
+  );
+  const [defaultPricing, setDefaultPricing] = useState<"free" | "paid">(
+    settings.defaultPricing ?? "free",
+  );
+  const [defaultVisibility, setDefaultVisibility] = useState<"directory" | "members">(
+    settings.defaultVisibility ?? "directory",
+  );
+  const [defaultGreeting, setDefaultGreeting] = useState(
+    settings.defaultGreeting ??
+      "You have been invited to join this group on Groups & Circles, the group platform from Central Hub Solution."
+  );
+  const [smsFallback, setSmsFallback] = useState(settings.smsFallback ?? true);
+  const [notifyOnNewRegistration, setNotifyOnNewRegistration] = useState(
+    settings.notifyOnNewRegistration ?? true,
+  );
+  const [notifyOnModerationQueue, setNotifyOnModerationQueue] = useState(
+    settings.notifyOnModerationQueue ?? true,
+  );
+
+  const saveSettings = async () => {
+    try {
+      await adminApi.patchConfig({
+        platformSettings: {
+          defaultRequiredSize,
+          defaultPricing,
+          defaultVisibility,
+          defaultGreeting,
+          smsFallback,
+          notifyOnNewRegistration,
+          notifyOnModerationQueue,
+        },
+      });
+      await refresh();
+      setFeedback("Platform settings and invitation defaults saved successfully.");
+    } catch {
+      setFeedback("Could not save the platform settings.");
+    }
   };
 
   const groups = state.groups;
-  const accounts = state.accounts;
-  const invitations = state.invitations;
-  const businesses = state.businesses;
-
   const totalMembers = groups.reduce((s, g) => s + memberCountOf(g), 0);
+  const stats = data?.settingsReport?.stats;
 
-  // Growth by month
-  const growthBars = [
-    { label: "Jun 26", value: 4 },
-    { label: "Jul 26", value: 7 },
-    { label: "Aug 26", value: 11 },
-    { label: "Sep 26", value: 14 },
-    { label: "Oct 26", value: groups.length },
-  ];
-
-  // Invitations status donut
-  const invStatus = [
-    {
-      label: "Accepted",
-      value: invitations.filter((i) => i.status === "accepted").length,
-      color: "#10b981",
-    },
-    {
-      label: "Pending",
-      value: invitations.filter((i) => i.status === "pending").length,
-      color: "#f59e0b",
-    },
-    {
-      label: "Declined",
-      value: invitations.filter((i) => i.status === "declined").length,
-      color: "#ef4444",
-    },
-  ];
+  const growthBars =
+    data?.settingsReport?.growth ?? [];
+  const invStatus = data?.settingsReport?.invitationBreakdown ?? [];
 
   return (
     <div className="flex flex-col gap-6">
@@ -217,7 +230,7 @@ export default function AdminSettingsReportsPage() {
                   <span className="text-xs font-medium text-slate-300">Default Pricing Mode</span>
                   <select
                     value={defaultPricing}
-                    onChange={(e) => setDefaultPricing(e.target.value as any)}
+                    onChange={(e) => setDefaultPricing(e.target.value as "free" | "paid")}
                     className="h-10 rounded-lg border border-white/10 bg-ink-800 px-3 text-xs text-slate-200 focus:outline-none"
                   >
                     <option value="free">Free to Join</option>
@@ -229,7 +242,7 @@ export default function AdminSettingsReportsPage() {
                   <span className="text-xs font-medium text-slate-300">Default Visibility</span>
                   <select
                     value={defaultVisibility}
-                    onChange={(e) => setDefaultVisibility(e.target.value as any)}
+                    onChange={(e) => setDefaultVisibility(e.target.value as "directory" | "members")}
                     className="h-10 rounded-lg border border-white/10 bg-ink-800 px-3 text-xs text-slate-200 focus:outline-none"
                   >
                     <option value="directory">Platform Directory</option>
@@ -310,7 +323,7 @@ export default function AdminSettingsReportsPage() {
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             <StatCard
               label="Registered entities"
-              value={businesses.length + accounts.length}
+              value={stats?.registeredEntities ?? 0}
               hint="Businesses + consumers"
               accent="gold"
             />
@@ -322,17 +335,13 @@ export default function AdminSettingsReportsPage() {
             />
             <StatCard
               label="Invitations sent"
-              value={invitations.length}
+              value={stats?.invitationsSent ?? 0}
               hint="Delivery track record"
               accent="info"
             />
             <StatCard
               label="Invitation conversion"
-              value={`${Math.round(
-                (invitations.filter((i) => i.status === "accepted").length /
-                  Math.max(1, invitations.length)) *
-                  100
-              )}%`}
+              value={`${stats?.invitationConversion ?? 0}%`}
               hint="Accepted invitation rate"
               accent="gold"
             />

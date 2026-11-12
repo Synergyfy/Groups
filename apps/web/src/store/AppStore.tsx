@@ -1,81 +1,15 @@
-import { useEffect, useMemo, useReducer } from "react";
+import { useMemo, useReducer } from "react";
 import type { ReactNode } from "react";
 import { AppStoreContext } from "./context";
-import { appReducer, createInitialAppState, STORE_VERSION } from "./reducer";
-import type { AppState } from "./reducer";
+import { appReducer, createInitialAppState } from "./reducer";
 import StoreInspector from "./StoreInspector";
 
-// Bump the key whenever the seed data changes so a previously cached demo
-// store can never hide freshly added demo circles / invitations.
-const STORAGE_KEY = "247gbs.group.store.v2";
-
-function loadState(): AppState {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return createInitialAppState();
-    const parsed = JSON.parse(raw) as Partial<AppState>;
-    if (parsed.version !== STORE_VERSION) return createInitialAppState();
-    const initial = createInitialAppState();
-    return {
-      ...initial,
-      ...parsed,
-      version: STORE_VERSION,
-      membership: {
-        ...initial.membership,
-        ...parsed.membership,
-      },
-      adminConfig: {
-        ...initial.adminConfig,
-        ...parsed.adminConfig,
-        automaticGrouping: {
-          ...initial.adminConfig.automaticGrouping,
-          ...parsed.adminConfig?.automaticGrouping,
-        },
-        groupTypes: parsed.adminConfig?.groupTypes ?? initial.adminConfig.groupTypes,
-        stageLabels: parsed.adminConfig?.stageLabels ?? initial.adminConfig.stageLabels,
-        mandatoryGroups:
-          parsed.adminConfig?.mandatoryGroups ?? initial.adminConfig.mandatoryGroups,
-        paymentRules: {
-          ...initial.adminConfig.paymentRules,
-          ...parsed.adminConfig?.paymentRules,
-        },
-        groupCreationRules: (() => {
-          const current =
-            parsed.adminConfig?.groupCreationRules ?? initial.adminConfig.groupCreationRules;
-          return {
-            ...initial.adminConfig.groupCreationRules,
-            ...current,
-            allowedTiers: [...current.allowedTiers],
-            allowedVariants: [...current.allowedVariants],
-            recruitmentTargets: {
-              Bronze: { ...current.recruitmentTargets.Bronze },
-              Silver: { ...current.recruitmentTargets.Silver },
-              Gold: { ...current.recruitmentTargets.Gold },
-              Platinum: { ...current.recruitmentTargets.Platinum },
-            },
-          };
-        })(),
-      },
-    };
-  } catch {
-    return createInitialAppState();
-  }
-}
-
-function persist(state: AppState): void {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch {
-    /* storage unavailable or full — prototype keeps working in memory */
-  }
-}
-
 export function AppStoreProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(appReducer, undefined, loadState);
-
-  useEffect(() => {
-    persist(state);
-  }, [state]);
+  const [state, dispatch] = useReducer(
+    appReducer,
+    undefined,
+    createInitialAppState,
+  );
 
   const value = useMemo(() => ({ state, dispatch }), [state]);
 

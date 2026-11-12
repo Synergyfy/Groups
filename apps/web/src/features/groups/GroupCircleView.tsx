@@ -75,7 +75,24 @@ function fontClassFor(size: number) {
   return "text-[7px]";
 }
 
-export default function GroupCircleView({ group }: { group: Group }) {
+interface CircleDirectoryEntry {
+  id: string;
+  name: string;
+  contactName: string;
+  category: string;
+  city: string;
+}
+
+export default function GroupCircleView({
+  group,
+  actorId,
+  directory,
+}: {
+  group: Group;
+  actorId?: string;
+  directory?: CircleDirectoryEntry[];
+}) {
+  const actor = actorId ?? CURRENT_BUSINESS.id;
   const containerRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
   const [selection, setSelection] = useState<{ groupId: string; memberId: string } | null>(
@@ -103,7 +120,8 @@ export default function GroupCircleView({ group }: { group: Group }) {
       (id) => id !== "system"
     );
     return ids.map((id) => {
-      const entry = findDirectoryEntry(id);
+      const entry =
+        directory?.find((candidate) => candidate.id === id) ?? findDirectoryEntry(id);
       return {
         id,
         name: entry.name,
@@ -111,11 +129,11 @@ export default function GroupCircleView({ group }: { group: Group }) {
         category: entry.category,
         city: entry.city,
         owner: id === group.ownerId,
-        you: id === CURRENT_BUSINESS.id,
-        online: id === group.ownerId || id === CURRENT_BUSINESS.id || isOnline(id),
+        you: id === actor,
+        online: id === group.ownerId || id === actor || isOnline(id),
       };
     });
-  }, [group]);
+  }, [group, actor, directory]);
 
   const effectiveWidth = width > 0 ? width : FALLBACK_WIDTH;
   const satellites = useMemo(() => members.filter((member) => !member.owner), [members]);

@@ -67,25 +67,24 @@ export default function GroupAccessDashboardPage() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
 
-  // If session is missing, default to a realistic consumer session so the prototype works immediately
   const activeUser: UserEligibilityProfile = useMemo(() => {
     if (session?.authenticated) {
       return {
-        id: session.accountId || session.email || "demo-user",
+        id: session.accountId || session.email || "",
         name: session.name || "Member",
         accountType: session.role === "business" ? "business" : "consumer",
-        city: session.city || inferCityFromPostcode(session.postcode) || "Birmingham",
+        city: session.city || inferCityFromPostcode(session.postcode) || "",
         postcode: session.postcode,
         sector: session.sector,
         businessName: session.businessName,
       };
     }
     return {
-      id: "demo-user",
-      name: "Guest Explorer",
+      id: "",
+      name: "Guest",
       accountType: "consumer",
-      city: "Birmingham",
-      postcode: "B1 1AA",
+      city: "",
+      postcode: undefined,
     };
   }, [session]);
 
@@ -102,21 +101,6 @@ export default function GroupAccessDashboardPage() {
     if (invitationIdParam && !list.some((i) => i.id === invitationIdParam)) {
       const match = state.invitations.find((i) => i.id === invitationIdParam);
       if (match) list.unshift(match);
-      else {
-        // Fallback for custom demo invitations (like inv-friends-family)
-        list.unshift({
-          id: invitationIdParam,
-          groupId: "grp-friends-family",
-          direction: "incoming",
-          kind: "invite",
-          inviteeId: activeUser.id,
-          inviteeName: activeUser.name,
-          invitedById: "biz-smith",
-          invitedByName: "Smith Business Ltd",
-          status: "pending",
-          createdAt: new Date().toISOString(),
-        });
-      }
     }
     return list;
   }, [state.invitations, activeUser.id, activeUser.name, session?.email, invitationIdParam]);
@@ -126,9 +110,7 @@ export default function GroupAccessDashboardPage() {
     return state.groups.filter(
       (g) =>
         g.status !== "Closed" &&
-        (g.memberIds.includes(activeUser.id) ||
-          g.ownerId === activeUser.id ||
-          (activeUser.id === "biz-smith" && g.memberIds.includes("biz-smith")))
+        (g.memberIds.includes(activeUser.id) || g.ownerId === activeUser.id)
     );
   }, [state.groups, activeUser.id]);
 
@@ -150,22 +132,9 @@ export default function GroupAccessDashboardPage() {
   useEffect(() => {
     if (invitationIdParam) {
       const inv = userInvitations.find((i) => i.id === invitationIdParam);
-      const grp = state.groups.find((g) => g.id === inv?.groupId) || {
-        id: "grp-friends-family",
-        name: "Friends & Family Circle",
-        type: "Seasonal" as any,
-        source: "user-created" as any,
-        purpose: "Community updates, family news and shared local activities.",
-        ownerId: "biz-smith",
-        ownerName: "Smith Business Ltd",
-        memberIds: ["biz-smith"],
-        location: { city: "Birmingham" },
-        status: "Active" as any,
-        accessType: "open" as any,
-        createdAt: "2026-09-01",
-      };
+      const grp = state.groups.find((g) => g.id === inv?.groupId);
       if (inv) {
-        setSelectedInvite({ invitation: inv, group: grp });
+        if (grp) setSelectedInvite({ invitation: inv, group: grp });
       }
     }
   }, [invitationIdParam, userInvitations, state.groups]);

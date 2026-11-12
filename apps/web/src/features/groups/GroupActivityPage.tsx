@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Activity } from "lucide-react";
 import Badge from "../../components/ui/Badge";
@@ -5,10 +6,11 @@ import type { BadgeVariant } from "../../components/ui/Badge";
 import EmptyState from "../../components/ui/EmptyState";
 import LinkButton from "../../components/ui/LinkButton";
 import { useGroup, useGroupActivity } from "../../store/selectors";
-import { useDemoLoading } from "../../lib/demoDelay";
 import { SkeletonCard, SkeletonRows } from "../../components/ui/Skeleton";
 import { relativeTime } from "../../lib/time";
 import GroupTabsHeader, { GroupMissingState } from "./GroupTabsHeader";
+import { businessApi, useBusinessData } from "../../business/BusinessDataProvider";
+import type { GroupActivity } from "../../domain/types";
 
 const KIND_META: Record<string, { label: string; variant: BadgeVariant }> = {
   join: { label: "Join", variant: "success" },
@@ -23,8 +25,28 @@ const KIND_META: Record<string, { label: string; variant: BadgeVariant }> = {
 export default function GroupActivityPage() {
   const { groupId } = useParams();
   const group = useGroup(groupId);
-  const activity = useGroupActivity(groupId);
-  const loading = useDemoLoading();
+  const storedActivity = useGroupActivity(groupId);
+  const business = useBusinessData();
+  const [apiActivity, setApiActivity] = useState<GroupActivity[] | null>(null);
+  const loading = false;
+
+  useEffect(() => {
+    if (!groupId) return;
+    let alive = true;
+    void businessApi
+      .groupActivity(groupId)
+      .then((entries) => {
+        if (alive) setApiActivity(entries);
+      })
+      .catch(() => {
+        if (alive) setApiActivity(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [groupId, business.refreshing]);
+
+  const activity = apiActivity ?? storedActivity;
 
   if (loading) {
     return (

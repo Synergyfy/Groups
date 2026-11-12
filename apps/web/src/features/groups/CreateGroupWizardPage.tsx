@@ -19,11 +19,10 @@ import type {
   UserGroupType,
 } from "../../domain/types";
 import { GROUP_VISIBILITY_LABELS } from "../../domain/types";
-import { CURRENT_BUSINESS } from "../../data/businessData";
-import { CITY_NAMES, areasOf } from "../../data/locationsData";
 import { INTERACTION_LEVELS } from "../../domain/constants";
-import { useAppStore } from "../../store/context";
 import {
+  useBusinessId,
+  useBusinessProfile,
   useCanCreateGroups,
   useCreationRightsLabel,
   useMembership,
@@ -31,9 +30,9 @@ import {
   useAppState,
   usePlatformGroup,
 } from "../../store/selectors";
+import { errorMessage } from "../../app/api";
+import { businessApi, useBusinessData } from "../../business/BusinessDataProvider";
 import { creatableGroupTypes, nonCreatableGroupTypes, pendingMandatoryTypes, typeForcedPaid } from "./groupUtils";
-
-const ACTOR_ID = CURRENT_BUSINESS.id;
 
 const INTERACTION_LABELS: Record<InteractionLevel, string> = {
   read: "Read only — members can read and browse",
@@ -138,8 +137,12 @@ function CreateGroupWizard({
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { adminConfig } = useAppState();
-  const { dispatch } = useAppStore();
-  const ownedGroups = useOwnedGroups(ACTOR_ID);
+  const actorId = useBusinessId();
+  const profile = useBusinessProfile();
+  const { refresh, locations } = useBusinessData();
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const ownedGroups = useOwnedGroups(actorId);
   const ownedTypes = useMemo(
     () => new Set(ownedGroups.map((group) => group.type)),
     [ownedGroups]
@@ -177,8 +180,8 @@ function CreateGroupWizard({
   const [type, setType] = useState<UserGroupType | "">(validPreset ? presetCandidate : "");
   const [name, setName] = useState("");
   const [purpose, setPurpose] = useState("");
-  const [city, setCity] = useState(CURRENT_BUSINESS.city);
-  const [localArea, setLocalArea] = useState(CURRENT_BUSINESS.localArea);
+  const [city, setCity] = useState(profile?.city ?? "");
+  const [localArea, setLocalArea] = useState(profile?.localArea ?? "");
   const [accessType, setAccessType] = useState<GroupAccessType>("open");
   const [visibility, setVisibility] = useState<GroupVisibility>("directory");
   const [interactionLevel, setInteractionLevel] = useState<InteractionLevel>("message");
@@ -191,7 +194,10 @@ function CreateGroupWizard({
   const [frequencyMode, setFrequencyMode] = useState<"once" | "recurring">("once");
   const [recurringEvery, setRecurringEvery] = useState<"daily" | "weekly" | "monthly">("weekly");
 
-  const areas = useMemo(() => areasOf(city), [city]);
+  const areas = useMemo(
+    () => locations?.cities.find((entry) => entry.name === city)?.areas.map((entry) => entry.name) ?? [],
+    [locations, city],
+  );
 
   const inRangePresets = useMemo(
     () =>
@@ -255,12 +261,12 @@ function CreateGroupWizard({
     if (step > 0) setStep(step - 1);
   };
 
-  const create = () => {
-    if (!type || !stepValid) return;
-    dispatch({
-      type: "group/create",
-      owner: { id: ACTOR_ID, name: CURRENT_BUSINESS.businessName },
-      input: {
+  const create = async () => {
+    if (!type || !stepValid || submitting) return;
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      const created = await businessApi.createGroup({
         name: name.trim(),
         type,
         purpose: purpose.trim(),
@@ -272,13 +278,23 @@ function CreateGroupWizard({
           ? { contribution: paidAmount }
           : {}),
         ...(finalPricing === "paid"
-          ? { contributionFrequency: frequencyMode === "recurring" ? recurringEvery : ("once" as const) }
+          ? {
+              contributionFrequency:
+                frequencyMode === "recurring" ? recurringEvery : "once",
+            }
           : {}),
         ...(city ? { city, ...(localArea ? { localArea } : {}) } : {}),
         ...(requiredSize ? { requiredSize: Number(requiredSize) } : {}),
-      },
-    });
-    navigate("/business/groups/create/success");
+      });
+      await refresh();
+      navigate("/business/groups/create/success", {
+        state: { groupId: created.id },
+      });
+    } catch (cause) {
+      setSubmitError(errorMessage(cause));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -413,11 +429,13 @@ function CreateGroupWizard({
                   onChange={(event) => {
                     const nextCity = event.target.value;
                     setCity(nextCity);
-                    setLocalArea(areasOf(nextCity)[0] ?? "");
+                    setLocalArea(
+                      locations?.cities.find((entry) => entry.name === nextCity)?.areas[0]?.name ?? "",
+                    );
                   }}
                   options={[
                     { value: "", label: "No location (not location-bound)" },
-                    ...CITY_NAMES.map((entry) => ({ value: entry, label: entry })),
+                    ...(locations?.cities ?? []).map((entry) => ({ value: entry.name, label: entry.name })),
                   ]}
                 />
                 <Select
@@ -888,15 +906,21 @@ function CreateGroupWizard({
       </Card>
 
       <div className="sticky bottom-[4.5rem] z-20 -mx-4 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 bg-ink-950/95 px-4 py-3 backdrop-blur lg:bottom-0 lg:mx-0 lg:rounded-2xl lg:border lg:px-5">
-        <span className="text-[11px] font-medium text-slate-500" aria-live="polite">
-          Step {step + 1} of {STEPS.length} · {STEPS[step].label}
+        <span className="w-full text-[11px] font-medium text-slate-500 sm:w-auto" aria-live="polite">
+          {submitError ? (
+            <span className="text-danger-400">{submitError}</span>
+          ) : (
+            <>
+              Step {step + 1} of {STEPS.length} · {STEPS[step].label}
+            </>
+          )}
         </span>
         <div className="flex w-full gap-2 sm:w-auto">
           <Button
             variant="ghost"
             size="md"
             onClick={back}
-            disabled={step === 0}
+            disabled={step === 0 || submitting}
             className="flex-1 sm:flex-none"
           >
             <ArrowLeft className="size-4" /> Back
@@ -916,10 +940,10 @@ function CreateGroupWizard({
               variant="primary"
               size="md"
               onClick={create}
-              disabled={!stepValid}
+              disabled={!stepValid || submitting}
               className="flex-1 sm:flex-none"
             >
-              Create group
+              {submitting ? "Creating…" : "Create group"}
             </Button>
           )}
         </div>

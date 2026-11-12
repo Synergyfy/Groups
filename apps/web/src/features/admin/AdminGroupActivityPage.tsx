@@ -7,8 +7,8 @@ import Table from "../../components/ui/Table";
 import type { TableColumn } from "../../components/ui/Table";
 import TipIcon from "../../components/ui/TipIcon";
 import type { GroupActivity, GroupActivityKind } from "../../domain/types";
-import { useGroup, useGroupActivity } from "../../store/selectors";
-import { useDemoLoading } from "../../lib/demoDelay";
+import { useGroup } from "../../store/selectors";
+import { useAdminGroupActivity } from "../../admin/AdminDataProvider";
 import { SkeletonCard, SkeletonRows } from "../../components/ui/Skeleton";
 import AdminGroupTabsHeader, { AdminGroupMissingState } from "./AdminGroupTabsHeader";
 
@@ -25,8 +25,8 @@ const KIND_VARIANT: Record<GroupActivityKind, BadgeVariant> = {
 export default function AdminGroupActivityPage() {
   const { groupId } = useParams();
   const group = useGroup(groupId);
-  const activity = useGroupActivity(groupId);
-  const loading = useDemoLoading();
+  const activity = useAdminGroupActivity(groupId);
+  const loading = false;
 
   if (loading) {
     return (

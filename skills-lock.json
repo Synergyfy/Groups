@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "api-design-principles": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "skillPath": "plugins/backend-development/skills/api-design-principles/SKILL.md",
+      "computedHash": "5c0ad1d3b5df26d4e70d32250ee3b2f6546ad32ed46f4cd7f93a8cc37382455b"
+    }
+  }
+}

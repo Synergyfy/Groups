@@ -12,9 +12,7 @@ import Table from "../../components/ui/Table";
 import type { TableColumn } from "../../components/ui/Table";
 import Button from "../../components/ui/Button";
 import TipIcon from "../../components/ui/TipIcon";
-import { PROGRAMMES } from "../../data/businessData";
 import type { AdminGroupFilters, Group } from "../../domain/types";
-import { useDemoLoading } from "../../lib/demoDelay";
 import { useAdminFilteredGroups, useAppState } from "../../store/selectors";
 import { memberCountOf } from "../groups/groupUtils";
 
@@ -37,7 +35,7 @@ function options(values: string[], allLabel: string) {
 }
 
 export default function AdminGroupListPage() {
-  const loading = useDemoLoading();
+  const loading = false;
   const state = useAppState();
   const [filters, setFilters] = useState<AdminGroupFilters>(BLANK_FILTERS);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -215,7 +213,7 @@ export default function AdminGroupListPage() {
         onChange={(value) => patch({ programme: value })}
         options={[
           { value: "all", label: "All programmes" },
-          ...PROGRAMMES.map((entry) => ({ value: entry.id, label: entry.name })),
+          ...state.programmes.map((entry) => ({ value: entry.id, label: entry.name })),
           { value: "", label: "No programme" },
         ]}
       />

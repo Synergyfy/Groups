@@ -4,8 +4,7 @@ import Card, { CardBody, CardTitle } from "../../components/ui/Card";
 import EmptyState from "../../components/ui/EmptyState";
 import SectionHeader from "../../components/ui/SectionHeader";
 import StatCard from "../../components/ui/StatCard";
-import { CAMPAIGNS, CURRENT_BUSINESS } from "../../data/businessData";
-import { useAppState } from "../../store/selectors";
+import { useBusinessData } from "../../business/BusinessDataProvider";
 
 const STATUS_VARIANT: Record<string, "success" | "warning" | "muted"> = {
   Active: "success",
@@ -14,9 +13,9 @@ const STATUS_VARIANT: Record<string, "success" | "warning" | "muted"> = {
 };
 
 export default function CampaignsPage() {
-  const { groups } = useAppState();
-
-  const groupName = (id: string) => groups.find((group) => group.id === id)?.name ?? id;
+  const { campaigns: view } = useBusinessData();
+  const campaigns = view?.items ?? [];
+  const stats = view?.stats;
 
   return (
     <div className="flex flex-col gap-4">
@@ -28,32 +27,33 @@ export default function CampaignsPage() {
       <div className="grid gap-3 sm:grid-cols-3">
         <StatCard
           label="Campaigns available"
-          value={CAMPAIGNS.length}
-          hint="Demo campaign records"
+          value={stats?.total ?? campaigns.length}
+          hint="Campaign records available to you"
         />
         <StatCard
           label="Active"
-          value={CAMPAIGNS.filter((entry) => entry.status === "Active").length}
+          value={stats?.active ?? campaigns.filter((entry) => entry.status === "Active").length}
           hint="Currently running"
           accent="success"
         />
         <StatCard
           label="My groups referenced"
-          value={
-            CAMPAIGNS.filter((entry) =>
-              entry.groupIds?.some((id) =>
-                groups.some((group) => group.id === id && group.ownerId === CURRENT_BUSINESS.id)
-              )
-            ).length
-          }
+          value={stats?.touchingMyGroups ?? 0}
           hint="Campaigns touching groups I own"
           accent="info"
         />
       </div>
 
+      {campaigns.length === 0 && (
+        <EmptyState
+          title="No campaigns available"
+          description="Campaigns appear here once an administrator publishes one."
+        />
+      )}
+
       <div className="grid gap-4 lg:grid-cols-2">
-        {CAMPAIGNS.map((campaign) => {
-          const linked = (campaign.groupIds ?? []).map(groupName);
+        {campaigns.map((campaign) => {
+          const linked = campaign.groups.map((group) => group.name);
           return (
             <Card key={campaign.id}>
               <CardBody className="flex h-full flex-col gap-3">
@@ -125,10 +125,10 @@ export default function CampaignsPage() {
               </p>
             </div>
           </div>
-          {CAMPAIGNS.length === 0 && (
+          {campaigns.length === 0 && (
             <EmptyState
               title="No campaigns yet"
-              description="Campaign records appear here once they are added."
+              description="Campaign records appear here once an administrator adds them."
             />
           )}
         </CardBody>

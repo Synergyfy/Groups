@@ -12,7 +12,8 @@ import StatCard from "../../components/ui/StatCard";
 import Toast from "../../components/ui/Toast";
 import Modal from "../../components/ui/Modal";
 import type { MembershipPlan, PlanVariant, Tier } from "../../domain/types";
-import { MEMBERSHIP_PLANS } from "../../data/membershipPlans";
+import { adminApi } from "../../admin/adminApi";
+import { useAdminData } from "../../admin/AdminDataProvider";
 
 const TIER_META: Record<
   Tier,
@@ -62,7 +63,8 @@ const TIER_META: Record<
 const TIERS_LIST: Tier[] = ["Bronze", "Silver", "Gold", "Platinum"];
 
 export default function AdminMembershipsPage() {
-  const [plans, setPlans] = useState<MembershipPlan[]>(MEMBERSHIP_PLANS);
+  const { data, refresh } = useAdminData();
+  const plans = useMemo(() => data?.membershipPlans ?? [], [data]);
   const [selectedTier, setSelectedTier] = useState<"All" | Tier>("All");
   const [selectedVariant, setSelectedVariant] = useState<"All" | PlanVariant>("All");
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -80,20 +82,20 @@ export default function AdminMembershipsPage() {
     "Custom group allocations\nFull analytics reporting\nDedicated support"
   );
 
-  const togglePlanStatus = (planId: string) => {
-    setPlans((prev) =>
-      prev.map((p) => {
-        if (p.id === planId) {
-          const next = p.status === "Active" ? "Draft" : "Active";
-          setFeedback(`Plan "${p.name}" set to ${next}.`);
-          return { ...p, status: next };
-        }
-        return p;
-      })
-    );
+  const togglePlanStatus = async (planId: string) => {
+    const plan = plans.find((entry) => entry.id === planId);
+    if (!plan) return;
+    const next = plan.status === "Active" ? "Draft" : "Active";
+    try {
+      await adminApi.updatePlan(planId, { status: next });
+      await refresh();
+      setFeedback(`Plan "${plan.name}" set to ${next}.`);
+    } catch {
+      setFeedback("Could not update the membership plan.");
+    }
   };
 
-  const handleCreatePlan = (e: React.FormEvent) => {
+  const handleCreatePlan = async (e: React.FormEvent) => {
     e.preventDefault();
     const planName = `${newTier} ${newVariant}`;
     const featureLines = newFeaturesText
@@ -101,24 +103,31 @@ export default function AdminMembershipsPage() {
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
 
-    const created: MembershipPlan = {
-      id: `plan-${Date.now()}`,
-      tier: newTier,
-      variant: newVariant,
-      name: planName,
-      priceMonthly: Number(newPrice),
-      billingFrequency: newFrequency,
-      status: "Active",
-      groupQuota: Number(newGroupQuota),
-      circleQuota: Number(newCircleQuota),
-      revenueSharePercent: Number(newRevenueShare),
-      features: featureLines.length > 0 ? featureLines : ["Standard membership features"],
-      subscriberCount: 0,
-    };
-
-    setPlans((prev) => [created, ...prev]);
-    setFeedback(`Membership plan "${planName}" created successfully!`);
-    setCreateModalOpen(false);
+    try {
+      await adminApi.createPlan({
+        tier: newTier,
+        variant: newVariant,
+        name: planName,
+        priceMonthly: Number(newPrice),
+        billingFrequency: newFrequency,
+        status: "Active",
+        groupQuota: Number(newGroupQuota),
+        circleQuota: Number(newCircleQuota),
+        revenueSharePercent: Number(newRevenueShare),
+        features:
+          featureLines.length > 0
+            ? featureLines
+            : ["Standard membership features"],
+        subscriberCount: 0,
+      });
+      await refresh();
+      setFeedback(`Membership plan "${planName}" created successfully!`);
+      setCreateModalOpen(false);
+    } catch {
+      setFeedback(
+        `Could not create "${planName}" — a plan with that tier and variant may already exist.`,
+      );
+    }
   };
 
   // Metrics

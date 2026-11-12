@@ -6,11 +6,8 @@ import EmptyState from "../../components/ui/EmptyState";
 import LinkButton from "../../components/ui/LinkButton";
 import SectionHeader from "../../components/ui/SectionHeader";
 import ShareLink from "../../components/ui/ShareLink";
-import { CURRENT_BUSINESS } from "../../data/businessData";
-import { useActor } from "../../store/selectors";
+import { useActor, useBusinessId, useBusinessProfile } from "../../store/selectors";
 import { memberCountOf, contributionLabel } from "./groupUtils";
-
-const ACTOR_ID = CURRENT_BUSINESS.id;
 
 interface SuccessState {
   groupId?: string;
@@ -18,7 +15,9 @@ interface SuccessState {
 
 export default function GroupCreatedPage() {
   const location = useLocation();
-  const { ownedGroups } = useActor(ACTOR_ID);
+  const actorId = useBusinessId();
+  const profile = useBusinessProfile();
+  const { ownedGroups } = useActor(actorId);
 
   const requestedId = (location.state as SuccessState | null)?.groupId;
   const group =
@@ -75,7 +74,7 @@ export default function GroupCreatedPage() {
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
                 <span className="font-semibold text-gold-400">
-                  You are now the Group Owner — {CURRENT_BUSINESS.businessName}
+                  You are now the Group Owner — {profile?.businessName ?? "your business"}
                 </span>
                 <span className="text-slate-600">·</span>
                 <span>Created {group.createdAt}</span>

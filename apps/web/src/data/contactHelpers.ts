@@ -1,6 +1,4 @@
 import type { CircleMember, NetworkContact, NetworkList } from "../domain/types";
-import { CURRENT_BUSINESS } from "./businessData";
-import { CONTACTS, LISTS } from "./mockData";
 
 export interface ResolvedContact {
   member: CircleMember;
@@ -12,14 +10,13 @@ export interface ResolvedContact {
 
 export function toCircleMember(contact: NetworkContact): CircleMember {
   const day = contact.addedAt.slice(0, 10);
-  const list = LISTS.find((entry) => entry.id === contact.listId);
   return {
     id: contact.id,
     fullName: contact.fullName,
     businessName: contact.fullName,
     category: "New contact",
-    location: CURRENT_BUSINESS.city,
-    geography: list?.geography ?? "National",
+    location: "",
+    geography: "National",
     status: "active",
     role: "peripheral",
     tier: "Bronze",
@@ -42,14 +39,9 @@ export function resolveContactsOfList(
   list: NetworkList,
   networkContacts: NetworkContact[]
 ): ResolvedContact[] {
-  const seeded: ResolvedContact[] = list.contactIds
-    .map((id) => CONTACTS.find((contact) => contact.id === id))
-    .filter((contact): contact is CircleMember => contact !== undefined)
-    .map((member) => ({ member, pending: false }));
-  return [...networkContacts.filter((c) => c.listId === list.id).map(resolveAdded), ...seeded];
+  return networkContacts.filter((c) => c.listId === list.id).map(resolveAdded);
 }
 
 export function resolveAllContacts(networkContacts: NetworkContact[]): ResolvedContact[] {
-  const seeded: ResolvedContact[] = CONTACTS.map((member) => ({ member, pending: false }));
-  return [...networkContacts.map(resolveAdded), ...seeded];
+  return networkContacts.map(resolveAdded);
 }

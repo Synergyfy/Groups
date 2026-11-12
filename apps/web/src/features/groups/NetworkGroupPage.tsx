@@ -6,16 +6,9 @@ import EmptyState from "../../components/ui/EmptyState";
 import LinkButton from "../../components/ui/LinkButton";
 import ProgressBar from "../../components/ui/ProgressBar";
 import SectionHeader from "../../components/ui/SectionHeader";
-import { CURRENT_BUSINESS, CAMPAIGNS, findDirectoryEntry } from "../../data/businessData";
-import {
-  useAppState,
-  useAutomaticProgress,
-  useGroup,
-  useGroupActivity,
-} from "../../store/selectors";
+import { useAppState, useAutomaticProgress, useBusinessId, useGroup, useGroupActivity } from "../../store/selectors";
+import { useBusinessData } from "../../business/BusinessDataProvider";
 import { memberCountOf } from "./groupUtils";
-
-const ACTOR_ID = CURRENT_BUSINESS.id;
 
 const ACTIVITY_LABELS: Record<string, string> = {
   join: "Join",
@@ -28,10 +21,12 @@ const ACTIVITY_LABELS: Record<string, string> = {
 };
 
 export default function NetworkGroupPage() {
-  const progress = useAutomaticProgress(ACTOR_ID);
+  const actorId = useBusinessId();
+  const progress = useAutomaticProgress(actorId);
   const group = useGroup(progress.group?.id);
   const activity = useGroupActivity(progress.group?.id);
   const { adminConfig } = useAppState();
+  const { directory, profile, campaigns } = useBusinessData();
   const rules = adminConfig.automaticGrouping;
 
   if (!group) {
@@ -53,8 +48,29 @@ export default function NetworkGroupPage() {
     );
   }
 
-  const members = group.memberIds.map(findDirectoryEntry);
-  const networkCampaign = CAMPAIGNS.find((entry) => entry.groupIds?.includes(group.id));
+  const members = group.memberIds.map((id) => {
+    if (id === profile?.business.id) {
+      return {
+        id,
+        name: profile.business.name,
+        contactName: profile.business.contactName,
+        city: profile.business.city,
+        category: profile.business.category,
+      };
+    }
+    return (
+      directory.find((entry) => entry.id === id) ?? {
+        id,
+        name: id,
+        contactName: "—",
+        city: "—",
+        category: "—",
+      }
+    );
+  });
+  const networkCampaign = campaigns?.items.find((entry) =>
+    entry.groupIds?.includes(group.id)
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -245,7 +261,7 @@ export default function NetworkGroupPage() {
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
               {members.map((member) => {
-                const isSelf = member.id === ACTOR_ID;
+                const isSelf = member.id === actorId;
                 return (
                   <div
                     key={member.id}

@@ -20,7 +20,6 @@ import StatCard from "../../components/ui/StatCard";
 import TipIcon from "../../components/ui/TipIcon";
 import BarChart from "../../components/ui/charts/BarChart";
 import Donut from "../../components/ui/charts/Donut";
-import { useDemoLoading } from "../../lib/demoDelay";
 import { SkeletonCard, SkeletonRows } from "../../components/ui/Skeleton";
 import { useAppState } from "../../store/selectors";
 import { memberCountOf } from "../groups/groupUtils";
@@ -74,7 +73,7 @@ const COMPLETENESS_RULES = [
 ];
 
 export default function AdminOverviewPage() {
-  const loading = useDemoLoading();
+  const loading = false;
   const state = useAppState();
 
   const groups = state.groups;
@@ -85,11 +84,15 @@ export default function AdminOverviewPage() {
   // 1. Total business owners (distinct business owners in directory or accounts)
   const totalBusinessOwners = Math.max(
     businesses.length,
-    new Set(groups.map((g) => g.ownerId)).size
+    new Set(
+      groups
+        .map((g) => g.ownerId)
+        .filter((id): id is string => Boolean(id)),
+    ).size,
   );
 
   // 2. Total consumers (registered consumers + seeded consumers)
-  const totalConsumers = accounts.filter((acc) => acc.role === "consumer").length + 12;
+  const totalConsumers = accounts.filter((acc) => acc.role === "consumer").length;
 
   // 3. Total groups
   const totalGroups = groups.length;

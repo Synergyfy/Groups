@@ -11,10 +11,9 @@ import Stepper from "../../components/ui/Stepper";
 import TipIcon from "../../components/ui/TipIcon";
 import { INTERACTION_LEVELS } from "../../domain/constants";
 import type { CampaignDuration, CircleVisibility, InteractionLevel } from "../../domain/types";
-import { CONTACTS, LISTS } from "../../data/mockData";
-import { resolveContactsOfList } from "../../data/contactHelpers";
-import { useAppStore } from "../../store/context";
-import { useCircleTypeEntries, useNetworkContacts } from "../../store/selectors";
+import { useCircleTypeEntries } from "../../store/selectors";
+import { errorMessage } from "../../app/api";
+import { businessApi, useBusinessData } from "../../business/BusinessDataProvider";
 const STEPS = [
   { id: "lists", label: "Select Lists" },
   { id: "type", label: "Define Type" },
@@ -23,14 +22,14 @@ const STEPS = [
 
 export default function CircleCreatePage() {
   const navigate = useNavigate();
-  const { dispatch } = useAppStore();
-  const networkContacts = useNetworkContacts();
+  const { networkLists, contacts, refresh } = useBusinessData();
+  const lists = useMemo(() => networkLists?.items ?? [], [networkLists]);
   const [params] = useSearchParams();
 
   const [step, setStep] = useState(0);
   const [selected, setSelected] = useState<string[]>(() => {
     const preset = params.get("list");
-    return preset && LISTS.some((list) => list.id === preset) ? [preset] : [];
+    return preset && lists.some((list) => list.id === preset) ? [preset] : [];
   });
   const [selectedTypeId, setSelectedTypeId] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -39,6 +38,7 @@ export default function CircleCreatePage() {
   const [visibility, setVisibility] = useState<CircleVisibility>("private");
   const [interaction, setInteraction] = useState<InteractionLevel>("message");
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const allCircleTypes = useCircleTypeEntries();
   const circleTypes = useMemo(() => allCircleTypes.filter((entry) => entry.enabled), [allCircleTypes]);
@@ -46,15 +46,15 @@ export default function CircleCreatePage() {
 
   const memberIds = useMemo(() => {
     const ids = new Set<string>();
-    for (const list of LISTS) {
+    for (const list of lists) {
       if (!selected.includes(list.id)) continue;
-      for (const id of list.contactIds) ids.add(id);
-      for (const contact of networkContacts) {
+      for (const id of list.contactIds ?? []) ids.add(id);
+      for (const contact of contacts) {
         if (contact.listId === list.id) ids.add(contact.id);
       }
     }
     return [...ids];
-  }, [selected, networkContacts]);
+  }, [selected, lists, contacts]);
 
   const toggleList = (id: string) => {
     setError(null);
@@ -63,7 +63,7 @@ export default function CircleCreatePage() {
     );
   };
 
-  const goNext = () => {
+  const goNext = async () => {
     setError(null);
     if (step === 0 && selected.length === 0) {
       setError("Select at least one list — a circle is always built from your network.");
@@ -91,9 +91,10 @@ export default function CircleCreatePage() {
         return;
       }
       if (meta.requiresBanker) {
-        const hasBanker = memberIds.some(
-          (id) => CONTACTS.find((contact) => contact.id === id)?.role === "banker"
-        );
+        const hasBanker = lists
+          .filter((list) => selected.includes(list.id))
+          .flatMap((list) => list.contacts ?? [])
+          .some((contact) => (contact as { role?: string }).role === "banker");
         if (!hasBanker) {
           setError(
             "This circle type requires a designated Banker. Include a list that contains a finance contact."
@@ -104,11 +105,9 @@ export default function CircleCreatePage() {
       const finalDuration: CampaignDuration = meta.allowedDurations.includes(duration)
         ? duration
         : (meta.allowedDurations[0] ?? duration);
-      const id = `circle-${Date.now().toString(36)}`;
-      dispatch({
-        type: "circle/create",
-        circle: {
-          id,
+      setSubmitting(true);
+      try {
+        const created = await businessApi.createCircle({
           type: meta.type,
           config: {
             name: name.trim(),
@@ -122,10 +121,15 @@ export default function CircleCreatePage() {
           },
           memberIds,
           sourceListIds: selected,
-          createdAt: new Date().toISOString(),
-        },
-      });
-      navigate(`/business/circles/${id}`);
+        });
+        await refresh();
+        navigate(`/business/circles/${created.circle.id}`);
+        return;
+      } catch (cause) {
+        setError(errorMessage(cause));
+        setSubmitting(false);
+        return;
+      }
     }
     setStep((current) => Math.min(current + 1, STEPS.length - 1));
   };
@@ -150,7 +154,7 @@ export default function CircleCreatePage() {
                 <CardTitle>Select the lists this circle is built from</CardTitle>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
-                {LISTS.map((list) => {
+                {lists.map((list) => {
                   const active = selected.includes(list.id);
                   return (
                     <button
@@ -184,7 +188,7 @@ export default function CircleCreatePage() {
                         <Badge variant={list.type === "B2B" ? "gold" : "info"}>{list.type}</Badge>
                         <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
                           <Users className="size-3.5" />{" "}
-                          {resolveContactsOfList(list, networkContacts).length}
+                          {list.contactCount ?? list.contactIds?.length ?? 0}
                         </span>
                       </div>
                     </button>
@@ -387,10 +391,10 @@ export default function CircleCreatePage() {
             >
               <ArrowLeft className="size-4" /> Back
             </Button>
-            <Button variant="primary" size="md" onClick={goNext}>
+            <Button variant="primary" size="md" onClick={goNext} disabled={submitting}>
               {step === STEPS.length - 1 ? (
                 <>
-                  <Check className="size-4" /> Create circle
+                  <Check className="size-4" /> {submitting ? "Creating…" : "Create circle"}
                 </>
               ) : (
                 <>

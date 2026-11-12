@@ -5,25 +5,32 @@ import Card, { CardBody, CardTitle } from "../../components/ui/Card";
 import SectionHeader from "../../components/ui/SectionHeader";
 import StatCard from "../../components/ui/StatCard";
 import TipIcon from "../../components/ui/TipIcon";
-import { CAMPAIGNS, PROGRAMMES, RELATIONSHIPS, findDirectoryEntry } from "../../data/businessData";
-import { LOCATIONS } from "../../data/locationsData";
-import { useAppState, useGroup, useGroupActivity } from "../../store/selectors";
-import { useDemoLoading } from "../../lib/demoDelay";
+import { useAppState, useGroup } from "../../store/selectors";
+import {
+  useAdminData,
+  useAdminDirectoryEntry,
+  useAdminGroupActivity,
+} from "../../admin/AdminDataProvider";
 import { SkeletonCard, SkeletonRows } from "../../components/ui/Skeleton";
 import { memberCountOf } from "../groups/groupUtils";
 import AdminGroupTabsHeader, { AdminGroupMissingState } from "./AdminGroupTabsHeader";
 
-function relationshipName(id?: string): string {
+function relationshipName(
+  relationships: { id: string; name: string }[],
+  id?: string,
+): string {
   if (!id) return "Not assigned";
-  return RELATIONSHIPS.find((entry) => entry.id === id)?.name ?? "Not assigned";
+  return relationships.find((entry) => entry.id === id)?.name ?? "Not assigned";
 }
 
 export default function AdminGroupRelationshipsPage() {
   const { groupId } = useParams();
   const group = useGroup(groupId);
   const state = useAppState();
-  const activity = useGroupActivity(groupId);
-  const loading = useDemoLoading();
+  const { data } = useAdminData();
+  const findDirectoryEntry = useAdminDirectoryEntry();
+  const activity = useAdminGroupActivity(groupId);
+  const loading = false;
 
   if (loading) {
     return (
@@ -46,24 +53,25 @@ export default function AdminGroupRelationshipsPage() {
   const owner = findDirectoryEntry(group.ownerId);
   const city = group.location?.city;
   const localArea = group.location?.localArea;
-  const cityEntry = LOCATIONS.cities.find((entry) => entry.name === city);
+  const locations = data?.locations ?? { nationalCommunity: "National Community", cities: [] };
+  const cityEntry = locations.cities.find((entry) => entry.name === city);
   const areaEntry = cityEntry?.areas.find((entry) => entry.name === localArea);
-  const programme = PROGRAMMES.find((entry) => entry.id === group.programmeId);
-  const campaigns = CAMPAIGNS.filter((entry) => entry.groupIds?.includes(group.id));
+  const programme = state.programmes.find((entry) => entry.id === group.programmeId);
+  const campaigns = state.campaigns.filter((entry) => entry.groupIds?.includes(group.id));
   const rule = state.adminConfig.automaticGrouping;
 
   const links: { label: string; value: string; to?: string }[] = [
     {
       label: "National Community",
-      value: LOCATIONS.nationalCommunity,
+      value: locations.nationalCommunity,
       to: "/admin/locations",
     },
     { label: "City", value: city ?? "No city", to: city ? "/admin/locations" : undefined },
     { label: "Local area", value: localArea ?? "No local area", to: localArea ? "/admin/locations" : undefined },
     { label: "Owner business", value: owner.name, to: `/admin/groups/all` },
-    { label: "Account manager", value: relationshipName(group.accountManagerId) },
-    { label: "Agent", value: relationshipName(group.agentId) },
-    { label: "Consultant", value: relationshipName(group.consultantId) },
+    { label: "Account manager", value: relationshipName(state.relationships, group.accountManagerId) },
+    { label: "Agent", value: relationshipName(state.relationships, group.agentId) },
+    { label: "Consultant", value: relationshipName(state.relationships, group.consultantId) },
     { label: "Programme", value: programme?.name ?? "No programme" },
   ];
 
@@ -110,7 +118,7 @@ export default function AdminGroupRelationshipsPage() {
             <ol className="flex flex-col gap-2 text-xs">
               <li className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-ink-950/60 px-3 py-2.5">
                 <span className="text-slate-400">National Community</span>
-                <span className="font-semibold text-white">{LOCATIONS.nationalCommunity}</span>
+                <span className="font-semibold text-white">{locations.nationalCommunity}</span>
               </li>
               <li className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-ink-950/60 px-3 py-2.5">
                 <span className="text-slate-400">City</span>

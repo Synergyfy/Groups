@@ -10,8 +10,6 @@ import TipIcon from "../../components/ui/TipIcon";
 import BarChart from "../../components/ui/charts/BarChart";
 import type { BarDatum } from "../../components/ui/charts/BarChart";
 import Donut from "../../components/ui/charts/Donut";
-import { PROGRAMMES } from "../../data/businessData";
-import { useDemoLoading } from "../../lib/demoDelay";
 import { useAppState, useNetworkStats } from "../../store/selectors";
 import { memberCountOf } from "../groups/groupUtils";
 
@@ -31,7 +29,7 @@ function tally(values: string[]): Map<string, number> {
 }
 
 export default function AdminGroupsDashboardPage() {
-  const loading = useDemoLoading();
+  const loading = false;
   const state = useAppState();
   const network = useNetworkStats();
 
@@ -52,7 +50,7 @@ export default function AdminGroupsDashboardPage() {
   const byStage = toBars(tally(groups.map((group) => group.stage ?? "Unset")));
   const byStatus = toBars(tally(groups.map((group) => group.status)));
 
-  const programmeNames = new Map(PROGRAMMES.map((entry) => [entry.id, entry.name]));
+  const programmeNames = new Map(state.programmes.map((entry) => [entry.id, entry.name]));
   const byProgramme = toBars(
     tally(
       groups.map((group) =>
@@ -82,7 +80,7 @@ export default function AdminGroupsDashboardPage() {
     <div className="flex flex-col gap-4">
       <SectionHeader
         title="14 — Admin Groups Dashboard"
-        subtitle="National group network summary: every group, member and business in the demo store, plus what needs an administrator's attention."
+        subtitle="National group network summary: every group, member and business across the platform, plus what needs an administrator's attention."
         tip="Everything here is read-only — approval and editing happen in the group list and the moderation queue."
         actions={
           <LinkButton to="/admin/groups/all" size="sm">

@@ -21,23 +21,20 @@ import LinkButton from "../../components/ui/LinkButton";
 import SectionHeader from "../../components/ui/SectionHeader";
 import { SkeletonRows } from "../../components/ui/Skeleton";
 import GroupListItem from "./GroupListItem";
-import { CURRENT_BUSINESS } from "../../data/businessData";
 import type { MandatoryGroupPricing } from "../../domain/types";
-import { useDemoLoading } from "../../lib/demoDelay";
 import {
   useActor,
   useAppState,
   useAutomaticProgress,
+  useBusinessId,
+  useBusinessProfile,
   useCanCreateGroups,
   useCreationRightsLabel,
-  useGroup,
   useGroupActivationLookup,
   useHeadStartGroups,
   useMandatoryGroupStatuses,
   usePlatformGroup,
 } from "../../store/selectors";
-
-const ACTOR_ID = CURRENT_BUSINESS.id;
 
 function requiredPricingLabel(pricing: MandatoryGroupPricing, allowPaid: boolean): string {
   if (pricing === "paid") {
@@ -47,13 +44,15 @@ function requiredPricingLabel(pricing: MandatoryGroupPricing, allowPaid: boolean
 }
 
 export default function GroupsOverviewPage() {
-  const loading = useDemoLoading();
-  const { exploreGroups, stats } = useActor(ACTOR_ID);
-  const { adminConfig } = useAppState();
-  const nationalCommunity = useGroup("grp-national");
-  const automatic = useAutomaticProgress(ACTOR_ID);
+  const loading = false;
+  const actorId = useBusinessId();
+  const profile = useBusinessProfile();
+  const { exploreGroups, stats } = useActor(actorId);
+  const { adminConfig, groups } = useAppState();
+  const nationalCommunity = groups.find((group) => group.type === "National Community");
+  const automatic = useAutomaticProgress(actorId);
   const networkGroup = automatic.group;
-  const mandatoryStatuses = useMandatoryGroupStatuses(ACTOR_ID);
+  const mandatoryStatuses = useMandatoryGroupStatuses(actorId);
   const requiredGroups = mandatoryStatuses.filter((entry) => entry.required);
   const missingGroups = requiredGroups.filter((entry) => !entry.satisfied);
   const canCreate = useCanCreateGroups();
@@ -274,7 +273,7 @@ export default function GroupsOverviewPage() {
               icon={<Users className="size-5" />}
               label="National Community"
               value="Member"
-              hint={`Since ${CURRENT_BUSINESS.nationalCommunity.joinedAt} · ${
+              hint={`Since ${profile?.nationalCommunity.joinedAt ?? "—"} · ${
                 nationalCommunity?.name ?? "National Community"
               }`}
             />
@@ -282,14 +281,14 @@ export default function GroupsOverviewPage() {
               to="/business/location"
               icon={<Building2 className="size-5" />}
               label="Its City"
-              value={CURRENT_BUSINESS.city || "Not set"}
+              value={profile?.city || "Not set"}
               hint="Registered location"
             />
             <PartRow
               to="/business/location"
               icon={<MapPinned className="size-5" />}
               label="Its Local Area"
-              value={CURRENT_BUSINESS.localArea || "Not set"}
+              value={profile?.localArea || "Not set"}
               hint="Decides which network group you are allocated to"
             />
             <PartRow
