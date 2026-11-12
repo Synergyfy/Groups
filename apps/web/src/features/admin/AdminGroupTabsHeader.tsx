@@ -3,6 +3,7 @@ import { Compass } from "lucide-react";
 import EmptyState from "../../components/ui/EmptyState";
 import LinkButton from "../../components/ui/LinkButton";
 import SectionHeader from "../../components/ui/SectionHeader";
+import { useAppState } from "../../store/selectors";
 
 interface AdminGroupTabsHeaderProps {
   title: string;
@@ -51,6 +52,9 @@ export default function AdminGroupTabsHeader({ title, subtitle }: AdminGroupTabs
 }
 
 export function AdminGroupMissingState({ title, description }: { title: string; description: string }) {
+  const state = useAppState();
+  const hasGroups = state.groups.length > 0;
+
   return (
     <div className="flex flex-col gap-4">
       <SectionHeader
@@ -59,12 +63,21 @@ export function AdminGroupMissingState({ title, description }: { title: string; 
         back="/admin/groups/all"
         backLabel="All Groups"
       />
-      <EmptyState
-        title="Group not found"
-        description="This group id does not exist. Open one from the Admin Group List."
-        icon={<Compass className="size-6" />}
-        action={<LinkButton to="/admin/groups/all" size="sm">Back to the register</LinkButton>}
-      />
+      {hasGroups ? (
+        <EmptyState
+          title="Group not found"
+          description="This group id does not exist. Open one from the Admin Group List."
+          icon={<Compass className="size-6" />}
+          action={<LinkButton to="/admin/groups/all" size="sm">Back to the register</LinkButton>}
+        />
+      ) : (
+        <EmptyState
+          title="No groups yet"
+          description="The platform has no groups. Create one from the Groups control centre, then open it here to manage members, activity and relationships."
+          icon={<Compass className="size-6" />}
+          action={<LinkButton to="/admin/groups?tab=platform-groups" size="sm">Create the first group</LinkButton>}
+        />
+      )}
     </div>
   );
 }

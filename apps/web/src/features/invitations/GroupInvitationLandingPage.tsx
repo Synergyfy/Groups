@@ -67,35 +67,30 @@ export default function GroupInvitationLandingPage({
         : "CHS Groups | Customer Group Invitation";
   }, [audience]);
 
-  // Fallback demo invitation
   const invitation: Invitation = realInvitation || {
     id,
-    groupId: audience === "business" ? "grp-smith-marketing" : "grp-friends-family-demo",
+    groupId: undefined,
     direction: "incoming",
     kind: "invite",
-    inviteeName: audience === "business" ? "Elena Rostova" : "John Doe",
-    invitedById: "biz-smith",
-    invitedByName: "Smith Business Ltd",
-    status: "pending",
+    inviteeName: "",
+    invitedById: "",
+    invitedByName: "",
+    status: "cancelled",
     createdAt: new Date().toISOString(),
   };
 
   const group: Group = realGroup || {
-    id: invitation.groupId || (audience === "business" ? "grp-smith-marketing" : "grp-friends-family-demo"),
-    name: audience === "business" ? "Smith Business Marketing" : "Friends & Family Circle",
-    type: (audience === "business" ? "Marketing" : "Event / Expo") as Group["type"],
+    id: invitation.groupId || id,
+    name: "",
+    type: "Other",
     source: "user-created",
-    purpose:
-      audience === "business"
-        ? "A network for sharing business promotions, supplier collaborations, and developing local commercial relationships."
-        : "Community updates, shared family news, and local seasonal activities in your neighborhood.",
-    ownerId: invitation.invitedById,
-    ownerName: invitation.invitedByName,
-    memberIds: [invitation.invitedById, "c-001", "c-005"],
-    location: { city: "Birmingham", localArea: "Central Community" },
-    status: "Active",
-    accessType: "open",
-    createdAt: "2026-09-01",
+    purpose: "",
+    ownerId: "",
+    ownerName: "",
+    memberIds: [],
+    status: "Closed",
+    accessType: "invitation",
+    createdAt: "",
   };
 
   const session = readAuthSession();
@@ -103,13 +98,13 @@ export default function GroupInvitationLandingPage({
 
   // Form Inputs
   const [name, setName] = useState(
-    session?.name || (audience === "business" ? "Elena Rostova" : "John Doe")
+    session?.name || ""
   );
   const [email, setEmail] = useState(
-    session?.email || (audience === "business" ? "elena@foodhospitality.demo" : "john@community.demo")
+    session?.email || ""
   );
   const [businessName, setBusinessName] = useState(
-    session?.businessName || "Rostova Hospitality Ltd"
+    session?.businessName || ""
   );
 
   const [transitioning, setTransitioning] = useState(false);
@@ -172,7 +167,7 @@ export default function GroupInvitationLandingPage({
       authenticated: true,
       email: email.trim(),
       name: name.trim(),
-      accountId: "cons-john",
+      accountId: session?.accountId || session?.email || "",
       city: group.location?.city || "Birmingham",
       postcode: "B1 2AB",
     });

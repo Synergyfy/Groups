@@ -43,21 +43,21 @@ export default function CentralCirclePage() {
   const activeUser: UserEligibilityProfile = useMemo(() => {
     if (session?.authenticated) {
       return {
-        id: session.accountId || session.email || "demo-user",
+        id: session.accountId || session.email || "",
         name: session.name || "Member",
         accountType: session.role === "business" ? "business" : "consumer",
-        city: session.city || inferCityFromPostcode(session.postcode) || "Birmingham",
+        city: session.city || inferCityFromPostcode(session.postcode) || "",
         postcode: session.postcode,
         sector: session.sector,
         businessName: session.businessName,
       };
     }
     return {
-      id: "demo-user",
-      name: "Guest Explorer",
+      id: "",
+      name: "Guest",
       accountType: "consumer",
-      city: "Birmingham",
-      postcode: "B1 1AA",
+      city: "",
+      postcode: undefined,
     };
   }, [session]);
 
@@ -66,9 +66,7 @@ export default function CentralCirclePage() {
     return state.groups.filter(
       (g) =>
         g.status !== "Closed" &&
-        (g.memberIds.includes(activeUser.id) ||
-          g.ownerId === activeUser.id ||
-          (activeUser.id === "biz-smith" && g.memberIds.includes("biz-smith")))
+        (g.memberIds.includes(activeUser.id) || g.ownerId === activeUser.id)
     );
   }, [state.groups, activeUser.id]);
 

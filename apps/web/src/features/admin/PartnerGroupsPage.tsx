@@ -5,14 +5,15 @@ import Card, { CardBody, CardTitle } from "../../components/ui/Card";
 import SectionHeader from "../../components/ui/SectionHeader";
 import StatCard from "../../components/ui/StatCard";
 import TipIcon from "../../components/ui/TipIcon";
-import { PROGRAMMES } from "../../data/businessData";
 import { useAppState } from "../../store/selectors";
 import { memberCountOf } from "../groups/groupUtils";
 
 export default function PartnerGroupsPage() {
   const state = useAppState();
   const partnerGroups = state.groups.filter((group) => group.type === "Partner");
-  const programme = PROGRAMMES.find((entry) => entry.id === "prog-partner");
+  const programme = state.programmes.find((entry) =>
+    entry.name.toLowerCase().includes("partner"),
+  );
   const members = partnerGroups.reduce((sum, group) => sum + memberCountOf(group), 0);
 
   return (
@@ -21,7 +22,7 @@ export default function PartnerGroupsPage() {
         title="Partner Groups"
         back="/admin/groups"
         tip="Everything here is a read-only report — there is nothing on this screen to configure or save."
-        subtitle="Partner membership structures across the network. The financial rules behind partnerships are a placeholder in this prototype — the structure is shown, the money is not."
+        subtitle="Partner membership structures across the network. The financial rules behind partnerships are a placeholder in the current platform scope — the structure is shown, the money is not."
       />
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
@@ -58,7 +59,7 @@ export default function PartnerGroupsPage() {
             <div className="flex flex-col gap-2">
               <div className="flex items-center gap-1.5">
                 <p className="text-sm font-semibold text-white">
-                  Financial rules are out of scope for this prototype
+                  Financial rules are out of scope for the current platform scope
                 </p>
                 <TipIcon text="Partner groups themselves work normally — only the fee and revenue-share figures are missing." />
               </div>
@@ -85,7 +86,7 @@ export default function PartnerGroupsPage() {
             </div>
             {partnerGroups.length === 0 ? (
               <p className="text-xs text-slate-400">
-                No group of type Partner exists in the demo store yet.
+                No group of type Partner exists across the platform yet.
               </p>
             ) : (
               <ul className="flex flex-col gap-2">

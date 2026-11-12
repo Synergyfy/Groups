@@ -1,6 +1,4 @@
 import type { Group } from "../domain/types";
-import { CURRENT_BUSINESS } from "../data/businessData";
-import { DEFAULT_ADMIN_CONFIG } from "../data/adminData";
 import type { AppState } from "../store/reducer";
 
 export type JourneyScope = "business" | "admin";
@@ -23,7 +21,9 @@ export interface JourneyStep {
   detect?: (ctx: StepContext) => boolean;
 }
 
-const ACTOR = CURRENT_BUSINESS.id;
+function actorOf(state: AppState): string {
+  return state.businessProfile?.id ?? "";
+}
 
 function hasVisited(ctx: StepContext, path: string): boolean {
   return ctx.visited.includes(path);
@@ -34,7 +34,7 @@ export function networkGroupOf(state: AppState): Group | undefined {
     (group) =>
       group.source === "automatic" &&
       group.type === "Network" &&
-      group.memberIds.includes(ACTOR)
+      group.memberIds.includes(actorOf(state))
   );
 }
 
@@ -54,7 +54,8 @@ export const BUSINESS_STEPS: JourneyStep[] = [
     route: "/business/community",
     cta: { label: "Open National Community", to: "/business/community" },
     detect: (ctx) =>
-      CURRENT_BUSINESS.nationalCommunity.status === "Member" && hasVisited(ctx, "/business/community"),
+      Boolean(ctx.state.businessProfile?.nationalCommunity.status) &&
+      hasVisited(ctx, "/business/community"),
   },
   {
     id: "location",
@@ -71,7 +72,7 @@ export const BUSINESS_STEPS: JourneyStep[] = [
     route: "/business/location",
     cta: { label: "Open My Location", to: "/business/location" },
     detect: (ctx) =>
-      Boolean(CURRENT_BUSINESS.city && CURRENT_BUSINESS.localArea) &&
+      Boolean(ctx.state.businessProfile?.city && ctx.state.businessProfile?.localArea) &&
       hasVisited(ctx, "/business/location"),
   },
   {
@@ -121,7 +122,9 @@ export const BUSINESS_STEPS: JourneyStep[] = [
     route: "/business/groups/explore",
     cta: { label: "Find a group to join", to: "/business/groups/explore" },
     detect: (ctx) =>
-      ctx.state.groups.filter((group) => group.memberIds.includes(ACTOR)).length > 1,
+      ctx.state.groups.filter((group) =>
+        group.memberIds.includes(actorOf(ctx.state))
+      ).length > 1,
   },
   {
     id: "create",
@@ -137,7 +140,8 @@ export const BUSINESS_STEPS: JourneyStep[] = [
     ],
     route: "/business/groups/create",
     cta: { label: "Start the wizard", to: "/business/groups/create" },
-    detect: (ctx) => ctx.state.groups.some((group) => group.ownerId === ACTOR),
+    detect: (ctx) =>
+      ctx.state.groups.some((group) => group.ownerId === actorOf(ctx.state)),
   },
   {
     id: "invite",
@@ -155,7 +159,9 @@ export const BUSINESS_STEPS: JourneyStep[] = [
     cta: { label: "Open My Groups", to: "/business/groups/mine" },
     detect: (ctx) =>
       ctx.state.invitations.some(
-        (invitation) => invitation.kind === "invite" && invitation.invitedById === ACTOR
+        (invitation) =>
+          invitation.kind === "invite" &&
+          invitation.invitedById === actorOf(ctx.state)
       ),
   },
   {
@@ -189,7 +195,10 @@ export const BUSINESS_STEPS: JourneyStep[] = [
     route: "/business/groups/mine",
     cta: { label: "Open My Groups", to: "/business/groups/mine" },
     detect: (ctx) =>
-      ctx.state.groups.some((group) => group.ownerId === ACTOR && group.memberIds.length > 1),
+      ctx.state.groups.some(
+        (group) =>
+          group.ownerId === actorOf(ctx.state) && group.memberIds.length > 1
+      ),
   },
   {
     id: "grow",
@@ -230,7 +239,7 @@ export const BUSINESS_STEPS: JourneyStep[] = [
     detect: (ctx) => hasVisited(ctx, "/business/network/lists"),
   },
   {
-    id: "circle",
+    id: "circles",
     scope: "business",
     chapter: "Chapter 5 · Let the system work",
     title: "Bring people together in a circle",
@@ -244,6 +253,41 @@ export const BUSINESS_STEPS: JourneyStep[] = [
     route: "/business/circles",
     cta: { label: "Open circles", to: "/business/circles" },
     detect: (ctx) => ctx.state.circles.some((circle) => circle.memberIds.length > 0),
+  },
+  {
+    id: "campaigns",
+    scope: "business",
+    chapter: "Chapter 5 · Let the system work",
+    title: "Review campaigns and rewards",
+    instruction: "Open Campaigns and see which opportunities touch your groups.",
+    why: "Campaigns borrow a group audience. Reviewing them shows where your groups can take part and what rewards are attached.",
+    how: [
+      "Open Campaigns from the sidebar.",
+      "Check which referenced groups are yours.",
+      "Open Rewards to see your programme tier and available deals.",
+    ],
+    route: "/business/campaigns",
+    cta: { label: "Open campaigns", to: "/business/campaigns" },
+    detect: (ctx) => hasVisited(ctx, "/business/campaigns"),
+  },
+  {
+    id: "access",
+    scope: "business",
+    chapter: "Chapter 6 · Keep access",
+    title: "Activate your paid access",
+    instruction: "Make sure your access fee is settled and the agreement is accepted.",
+    why: "Dashboard entry, group creation and mandatory groups all depend on an active paid access period and an accepted agreement.",
+    how: [
+      "Open Account Settings to see your plan and access expiry.",
+      "Check whether paid access and the agreement are both active.",
+      "Contact an administrator if your access has expired.",
+    ],
+    route: "/business/settings",
+    cta: { label: "Open account settings", to: "/business/settings" },
+    detect: (ctx) =>
+      Boolean(
+        ctx.state.membership.paid && ctx.state.membership.agreementAccepted
+      ),
   },
 ];
 
@@ -331,7 +375,7 @@ export const ADMIN_STEPS: JourneyStep[] = [
     cta: { label: "Open automatic rules", to: "/admin/config/automatic" },
     detect: (ctx) =>
       hasVisited(ctx, "/admin/config/automatic") ||
-      JSON.stringify(ctx.state.adminConfig) !== JSON.stringify(DEFAULT_ADMIN_CONFIG),
+      ctx.state.adminConfig.groupTypes.length > 0,
   },
   {
     id: "admin-types",
@@ -349,7 +393,7 @@ export const ADMIN_STEPS: JourneyStep[] = [
     cta: { label: "Open type configuration", to: "/admin/config/types" },
     detect: (ctx) =>
       hasVisited(ctx, "/admin/config/types") ||
-      JSON.stringify(ctx.state.adminConfig) !== JSON.stringify(DEFAULT_ADMIN_CONFIG),
+      ctx.state.adminConfig.groupTypes.length > 0,
   },
   {
     id: "admin-locations",

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Crown,
   Mail,
@@ -11,7 +11,8 @@ import Button from "../../components/ui/Button";
 import Card, { CardBody } from "../../components/ui/Card";
 import NodePopover from "../../components/ui/NodePopover";
 import Toast from "../../components/ui/Toast";
-import { findDirectoryEntry } from "../../data/businessData";
+import { useAdminDirectoryEntry } from "../../admin/AdminDataProvider";
+import { adminApi } from "../../admin/adminApi";
 import { isOnline } from "../../lib/presence";
 import type { Group } from "../../domain/types";
 
@@ -50,6 +51,10 @@ export default function AdminGroupCircleVisualization({
   onRemoveMember?: (memberId: string, memberName: string) => void;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const findDirectoryEntry = useAdminDirectoryEntry();
+  const [contributions, setContributions] = useState<
+    Record<string, { status: string; amount: number }>
+  >({});
   const [centerOpen, setCenterOpen] = useState(false);
   const [filterMode, setFilterMode] = useState<"all" | "paid" | "pending" | "online">("all");
   const [centerAnchor, setCenterAnchor] = useState<HTMLElement | null>(null);
@@ -58,15 +63,40 @@ export default function AdminGroupCircleVisualization({
   const isPaidGroup = group.pricing === "paid";
   const amount = group.contribution ?? 0;
 
+  useEffect(() => {
+    let active = true;
+    adminApi
+      .groupContribution(group.id)
+      .then((result) => {
+        if (!active) return;
+        setContributions(
+          Object.fromEntries(
+            result.rows.map((row) => [
+              row.memberId,
+              { status: row.status, amount: row.amount },
+            ]),
+          ),
+        );
+      })
+      .catch(() => {
+        if (active) setContributions({});
+      });
+    return () => {
+      active = false;
+    };
+  }, [group.id]);
+
   // Build members list with owner at index 0
   const allMembers: CircleNodeData[] = useMemo(() => {
     const ids = [...new Set([group.ownerId, ...group.memberIds])].filter((id) => id !== "system");
-    return ids.map((id, index) => {
+    return ids.map((id) => {
       const entry = findDirectoryEntry(id);
       const isOwner = id === group.ownerId;
-      let contributionStatus: "paid" | "pending" | "overdue" = "paid";
-      if (!isOwner && index % 4 === 1) contributionStatus = "pending";
-      else if (!isOwner && index % 7 === 0) contributionStatus = "overdue";
+      const contribution = contributions[id];
+      const contributionStatus: "paid" | "pending" | "overdue" =
+        contribution?.status === "pending" || contribution?.status === "overdue"
+          ? contribution.status
+          : "paid";
 
       return {
         id,
@@ -78,10 +108,10 @@ export default function AdminGroupCircleVisualization({
         isOwner,
         online: isOwner || isOnline(id),
         contributionStatus,
-        amount,
+        amount: contribution?.amount ?? amount,
       };
     });
-  }, [group, amount]);
+  }, [group, amount, findDirectoryEntry, contributions]);
 
   const owner = allMembers.find((m) => m.isOwner) || allMembers[0];
   const satellites = useMemo(
@@ -152,7 +182,7 @@ export default function AdminGroupCircleVisualization({
             <button
               key={btn.id}
               type="button"
-              onClick={() => setFilterMode(btn.id as any)}
+              onClick={() => setFilterMode(btn.id as "all" | "paid" | "pending" | "online")}
               className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors ${
                 filterMode === btn.id
                   ? "bg-gold-500/20 text-gold-300 border border-gold-500/40"

@@ -17,11 +17,10 @@ import Card, { CardBody, CardTitle } from "../../components/ui/Card";
 import SectionHeader from "../../components/ui/SectionHeader";
 import StatCard from "../../components/ui/StatCard";
 import Toast from "../../components/ui/Toast";
-import { DEFAULT_GROUP_CREATION_RULES } from "../../data/adminData";
-import { MEMBERSHIP_PLANS } from "../../data/membershipPlans";
 import type { GroupCreationRules, PlanVariant, Tier } from "../../domain/types";
 import { PLAN_VARIANTS, TIERS_ORDERED } from "../../domain/types";
 import { useAppStore } from "../../store/context";
+import { useAdminData } from "../../admin/AdminDataProvider";
 
 const TARGET_FIELD_CLASS =
   "h-9 w-full rounded-md border border-white/10 bg-ink-800 px-2 text-center text-xs text-white focus:border-gold-500/50 focus:outline-none";
@@ -45,7 +44,9 @@ function copyTargets(
  */
 export default function AdminGroupRulesPage() {
   const { state, dispatch } = useAppStore();
-  const rules = state.adminConfig.groupCreationRules ?? DEFAULT_GROUP_CREATION_RULES;
+  const { data } = useAdminData();
+  const rules = state.adminConfig.groupCreationRules;
+  const plans = data?.membershipPlans ?? [];
 
   const [allowedTiers, setAllowedTiers] = useState<Tier[]>([...rules.allowedTiers]);
   const [allowedVariants, setAllowedVariants] = useState<PlanVariant[]>([
@@ -77,7 +78,7 @@ export default function AdminGroupRulesPage() {
     setTargets((prev) => ({ ...prev, [tier]: { ...prev[tier], [variant]: clamped } }));
   };
 
-  const eligiblePlans = MEMBERSHIP_PLANS.filter(
+  const eligiblePlans = plans.filter(
     (plan) => allowedTiers.includes(plan.tier) && allowedVariants.includes(plan.variant)
   );
   const eligibleLabel =

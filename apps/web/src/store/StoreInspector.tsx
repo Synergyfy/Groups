@@ -17,7 +17,7 @@ export default function StoreInspector() {
 
   const rows: [string, string | number][] = [
     ["groups", state.groups.length],
-    ["my memberships", state.groups.filter((g) => g.memberIds.includes("biz-smith")).length],
+    ["my memberships", state.groups.filter((g) => g.memberIds.includes("")).length],
     ["invitations", state.invitations.length],
     ["group activities", state.groupActivities.length],
     ["circles", state.circles.length],
@@ -56,7 +56,7 @@ export default function StoreInspector() {
             onClick={() => dispatch({ type: "store/reset" })}
             className="mt-3 w-full cursor-pointer rounded-lg border border-danger-500/40 bg-danger-500/15 px-3 py-1.5 text-danger-400 hover:bg-danger-500/25"
           >
-            Reset demo state
+            Clear in-memory state
           </button>
         </div>
       )}

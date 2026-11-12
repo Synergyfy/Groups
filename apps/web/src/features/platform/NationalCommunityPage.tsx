@@ -5,22 +5,15 @@ import EmptyState from "../../components/ui/EmptyState";
 import LinkButton from "../../components/ui/LinkButton";
 import SectionHeader from "../../components/ui/SectionHeader";
 import StatCard from "../../components/ui/StatCard";
-import { CURRENT_BUSINESS } from "../../data/businessData";
-import { useAppState, useGroupStats } from "../../store/selectors";
+import { useBusinessData } from "../../business/BusinessDataProvider";
 import GroupListItem from "../groups/GroupListItem";
 
-const ACTOR_ID = CURRENT_BUSINESS.id;
-
 export default function NationalCommunityPage() {
-  const { groups } = useAppState();
-  const stats = useGroupStats(ACTOR_ID);
+  const { community: view } = useBusinessData();
 
-  const community = CURRENT_BUSINESS.nationalCommunity;
-  const communityGroups = groups.filter((group) => group.type === "National Community");
-  const communityMembers = communityGroups.reduce(
-    (total, group) => total + group.memberIds.length,
-    0
-  );
+  const community = view?.community;
+  const communityGroups = view?.groups ?? [];
+  const communityMembers = view?.stats.membersAcross ?? 0;
 
   return (
     <div className="flex flex-col gap-4">
@@ -33,8 +26,8 @@ export default function NationalCommunityPage() {
         <CardBody className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-base font-bold text-white">{community.name}</h2>
-              <Badge variant="success">{community.status}</Badge>
+              <h2 className="text-base font-bold text-white">{community?.name ?? "National Community"}</h2>
+              <Badge variant="success">{community?.status ?? "Member"}</Badge>
             </div>
             <p className="mt-2 max-w-2xl text-xs leading-relaxed text-slate-400">
               Membership is granted with your registration and never expires. You cannot create,
@@ -42,8 +35,8 @@ export default function NationalCommunityPage() {
               inside.
             </p>
             <p className="mt-2 text-[11px] text-slate-500">
-              Member since {community.joinedAt} · {CURRENT_BUSINESS.city} ·{" "}
-              {CURRENT_BUSINESS.localArea}
+              Member since {community?.joinedAt?.slice(0, 10) ?? "—"} · {community?.city ?? "—"}
+              {community?.localArea ? ` · ${community.localArea}` : ""}
             </p>
           </div>
           <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-ink-800 text-gold-400">
@@ -55,7 +48,7 @@ export default function NationalCommunityPage() {
       <div className="grid gap-3 sm:grid-cols-3">
         <StatCard
           label="Community groups"
-          value={communityGroups.length}
+          value={view?.stats.communityGroups ?? communityGroups.length}
           hint="Groups typed National Community"
           accent="gold"
         />
@@ -67,7 +60,7 @@ export default function NationalCommunityPage() {
         />
         <StatCard
           label="Groups I belong to"
-          value={stats.mine}
+          value={view?.stats.myGroups ?? 0}
           hint="Separate from community membership"
           accent="success"
         />

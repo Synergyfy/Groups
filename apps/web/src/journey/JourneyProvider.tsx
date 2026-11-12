@@ -1,7 +1,5 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { JourneyContext, type JourneyContextValue } from "./context";
-
-const STORAGE_KEY = "247gbs.journey.v1";
 
 interface JourneyStorage {
   visited: string[];
@@ -9,32 +7,13 @@ interface JourneyStorage {
   seenTours: string[];
 }
 
-function readStorage(): JourneyStorage {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { visited: [], manual: [], seenTours: [] };
-    const parsed = JSON.parse(raw) as Partial<JourneyStorage>;
-    return {
-      visited: Array.isArray(parsed.visited) ? parsed.visited : [],
-      manual: Array.isArray(parsed.manual) ? parsed.manual : [],
-      seenTours: Array.isArray(parsed.seenTours) ? parsed.seenTours : [],
-    };
-  } catch {
-    return { visited: [], manual: [], seenTours: [] };
-  }
-}
-
 export default function JourneyProvider({ children }: { children: ReactNode }) {
-  const [storage, setStorage] = useState<JourneyStorage>(readStorage);
+  const [storage, setStorage] = useState<JourneyStorage>({
+    visited: [],
+    manual: [],
+    seenTours: [],
+  });
   const [activeTour, setActiveTour] = useState<string | null>(null);
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(storage));
-    } catch {
-      /* storage is a convenience, never a requirement */
-    }
-  }, [storage]);
 
   const value = useMemo<JourneyContextValue>(
     () => ({

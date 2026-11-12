@@ -17,6 +17,8 @@ import StatCard from "../../components/ui/StatCard";
 import Table, { type TableColumn } from "../../components/ui/Table";
 import Toast from "../../components/ui/Toast";
 import Modal from "../../components/ui/Modal";
+import { adminApi } from "../../admin/adminApi";
+import { useAdminData } from "../../admin/AdminDataProvider";
 
 export type DealCategory = "voucher" | "gift-card" | "coupon" | "incentive";
 
@@ -35,91 +37,6 @@ interface RewardDeal {
   sponsorBusiness: string;
 }
 
-const INITIAL_DEALS: RewardDeal[] = [
-  {
-    id: "deal-001",
-    title: "£25 Welcome Voucher",
-    category: "voucher",
-    discountValue: "£25.00 Off",
-    code: "WELCOME25",
-    targetAudience: "All Users",
-    liveOnFrontend: true,
-    status: "Active",
-    expiryDate: "2026-12-31",
-    claimsCount: 84,
-    maxClaims: 200,
-    sponsorBusiness: "City Foods",
-  },
-  {
-    id: "deal-002",
-    title: "£50 Local Dining Gift Card",
-    category: "gift-card",
-    discountValue: "£50 Card",
-    code: "DINE50",
-    targetAudience: "Consumers Only",
-    liveOnFrontend: true,
-    status: "Active",
-    expiryDate: "2026-11-30",
-    claimsCount: 39,
-    maxClaims: 100,
-    sponsorBusiness: "Urban Events",
-  },
-  {
-    id: "deal-003",
-    title: "20% Seasonal Flash Coupon",
-    category: "coupon",
-    discountValue: "20% Off",
-    code: "FLASH20",
-    targetAudience: "All Users",
-    liveOnFrontend: true,
-    status: "Active",
-    expiryDate: "2026-10-31",
-    claimsCount: 142,
-    maxClaims: 500,
-    sponsorBusiness: "Green Market",
-  },
-  {
-    id: "deal-004",
-    title: "5% Local Loyalty Cashback",
-    category: "incentive",
-    discountValue: "5% Cashback",
-    targetAudience: "Consumers Only",
-    liveOnFrontend: true,
-    status: "Active",
-    expiryDate: "2026-12-31",
-    claimsCount: 215,
-    maxClaims: 1000,
-    sponsorBusiness: "Fresh Living",
-  },
-  {
-    id: "deal-005",
-    title: "B2B Marketing Grant Voucher",
-    category: "voucher",
-    discountValue: "£100 Credit",
-    code: "BIZGRANT100",
-    targetAudience: "Business Owners",
-    liveOnFrontend: true,
-    status: "Active",
-    expiryDate: "2026-12-15",
-    claimsCount: 18,
-    maxClaims: 50,
-    sponsorBusiness: "Central Solution Admin",
-  },
-  {
-    id: "deal-006",
-    title: "VIP Gold Partner Incentive",
-    category: "incentive",
-    discountValue: "Double Points",
-    targetAudience: "Gold & Platinum",
-    liveOnFrontend: false,
-    status: "Draft",
-    expiryDate: "2027-01-31",
-    claimsCount: 0,
-    maxClaims: 250,
-    sponsorBusiness: "Smith Business",
-  },
-];
-
 const CATEGORY_ICONS: Record<DealCategory, React.ReactNode> = {
   voucher: <Ticket className="size-4 text-gold-400" />,
   "gift-card": <Gift className="size-4 text-emerald-400" />,
@@ -135,7 +52,8 @@ const CATEGORY_LABELS: Record<DealCategory, string> = {
 };
 
 export default function AdminRewardsDealsPage() {
-  const [deals, setDeals] = useState<RewardDeal[]>(INITIAL_DEALS);
+  const { data, refresh } = useAdminData();
+  const deals = data?.rewards ?? [];
   const [activeTab, setActiveTab] = useState<"all" | DealCategory>("all");
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -149,49 +67,51 @@ export default function AdminRewardsDealsPage() {
   const [newSponsor, setNewSponsor] = useState("Central Solution Network");
   const [newMaxClaims, setNewMaxClaims] = useState(100);
 
-  const toggleFrontendVisibility = (id: string) => {
-    setDeals((prev) =>
-      prev.map((d) => {
-        if (d.id === id) {
-          const next = !d.liveOnFrontend;
-          setFeedback(
-            `Deal "${d.title}" is now ${next ? "LIVE on the frontend" : "HIDDEN from users"}.`
-          );
-          return { ...d, liveOnFrontend: next };
-        }
-        return d;
-      })
-    );
+  const toggleFrontendVisibility = async (id: string) => {
+    const deal = deals.find((entry) => entry.id === id);
+    if (!deal) return;
+    const next = !deal.liveOnFrontend;
+    try {
+      await adminApi.updateReward(id, { liveOnFrontend: next });
+      await refresh();
+      setFeedback(
+        `Deal "${deal.title}" is now ${next ? "LIVE on the frontend" : "HIDDEN from users"}.`
+      );
+    } catch {
+      setFeedback("Could not update the deal visibility.");
+    }
   };
 
-  const handleCreateDeal = (e: React.FormEvent) => {
+  const handleCreateDeal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim() || !newDiscount.trim()) {
       setFeedback("Please enter title and discount value.");
       return;
     }
 
-    const created: RewardDeal = {
-      id: `deal-${Date.now()}`,
-      title: newTitle.trim(),
-      category: newCategory,
-      discountValue: newDiscount.trim(),
-      code: newCode.trim() || undefined,
-      targetAudience: newAudience,
-      liveOnFrontend: true,
-      status: "Active",
-      expiryDate: "2026-12-31",
-      claimsCount: 0,
-      maxClaims: newMaxClaims,
-      sponsorBusiness: newSponsor.trim(),
-    };
-
-    setDeals((prev) => [created, ...prev]);
-    setFeedback(`Deal "${created.title}" configured and published live!`);
-    setCreateModalOpen(false);
-    setNewTitle("");
-    setNewDiscount("");
-    setNewCode("");
+    try {
+      await adminApi.createReward({
+        title: newTitle.trim(),
+        category: newCategory,
+        discountValue: newDiscount.trim(),
+        code: newCode.trim() || undefined,
+        targetAudience: newAudience,
+        liveOnFrontend: true,
+        status: "Active",
+        expiryDate: "2026-12-31",
+        claimsCount: 0,
+        maxClaims: newMaxClaims,
+        sponsorBusiness: newSponsor.trim(),
+      });
+      await refresh();
+      setFeedback(`Deal "${newTitle.trim()}" configured and published live!`);
+      setCreateModalOpen(false);
+      setNewTitle("");
+      setNewDiscount("");
+      setNewCode("");
+    } catch {
+      setFeedback("Could not create the reward or deal.");
+    }
   };
 
   const liveCount = deals.filter((d) => d.liveOnFrontend).length;
@@ -361,7 +281,7 @@ export default function AdminRewardsDealsPage() {
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => setActiveTab(tab.id as any)}
+                onClick={() => setActiveTab(tab.id as "all" | DealCategory)}
                 className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
                   activeTab === tab.id
                     ? "bg-gold-500/15 text-gold-300 border border-gold-500/30"
@@ -445,7 +365,7 @@ export default function AdminRewardsDealsPage() {
                 <span className="text-xs font-medium text-slate-300">Target Audience</span>
                 <select
                   value={newAudience}
-                  onChange={(e) => setNewAudience(e.target.value as any)}
+                  onChange={(e) => setNewAudience(e.target.value as RewardDeal["targetAudience"])}
                   className="h-10 rounded-lg border border-white/10 bg-ink-800 px-3 text-xs text-slate-200 focus:outline-none"
                 >
                   <option value="All Users">All Users (Network-wide)</option>

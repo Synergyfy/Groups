@@ -532,7 +532,7 @@ export default function InviteLandingPage() {
       <p className="pb-4 text-center text-[11px] leading-relaxed text-slate-500">
         Hosted on Groups &amp; Circles by Central Hub Solution.{" "}
         <Link to="/sign-in" className="font-medium text-gold-400 hover:text-gold-300">
-          Just exploring? Sign in with a demo account
+          Just exploring? Sign in to continue
         </Link>
       </p>
     </div>

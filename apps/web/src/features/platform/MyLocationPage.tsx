@@ -4,22 +4,18 @@ import Card, { CardBody, CardTitle } from "../../components/ui/Card";
 import LinkButton from "../../components/ui/LinkButton";
 import SectionHeader from "../../components/ui/SectionHeader";
 import StatCard from "../../components/ui/StatCard";
-import { CURRENT_BUSINESS } from "../../data/businessData";
-import { LOCATIONS } from "../../data/locationsData";
-import { useAppState, useGroupStats } from "../../store/selectors";
-
-const ACTOR_ID = CURRENT_BUSINESS.id;
+import { useBusinessData } from "../../business/BusinessDataProvider";
 
 export default function MyLocationPage() {
-  const { groups } = useAppState();
-  const stats = useGroupStats(ACTOR_ID);
+  const { location, profile } = useBusinessData();
 
-  const city = CURRENT_BUSINESS.city;
-  const localArea = CURRENT_BUSINESS.localArea;
+  const city = location?.current.city ?? profile?.business.city ?? "";
+  const localArea = location?.current.localArea ?? profile?.business.localArea ?? "";
 
-  const cityGroups = groups.filter((group) => group.location?.city === city);
-  const areaGroups = groups.filter((group) => group.location?.localArea === localArea);
-  const cityMembers = cityGroups.reduce((total, group) => total + group.memberIds.length, 0);
+  const cityGroups = location?.cityGroups ?? [];
+  const areaGroups = location?.areaGroups ?? [];
+  const cityMembers = location?.stats.membersInCity ?? 0;
+  const hierarchy = location?.hierarchy ?? [];
 
   return (
     <div className="flex flex-col gap-4">
@@ -42,7 +38,7 @@ export default function MyLocationPage() {
               changing it would change which network group you are allocated to.
             </p>
             <p className="mt-2 text-[11px] text-slate-500">
-              Location since {CURRENT_BUSINESS.joinedAt}
+              Location since {location?.current.joinedAt?.slice(0, 10) ?? profile?.joinedAt ?? "—"}
             </p>
           </div>
           <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-ink-800 text-gold-400">
@@ -54,19 +50,19 @@ export default function MyLocationPage() {
       <div className="grid gap-3 sm:grid-cols-3">
         <StatCard
           label={`Groups in ${city}`}
-          value={cityGroups.length}
+          value={location?.stats.groupsInCity ?? cityGroups.length}
           hint={`${cityMembers.toLocaleString("en-GB")} members in total`}
           accent="gold"
         />
         <StatCard
           label={`Groups in ${localArea}`}
-          value={areaGroups.length}
+          value={location?.stats.groupsInArea ?? areaGroups.length}
           hint="Local area filter used by grouping rules"
           accent="info"
         />
         <StatCard
           label="My groups"
-          value={stats.mine}
+          value={location?.stats.myGroups ?? 0}
           hint="Membership is unrelated to location"
           accent="success"
         />
@@ -77,7 +73,7 @@ export default function MyLocationPage() {
           <CardBody className="flex flex-col gap-3">
             <CardTitle>Configured location hierarchy</CardTitle>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {LOCATIONS.cities.map((entry) => {
+              {hierarchy.map((entry) => {
                 const isMine = entry.name === city;
                 return (
                   <div
@@ -151,7 +147,7 @@ export default function MyLocationPage() {
           <div className="grid gap-2 sm:grid-cols-2">
             {areaGroups.length === 0 ? (
               <p className="text-xs text-slate-500">
-                No demo groups are pinned to this local area yet.
+                No groups are pinned to this local area yet.
               </p>
             ) : (
               areaGroups.map((group) => (

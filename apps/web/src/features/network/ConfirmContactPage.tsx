@@ -5,7 +5,6 @@ import { CheckCircle2, MailCheck, ShieldCheck } from "lucide-react";
 import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
 import { CURRENT_BUSINESS } from "../../data/businessData";
-import { LISTS } from "../../data/mockData";
 import { useAppStore } from "../../store/context";
 import { useNetworkContacts } from "../../store/selectors";
 
@@ -15,7 +14,9 @@ export default function ConfirmContactPage() {
   const networkContacts = useNetworkContacts();
   const [justConfirmed, setJustConfirmed] = useState(false);
 
-  const list = LISTS.find((entry) => entry.id === listId);
+  const list = listId
+    ? { id: listId, name: "this network list", type: "Network", geography: "Local" }
+    : undefined;
   const contact = networkContacts.find((entry) => entry.id === contactId && entry.listId === listId);
 
   const shell = (content: ReactNode) => (

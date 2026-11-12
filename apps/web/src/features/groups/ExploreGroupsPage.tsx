@@ -11,14 +11,10 @@ import SectionHeader from "../../components/ui/SectionHeader";
 import { SkeletonRows } from "../../components/ui/Skeleton";
 import Toast from "../../components/ui/Toast";
 import type { Group, GroupAccessType } from "../../domain/types";
-import { CURRENT_BUSINESS } from "../../data/businessData";
-import { CITY_NAMES } from "../../data/locationsData";
-import { useDemoLoading } from "../../lib/demoDelay";
-import { useAppStore } from "../../store/context";
-import { useAppState, useExploreGroups } from "../../store/selectors";
+import { errorMessage } from "../../app/api";
+import { useAppState, useBusinessId, useExploreGroups } from "../../store/selectors";
+import { businessApi, useBusinessData } from "../../business/BusinessDataProvider";
 import GroupListItem from "./GroupListItem";
-
-const ACTOR_ID = CURRENT_BUSINESS.id;
 
 const ACCESS_INFO: Record<GroupAccessType, { label: string; hint: string }> = {
   open: { label: "Open", hint: "Join instantly — no approval needed." },
@@ -31,10 +27,11 @@ const ACCESS_INFO: Record<GroupAccessType, { label: string; hint: string }> = {
 };
 
 export default function ExploreGroupsPage() {
-  const loading = useDemoLoading();
-  const explore = useExploreGroups(ACTOR_ID);
+  const loading = false;
+  const actorId = useBusinessId();
+  const explore = useExploreGroups(actorId);
   const { adminConfig, invitations } = useAppState();
-  const { dispatch } = useAppStore();
+  const { refresh } = useBusinessData();
 
   const [query, setQuery] = useState("");
   const [type, setType] = useState("all");
@@ -53,12 +50,12 @@ export default function ExploreGroupsPage() {
           .filter(
             (invitation) =>
               invitation.kind === "request" &&
-              invitation.inviteeId === ACTOR_ID &&
+              invitation.inviteeId === actorId &&
               invitation.status === "pending"
           )
           .map((invitation) => invitation.groupId)
       ),
-    [invitations]
+    [invitations, actorId]
   );
 
   const pendingInviteIds = useMemo(
@@ -68,12 +65,12 @@ export default function ExploreGroupsPage() {
           .filter(
             (invitation) =>
               invitation.kind === "invite" &&
-              invitation.inviteeId === ACTOR_ID &&
+              invitation.inviteeId === actorId &&
               invitation.status === "pending"
           )
           .map((invitation) => invitation.groupId)
       ),
-    [invitations]
+    [invitations, actorId]
   );
 
   const typeOptions = useMemo(
@@ -159,17 +156,18 @@ export default function ExploreGroupsPage() {
     return { disabled: false, label: "Request to join", hint: ACCESS_INFO[group.accessType].hint };
   };
 
-  const handleJoin = (group: Group) => {
-    dispatch({
-      type: "group/join",
-      groupId: group.id,
-      actor: { id: ACTOR_ID, name: CURRENT_BUSINESS.businessName },
-    });
-    setFeedback(
-      group.accessType === "open"
-        ? `You joined ${group.name}`
-        : `Join request sent to ${group.name}`
-    );
+  const handleJoin = async (group: Group) => {
+    try {
+      const result = await businessApi.joinGroup(group.id);
+      await refresh();
+      setFeedback(
+        result.status === "joined"
+          ? `You joined ${group.name}`
+          : `Join request sent to ${group.name}`
+      );
+    } catch (cause) {
+      setFeedback(errorMessage(cause));
+    }
   };
 
   const resetFilters = () => {
@@ -220,7 +218,9 @@ export default function ExploreGroupsPage() {
         value={city}
         options={[
           { value: "all", label: "All cities" },
-          ...CITY_NAMES.map((entry) => ({ value: entry, label: entry })),
+          ...Array.from(new Set(explore.map((group) => group.location?.city).filter((entry): entry is string => Boolean(entry))))
+            .sort()
+            .map((entry) => ({ value: entry, label: entry })),
         ]}
         onChange={(value) => {
           setCity(value);

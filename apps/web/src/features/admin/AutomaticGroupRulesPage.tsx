@@ -1,4 +1,3 @@
-import { DEFAULT_ADMIN_CONFIG } from "../../data/adminData";
 import type { GroupThreshold } from "../../domain/types";
 import Card, { CardBody, CardTitle } from "../../components/ui/Card";
 import FieldHint from "../../components/ui/FieldHint";
@@ -13,6 +12,14 @@ import { memberCountOf } from "../groups/groupUtils";
 const THRESHOLDS: GroupThreshold[] = [6, 12, 18, 24];
 const METHODS = ["Joining order", "Location first", "Balanced split"];
 const SCOPES = ["National network", "City", "Local area"];
+
+const RESET_AUTOMATIC_GROUPING = {
+  enabled: true,
+  threshold: 12 as GroupThreshold,
+  method: "Joining order",
+  scope: "National network",
+  allowCombine: false,
+};
 
 export default function AutomaticGroupRulesPage() {
   const state = useAppState();
@@ -49,7 +56,7 @@ export default function AutomaticGroupRulesPage() {
           <>
             <button
               type="button"
-              onClick={() => patch(DEFAULT_ADMIN_CONFIG.automaticGrouping)}
+              onClick={() => patch(RESET_AUTOMATIC_GROUPING)}
               className="inline-flex h-10 cursor-pointer items-center gap-1.5 rounded-lg border border-white/10 bg-ink-900/70 px-3 text-xs font-medium text-slate-300 transition-colors hover:border-gold-500/40 hover:text-white"
             >
               Reset to defaults
@@ -221,7 +228,7 @@ export default function AutomaticGroupRulesPage() {
               <TipIcon text="The table recalculates whenever you change the threshold or a group's membership." />
             </div>
             <p className="text-[11px] leading-relaxed text-slate-400">
-              What the rule would do if it ran against today's demo network:
+              What the rule would do if it ran against today's network:
             </p>
             <table className="w-full text-xs">
               <thead>

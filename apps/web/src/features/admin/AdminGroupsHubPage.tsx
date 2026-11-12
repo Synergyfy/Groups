@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react";
-import { Link } from "react-router-dom";
+import { useState, useMemo, type Dispatch } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   AlertTriangle,
   ArrowRight,
@@ -38,6 +38,8 @@ import Modal from "../../components/ui/Modal";
 import type { Group, GroupStatus, GroupType, Invitation } from "../../domain/types";
 import { useAppState } from "../../store/selectors";
 import { useAppStore } from "../../store/context";
+import { useAdminData } from "../../admin/AdminDataProvider";
+import type { AppAction } from "../../store/reducer";
 import { memberCountOf } from "../groups/groupUtils";
 import AdminGroupContributionCard from "./AdminGroupContributionCard";
 
@@ -67,11 +69,6 @@ const SECTORS = [
   "Technology", "Construction", "Creative & Media", "Education", "Finance", "Other",
 ];
 
-const UK_LOCATIONS = [
-  "National (UK-wide)", "London", "Manchester", "Birmingham", "Leeds",
-  "Bristol", "Sheffield", "Edinburgh", "Glasgow", "Cardiff",
-];
-
 const JOIN_METHODS = [
   { value: "open", label: "Open", desc: "Eligible businesses join directly" },
   { value: "request", label: "Request to join", desc: "Admin approval required" },
@@ -95,7 +92,11 @@ function invStatusVariant(status: string): "success" | "info" | "warning" | "mut
 export default function AdminGroupsHubPage() {
   const state = useAppState();
   const { dispatch } = useAppStore();
-  const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const [searchParams] = useSearchParams();
+  const requestedTab = searchParams.get("tab");
+  const [activeTab, setActiveTab] = useState<Tab>(
+    TABS.some((tab) => tab.id === requestedTab) ? (requestedTab as Tab) : "overview"
+  );
   const [feedback, setFeedback] = useState<string | null>(null);
 
   const groups = state.groups;
@@ -202,7 +203,7 @@ export default function AdminGroupsHubPage() {
 // ===========================================================================
 function OverviewTab({
   groups, adminGroups, businessGroups, activeGroups, suspendedGroups, pendingGroups,
-  totalMembers, invitations: _invitations, pendingInvitations, onApprove, onSuspend, setTab,
+  totalMembers, pendingInvitations, onApprove, onSuspend, setTab,
 }: {
   groups: Group[];
   adminGroups: Group[];
@@ -340,7 +341,7 @@ function OverviewTab({
 // TAB 2 — All Groups
 // ===========================================================================
 function AllGroupsTab({
-  groups, onApprove, onUpdateStatus, setFeedback: _setFeedback,
+  groups, onApprove, onUpdateStatus,
 }: {
   groups: Group[];
   onApprove: (g: Group) => void;
@@ -525,14 +526,19 @@ function AllGroupsTab({
 // TAB 3 — Platform Groups
 // ===========================================================================
 function PlatformGroupsTab({
-  groups, state: _state, dispatch, setFeedback, onUpdateStatus,
+  groups, dispatch, setFeedback, onUpdateStatus,
 }: {
   groups: Group[];
-  state: any;
-  dispatch: any;
+  state: unknown;
+  dispatch: Dispatch<AppAction>;
   setFeedback: (m: string) => void;
   onUpdateStatus: (g: Group, s: GroupStatus) => void;
 }) {
+  const { data } = useAdminData();
+  const ukLocations = [
+    "National (UK-wide)",
+    ...(data?.locations.cities.map((city) => city.name) ?? []),
+  ];
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState({
     name: "", purpose: "", type: "Marketing" as string, location: "National (UK-wide)",
@@ -639,7 +645,7 @@ function PlatformGroupsTab({
                 <label className="flex flex-col gap-1.5">
                   <span className="text-xs font-medium text-slate-300">Location</span>
                   <select value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} className="h-9 rounded-lg border border-white/10 bg-ink-800 px-3 text-xs text-slate-200 focus:border-gold-500/50 focus:outline-none">
-                    {UK_LOCATIONS.map((l) => <option key={l} value={l}>{l}</option>)}
+                    {ukLocations.map((l) => <option key={l} value={l}>{l}</option>)}
                   </select>
                 </label>
                 <label className="flex flex-col gap-1.5">
@@ -671,7 +677,7 @@ function PlatformGroupsTab({
                 </label>
                 <label className="flex flex-col gap-1.5">
                   <span className="text-xs font-medium text-slate-300">Join Method</span>
-                  <select value={form.joinMethod} onChange={(e) => setForm({ ...form, joinMethod: e.target.value as any })} className="h-9 rounded-lg border border-white/10 bg-ink-800 px-3 text-xs text-slate-200 focus:border-gold-500/50 focus:outline-none">
+                  <select value={form.joinMethod} onChange={(e) => setForm({ ...form, joinMethod: e.target.value as "open" | "request" | "invitation" })} className="h-9 rounded-lg border border-white/10 bg-ink-800 px-3 text-xs text-slate-200 focus:border-gold-500/50 focus:outline-none">
                     {JOIN_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label} — {m.desc}</option>)}
                   </select>
                 </label>
@@ -922,7 +928,7 @@ function MembersInvitationsTab({
 }: {
   groups: Group[];
   invitations: Invitation[];
-  dispatch: any;
+  dispatch: Dispatch<AppAction>;
   setFeedback: (m: string) => void;
 }) {
   const [subTab, setSubTab] = useState<"members" | "invitations" | "join-requests">("members");

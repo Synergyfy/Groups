@@ -2,7 +2,6 @@ import { Users } from "lucide-react";
 import type { CircleMember } from "../../domain/types";
 import { CORE_SHORTLIST_LIMIT } from "../../domain/constants";
 import Avatar from "../../components/ui/Avatar";
-import { SELF } from "../../data/mockData";
 import MemberNode from "./MemberNode";
 
 const OUTER_CAP = 14;
@@ -16,6 +15,8 @@ interface CircleCanvasProps {
   onViewProfile: (member: CircleMember) => void;
   onSendMessage: (member: CircleMember) => void;
   onAddCategory: (member: CircleMember) => void;
+  /** The viewer at the centre of the canvas. */
+  self?: { id: string; name: string; businessName: string };
 }
 
 function ringPositions(count: number, radiusPercent: number) {
@@ -35,7 +36,9 @@ export default function CircleCanvas({
   onViewProfile,
   onSendMessage,
   onAddCategory,
+  self: selfProp,
 }: CircleCanvasProps) {
+  const self = selfProp ?? { id: "", name: "Account", businessName: "Account" };
   const inner = members
     .filter((m) => m.role === "core" || m.role === "banker")
     .slice(0, CORE_SHORTLIST_LIMIT);
@@ -62,17 +65,17 @@ export default function CircleCanvas({
         <div className="absolute left-1/2 top-1/2 z-20 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center">
           <button
             type="button"
-            aria-label={`${SELF.businessName} — your business`}
+            aria-label={`${self.businessName} — your business`}
             className="flex size-[72px] cursor-pointer items-center justify-center overflow-hidden rounded-full shadow-[0_0_30px_rgba(230,169,43,0.35)] ring-2 ring-gold-300 transition-transform duration-200 hover:scale-105 focus-visible:scale-105 focus-visible:outline-none"
           >
             <Avatar
-              id={SELF.id}
-              name={SELF.fullName}
+              id={self.id}
+              name={self.name}
               className="size-full rounded-full text-sm font-bold text-ink-950"
             />
           </button>
           <span className="mt-1.5 rounded-full border border-gold-500/30 bg-ink-900/90 px-2 py-0.5 text-[10px] font-medium text-gold-200">
-            {SELF.businessName}
+            {self.businessName}
           </span>
         </div>
 

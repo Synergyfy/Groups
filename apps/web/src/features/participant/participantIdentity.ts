@@ -30,8 +30,8 @@ export function getParticipantIdentity(): ParticipantIdentity {
   }
   if (session?.role === "consumer") {
     return {
-      id: "cons-john",
-      name: "John Doe",
+      id: session.email ?? "",
+      name: session.name ?? "Consumer",
       role: "consumer",
       label: ROLE_LABELS.consumer,
     };
@@ -45,8 +45,8 @@ export function getParticipantIdentity(): ParticipantIdentity {
     };
   }
   return {
-    id: "biz-smith",
-    name: "Smith Business Ltd",
+    id: session?.email ?? "",
+    name: session?.name ?? "Participant",
     role: "business-invitee",
     label: ROLE_LABELS["business-invitee"],
   };

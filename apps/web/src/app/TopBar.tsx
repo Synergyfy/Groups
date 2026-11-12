@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Compass, LogOut, Settings, ShieldCheck } from "lucide-react";
-import { Link, NavLink, useLocation } from "react-router-dom";
-import { SELF } from "../data/mockData";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import Avatar from "../components/ui/Avatar";
-import Toast from "../components/ui/Toast";
 import PageGuideMenu from "../journey/PageGuideMenu";
+import { authApi } from "./api";
+import { clearAuthSession, readAuthSession } from "./authSession";
 
 interface TopBarProps {
   sectionLabel: string;
@@ -15,10 +15,12 @@ const MENU_ITEM_CLASS =
 
 export default function TopBar({ sectionLabel }: TopBarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
+  const navigate = useNavigate();
+  const session = readAuthSession();
   const onAdmin = location.pathname.startsWith("/admin");
+  const isAdmin = session?.role === "admin";
 
   useEffect(() => {
     if (!menuOpen) return undefined;
@@ -40,10 +42,20 @@ export default function TopBar({ sectionLabel }: TopBarProps) {
 
   const closeMenu = () => setMenuOpen(false);
 
-  const signOut = () => {
-    setMenuOpen(false);
-    setToast("Demo build — sign-out is disabled.");
+  const signOut = async () => {
+    closeMenu();
+    try {
+      await authApi.logout();
+    } finally {
+      clearAuthSession();
+      navigate("/", { replace: true });
+    }
   };
+
+  const displayName = session?.name ?? "Account";
+  const displaySubtitle = isAdmin
+    ? "Platform administrator"
+    : session?.businessName ?? "Business account";
 
   return (
     <header className="sticky top-0 z-30 border-b border-white/10 bg-ink-950/85 backdrop-blur">
@@ -61,34 +73,38 @@ export default function TopBar({ sectionLabel }: TopBarProps) {
         </div>
 
         <nav
-          aria-label="Switch dashboard role"
+          aria-label="Dashboard"
           className="hidden items-center gap-1 rounded-xl border border-white/10 bg-ink-900 p-1 sm:flex"
         >
-          <NavLink
-            to="/business"
-            className={({ isActive }) =>
-              `rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                isActive
-                  ? "bg-gold-500/15 text-gold-200"
-                  : "text-slate-400 hover:text-slate-200"
-              }`
-            }
-          >
-            Business
-          </NavLink>
-          <NavLink
-            to="/admin"
-            className={({ isActive }) =>
-              `flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                isActive
-                  ? "bg-gold-500/15 text-gold-200"
-                  : "text-slate-400 hover:text-slate-200"
-              }`
-            }
-          >
-            <ShieldCheck className="size-3.5" />
-            Admin
-          </NavLink>
+          {session?.role === "business" && (
+            <NavLink
+              to="/business"
+              className={({ isActive }) =>
+                `rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                  isActive
+                    ? "bg-gold-500/15 text-gold-200"
+                    : "text-slate-400 hover:text-slate-200"
+                }`
+              }
+            >
+              Business
+            </NavLink>
+          )}
+          {isAdmin && (
+            <NavLink
+              to="/admin"
+              className={({ isActive }) =>
+                `flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                  isActive
+                    ? "bg-gold-500/15 text-gold-200"
+                    : "text-slate-400 hover:text-slate-200"
+                }`
+              }
+            >
+              <ShieldCheck className="size-3.5" />
+              Admin
+            </NavLink>
+          )}
         </nav>
 
         <div className="flex items-center gap-2.5">
@@ -103,13 +119,13 @@ export default function TopBar({ sectionLabel }: TopBarProps) {
               className="flex cursor-pointer items-center gap-2 rounded-full border border-transparent py-1 pl-1 pr-2 transition-colors hover:border-white/10 hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-gold-500"
             >
               <Avatar
-                id={SELF.id}
-                name={SELF.fullName}
+                id={session?.accountId ?? ""}
+                name={displayName}
                 className="size-8 rounded-full text-[10px] font-bold text-white"
               />
               <div className="hidden leading-tight text-left md:block">
-                <p className="text-xs font-semibold text-white">{SELF.businessName}</p>
-                <p className="text-[10px] text-slate-500">{SELF.tier} tier</p>
+                <p className="text-xs font-semibold text-white">{displayName}</p>
+                <p className="text-[10px] text-slate-500">{displaySubtitle}</p>
               </div>
               <ChevronDown
                 className={`size-3.5 text-slate-500 transition-transform ${
@@ -126,41 +142,44 @@ export default function TopBar({ sectionLabel }: TopBarProps) {
               >
                 <div className="border-b border-white/10 px-3 py-2.5">
                   <p className="truncate text-xs font-semibold text-white">
-                    {SELF.fullName}
+                    {displayName}
                   </p>
                   <p className="truncate text-[11px] text-slate-500">
-                    {SELF.businessName}
+                    {session?.email ?? displaySubtitle}
                   </p>
                 </div>
-                <Link
-                  role="menuitem"
-                  to="/business/settings"
-                  onClick={closeMenu}
-                  className={MENU_ITEM_CLASS}
-                >
-                  <Settings className="size-3.5" />
-                  Account settings
-                </Link>
-                {!onAdmin && (
+                {isAdmin ? (
                   <Link
                     role="menuitem"
-                    to="/business/journey"
+                    to="/admin/settings-reports"
                     onClick={closeMenu}
                     className={MENU_ITEM_CLASS}
                   >
-                    <Compass className="size-3.5" />
-                    My journey
+                    <Settings className="size-3.5" />
+                    Admin settings
                   </Link>
+                ) : (
+                  <>
+                    <Link
+                      role="menuitem"
+                      to="/business/settings"
+                      onClick={closeMenu}
+                      className={MENU_ITEM_CLASS}
+                    >
+                      <Settings className="size-3.5" />
+                      Account settings
+                    </Link>
+                    <Link
+                      role="menuitem"
+                      to="/business/journey"
+                      onClick={closeMenu}
+                      className={MENU_ITEM_CLASS}
+                    >
+                      <Compass className="size-3.5" />
+                      My journey
+                    </Link>
+                  </>
                 )}
-                <Link
-                  role="menuitem"
-                  to={onAdmin ? "/business" : "/admin"}
-                  onClick={closeMenu}
-                  className={MENU_ITEM_CLASS}
-                >
-                  <ShieldCheck className="size-3.5" />
-                  {onAdmin ? "Business dashboard" : "Admin dashboard"}
-                </Link>
                 <div className="my-1 border-t border-white/10" />
                 <button
                   type="button"
@@ -176,7 +195,6 @@ export default function TopBar({ sectionLabel }: TopBarProps) {
           </div>
         </div>
       </div>
-      {toast && <Toast message={toast} onDismiss={() => setToast(null)} />}
     </header>
   );
 }

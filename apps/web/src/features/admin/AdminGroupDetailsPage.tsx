@@ -14,22 +14,21 @@ import {
 } from "lucide-react";
 import Badge from "../../components/ui/Badge";
 import Card, { CardBody, CardTitle } from "../../components/ui/Card";
-import EmptyState from "../../components/ui/EmptyState";
 import FieldHint from "../../components/ui/FieldHint";
 import ProgressBar from "../../components/ui/ProgressBar";
 import SectionHeader from "../../components/ui/SectionHeader";
 import StatCard from "../../components/ui/StatCard";
 import TipIcon from "../../components/ui/TipIcon";
 import Toast from "../../components/ui/Toast";
-import { PROGRAMMES, RELATIONSHIPS } from "../../data/businessData";
 import type { Group } from "../../domain/types";
-import { useAppState, useGroup, useGroupActivity } from "../../store/selectors";
+import { useAppState, useGroup } from "../../store/selectors";
+import { useAdminGroupActivity } from "../../admin/AdminDataProvider";
 import { useAppStore } from "../../store/context";
-import { useDemoLoading } from "../../lib/demoDelay";
 import { SkeletonCard, SkeletonRows } from "../../components/ui/Skeleton";
 import { memberCountOf } from "../groups/groupUtils";
 import AdminGroupContributionCard from "./AdminGroupContributionCard";
 import AdminGroupCircleVisualization from "./AdminGroupCircleVisualization";
+import { AdminGroupMissingState } from "./AdminGroupTabsHeader";
 
 type TabId = "overview" | "circle" | "contributions" | "members" | "activity" | "relationships" | "settings";
 
@@ -50,18 +49,21 @@ const TAB_CLASS = {
 
 const ADMIN_ACTOR = { id: "admin", name: "Administrator" };
 
-function relationshipName(id?: string): string | undefined {
+function relationshipName(
+  relationships: { id: string; name: string }[],
+  id?: string,
+): string | undefined {
   if (!id) return undefined;
-  return RELATIONSHIPS.find((entry) => entry.id === id)?.name;
+  return relationships.find((entry) => entry.id === id)?.name;
 }
 
 export default function AdminGroupDetailsPage() {
   const { groupId } = useParams();
   const group = useGroup(groupId);
   const state = useAppState();
-  const activity = useGroupActivity(groupId);
+  const activity = useAdminGroupActivity(groupId);
   const [tab, setTab] = useState<TabId>("overview");
-  const loading = useDemoLoading();
+  const loading = false;
 
   if (loading) {
     return (
@@ -73,7 +75,16 @@ export default function AdminGroupDetailsPage() {
   }
 
   const rule = state.adminConfig.automaticGrouping;
-  const programme = PROGRAMMES.find((entry) => entry.id === group?.programmeId);
+  const programme = state.programmes.find((entry) => entry.id === group?.programmeId);
+
+  if (!group) {
+    return (
+      <AdminGroupMissingState
+        title="Admin Group Details"
+        description="Full administrative control: edit rules, moderate membership, approve or suspend."
+      />
+    );
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -81,31 +92,11 @@ export default function AdminGroupDetailsPage() {
         title="Admin Group Details"
         back="/admin/groups/all"
         backLabel="All Groups"
-        subtitle={
-          group
-            ? `${group.name} — full administrative control: edit rules, moderate membership, approve or suspend.`
-            : "Full administrative control over any group on the platform."
-        }
+        subtitle={`${group.name} — full administrative control: edit rules, moderate membership, approve or suspend.`}
         tip="Lifecycle changes live in Settings; Overview and Identity are read-only here."
       />
 
-      {!group ? (
-        <EmptyState
-          title="Group not found"
-          description="This id is not in the demo store — open one from the Admin Group List."
-          icon={<Building2 className="size-6" />}
-          action={
-            <Link
-              to="/admin/groups/all"
-              className="inline-flex items-center gap-1 text-xs font-medium text-gold-300 hover:text-gold-200"
-            >
-              Back to the register <ArrowRight className="size-3.5" />
-            </Link>
-          }
-        />
-      ) : (
-        <>
-          <GroupIdentity group={group} />
+      <GroupIdentity group={group} />
 
           {group.status === "Pending Review" && (
             <PendingReviewBanner groupId={group.id} groupName={group.name} />
@@ -179,7 +170,7 @@ export default function AdminGroupDetailsPage() {
                 <StatCard
                   label="Activity entries"
                   value={activity.length.toLocaleString("en-GB")}
-                  hint="Recorded in this demo"
+                  hint="Recorded by the platform"
                   accent="warning"
                 />
               </div>
@@ -258,9 +249,9 @@ export default function AdminGroupDetailsPage() {
                       <TipIcon text="Not assigned means no one covers this group in that role yet." />
                     </div>
                     <ul className="flex flex-col gap-2 text-xs">
-                      <InfoRow label="Account manager" value={relationshipName(group.accountManagerId) ?? "Not assigned"} />
-                      <InfoRow label="Agent" value={relationshipName(group.agentId) ?? "Not assigned"} />
-                      <InfoRow label="Consultant" value={relationshipName(group.consultantId) ?? "Not assigned"} />
+                      <InfoRow label="Account manager" value={relationshipName(state.relationships, group.accountManagerId) ?? "Not assigned"} />
+                      <InfoRow label="Agent" value={relationshipName(state.relationships, group.agentId) ?? "Not assigned"} />
+                      <InfoRow label="Consultant" value={relationshipName(state.relationships, group.consultantId) ?? "Not assigned"} />
                     </ul>
                     <Link
                       to={`/admin/groups/${group.id}/relationships`}
@@ -340,8 +331,6 @@ export default function AdminGroupDetailsPage() {
           )}
 
           {tab === "settings" && <GroupSettingsPanel group={group} />}
-        </>
-      )}
     </div>
   );
 }

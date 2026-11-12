@@ -87,8 +87,8 @@ export default function ParticipantAccountPage() {
               <p className="text-base font-bold text-white">{identity.name}</p>
               <p className="text-xs text-slate-400">
                 {identity.role === "consumer"
-                  ? session?.email || "consumer@community.demo"
-                  : "invited@business.demo"}
+                  ? session?.email || ""
+                  : session?.email || ""}
               </p>
               <div className="mt-2 flex flex-wrap gap-2">
                 <Badge variant="gold">

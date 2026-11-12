@@ -106,6 +106,11 @@ export interface GroupCircle {
   memberIds: string[];
   sourceListIds: string[];
   createdAt: string;
+  /** Server view fields (business circles). */
+  status?: string;
+  memberCount?: number;
+  activityCount?: number;
+  typeConfig?: CircleTypeConfigEntry;
 }
 
 export type ActivityEventKind = "join" | "message" | "update";
@@ -191,6 +196,31 @@ export interface Group {
   accountManagerId?: string;
   agentId?: string;
   consultantId?: string;
+  /** Server-resolved view state for the signed-in business. */
+  isOwner?: boolean;
+  isMember?: boolean;
+  role?: "owner" | "member" | "none";
+  activation?: GroupActivationView;
+  joinPlan?: JoinPlanView;
+}
+
+export interface GroupActivationView {
+  target: number;
+  current: number;
+  remaining: number;
+  percent: number;
+  active: boolean;
+  gated: boolean;
+  tier: Tier;
+  variant: PlanVariant;
+}
+
+export interface JoinPlanView {
+  action: "join" | "request" | "none";
+  label: string;
+  hint: string;
+  disabled: boolean;
+  reason: string;
 }
 
 export type MembershipRole = "owner" | "member";
@@ -419,6 +449,10 @@ export interface AdminConfig {
   mandatoryGroups: MandatoryGroupRule[];
   partnerDefaults: PartnerPermissions;
   auditLog: AuditLogEntry[];
+  /** Admin access-rule settings, stored server-side with the config. */
+  accessRules?: Record<string, unknown>;
+  /** Platform settings (invitation defaults, notifications), stored server-side. */
+  platformSettings?: Record<string, unknown>;
 }
 
 export interface AdminConfigPatch {
@@ -431,6 +465,8 @@ export interface AdminConfigPatch {
   mandatoryCircles?: MandatoryCircleRule[];
   mandatoryGroups?: MandatoryGroupRule[];
   partnerDefaults?: Partial<PartnerPermissions>;
+  accessRules?: Record<string, unknown>;
+  platformSettings?: Record<string, unknown>;
   auditLog?: AuditLogEntry[];
 }
 

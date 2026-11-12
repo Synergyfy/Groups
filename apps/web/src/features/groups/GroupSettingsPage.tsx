@@ -8,9 +8,9 @@ import FieldHint from "../../components/ui/FieldHint";
 import LinkButton from "../../components/ui/LinkButton";
 import Select from "../../components/ui/Select";
 import Toast from "../../components/ui/Toast";
-import { CURRENT_BUSINESS } from "../../data/businessData";
-import { useAppStore } from "../../store/context";
-import { useAppState, useGroup } from "../../store/selectors";
+import { useAppState, useBusinessId, useGroup } from "../../store/selectors";
+import { errorMessage } from "../../app/api";
+import { businessApi, useBusinessData } from "../../business/BusinessDataProvider";
 import type {
   Group,
   GroupAccessType,
@@ -19,8 +19,6 @@ import type {
 } from "../../domain/types";
 import { GROUP_VISIBILITY_LABELS } from "../../domain/types";
 import GroupTabsHeader, { GroupMissingState } from "./GroupTabsHeader";
-
-const ACTOR_ID = CURRENT_BUSINESS.id;
 
 const STATUS_OPTIONS: GroupStatus[] = ["Active", "Recruiting", "Pending Review", "Closed"];
 
@@ -37,12 +35,13 @@ const FIELD_CLASS =
 export default function GroupSettingsPage() {
   const { groupId } = useParams();
   const group = useGroup(groupId);
+  const actorId = useBusinessId();
 
   if (!group) {
     return <GroupMissingState title="13 — Group Settings" />;
   }
 
-  const isOwner = group.ownerId === ACTOR_ID;
+  const isOwner = group.ownerId === actorId;
 
   return (
     <div className="flex flex-col gap-4">
@@ -57,7 +56,8 @@ export default function GroupSettingsPage() {
 
 function GroupSettingsForm({ group, isOwner }: { group: Group; isOwner: boolean }) {
   const { adminConfig } = useAppState();
-  const { dispatch } = useAppStore();
+  const actorId = useBusinessId();
+  const { refresh } = useBusinessData();
 
   const [name, setName] = useState(group.name);
   const [purpose, setPurpose] = useState(group.purpose);
@@ -67,34 +67,43 @@ function GroupSettingsForm({ group, isOwner }: { group: Group; isOwner: boolean 
   const [stage, setStage] = useState(group.stage ?? "");
   const [feedback, setFeedback] = useState<string | null>(null);
 
-  const isMember = group.memberIds.includes(ACTOR_ID) || isOwner;
-  const actor = { id: ACTOR_ID, name: CURRENT_BUSINESS.businessName };
+  const isMember = group.memberIds.includes(actorId) || isOwner;
 
-  const save = () => {
-    dispatch({
-      type: "group/update",
-      groupId: group.id,
-      patch: {
+  const save = async () => {
+    try {
+      await businessApi.updateGroup(group.id, {
         name: name.trim() || group.name,
         purpose: purpose.trim() || group.purpose,
         status,
         accessType,
         visibility,
         stage: stage || undefined,
-      },
-      actor,
-    });
-    setFeedback("Group settings saved");
+      });
+      await refresh();
+      setFeedback("Group settings saved");
+    } catch (cause) {
+      setFeedback(errorMessage(cause));
+    }
   };
 
-  const leave = () => {
-    dispatch({ type: "group/leave", groupId: group.id, actor });
-    setFeedback(`You left ${group.name}`);
+  const leave = async () => {
+    try {
+      await businessApi.leaveGroup(group.id);
+      await refresh();
+      setFeedback(`You left ${group.name}`);
+    } catch (cause) {
+      setFeedback(errorMessage(cause));
+    }
   };
 
-  const closeGroup = () => {
-    dispatch({ type: "group/update", groupId: group.id, patch: { status: "Closed" }, actor });
-    setFeedback(`${group.name} closed`);
+  const closeGroup = async () => {
+    try {
+      await businessApi.updateGroup(group.id, { status: "Closed" });
+      await refresh();
+      setFeedback(`${group.name} closed`);
+    } catch (cause) {
+      setFeedback(errorMessage(cause));
+    }
   };
 
   const reset = () => {
@@ -284,7 +293,7 @@ function GroupSettingsForm({ group, isOwner }: { group: Group; isOwner: boolean 
             <CardBody className="flex flex-col gap-3">
               <CardTitle>Danger zone</CardTitle>
               <p className="text-[11px] leading-relaxed text-slate-500">
-                Leave and Close are demo actions guarded by permissions configured by Admin —
+                Leave and Close are actions guarded by permissions configured by Admin —
                 availability follows the rules administrators set, and closing never deletes the
                 group record.
               </p>

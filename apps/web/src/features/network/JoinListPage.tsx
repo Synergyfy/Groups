@@ -5,7 +5,6 @@ import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
 import FieldHint from "../../components/ui/FieldHint";
 import { CURRENT_BUSINESS } from "../../data/businessData";
-import { LISTS } from "../../data/mockData";
 import { useAppStore } from "../../store/context";
 import { newNetworkContact } from "../../store/reducer";
 
@@ -17,7 +16,9 @@ const FIELD_CLASS =
 export default function JoinListPage() {
   const { listId = "" } = useParams();
   const { dispatch } = useAppStore();
-  const list = LISTS.find((entry) => entry.id === listId);
+  const list = listId
+    ? { id: listId, name: "this network list", type: "Network", geography: "Local" }
+    : undefined;
 
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
@@ -83,7 +84,7 @@ export default function JoinListPage() {
             to={`/join/${list.id}/confirm/${submittedId}`}
             className="mt-4 inline-block text-xs font-semibold text-gold-300 transition-colors hover:text-gold-200"
           >
-            Open the demo confirmation email →
+            Open the confirmation email →
           </Link>
         </div>
       </div>

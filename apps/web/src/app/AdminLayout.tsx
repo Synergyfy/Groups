@@ -10,6 +10,7 @@ import {
   Users,
 } from "lucide-react";
 import DashboardShell from "./DashboardShell";
+import { AdminDataProvider } from "../admin/AdminDataProvider";
 import type { NavSection } from "./Sidebar";
 import type { BottomNavItem } from "./BottomNav";
 
@@ -84,10 +85,12 @@ const ADMIN_BOTTOM_NAV: BottomNavItem[] = [
 
 export default function AdminLayout() {
   return (
-    <DashboardShell
-      sectionLabel="Central Solution Admin"
-      nav={ADMIN_NAV}
-      bottomNav={ADMIN_BOTTOM_NAV}
-    />
+    <AdminDataProvider>
+      <DashboardShell
+        sectionLabel="Central Solution Admin"
+        nav={ADMIN_NAV}
+        bottomNav={ADMIN_BOTTOM_NAV}
+      />
+    </AdminDataProvider>
   );
 }

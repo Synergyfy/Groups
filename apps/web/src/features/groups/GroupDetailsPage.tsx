@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import type { ReactNode } from "react";
 import {
@@ -20,10 +20,15 @@ import CollapsibleCard from "../../components/ui/CollapsibleCard";
 import EmptyState from "../../components/ui/EmptyState";
 import LinkButton from "../../components/ui/LinkButton";
 import Toast from "../../components/ui/Toast";
-import { CURRENT_BUSINESS, CAMPAIGNS, PROGRAMMES, RELATIONSHIPS, findDirectoryEntry } from "../../data/businessData";
 import { useAppState, useGroup, useGroupActivity, useGroupInvitations, selectGroupActivation } from "../../store/selectors";
 import { useAppStore } from "../../store/context";
-import { useDemoLoading } from "../../lib/demoDelay";
+import { errorMessage } from "../../app/api";
+import {
+  businessApi,
+  useOptionalBusinessData,
+  type BusinessGroup,
+  type BusinessMember,
+} from "../../business/BusinessDataProvider";
 import { SkeletonCard, SkeletonRows } from "../../components/ui/Skeleton";
 import MemberSearch, { type MemberSearchItem } from "../../components/members/MemberSearch";
 import MemberDetailModal from "../../components/members/MemberDetailModal";
@@ -38,8 +43,6 @@ import { relativeTime } from "../../lib/time";
 import GroupTabsHeader, { GroupMissingState } from "./GroupTabsHeader";
 import GroupCircleView from "./GroupCircleView";
 
-const ACTOR_ID = CURRENT_BUSINESS.id;
-
 const ACCESS_LABELS: Record<string, string> = {
   open: "Open — anyone can join",
   request: "Request — owner approval needed",
@@ -47,18 +50,70 @@ const ACCESS_LABELS: Record<string, string> = {
   invitation: "Invitation only — owner must invite",
 };
 
+type GroupDetail = Awaited<ReturnType<typeof businessApi.group>>;
+
 export default function GroupDetailsPage() {
   const { groupId } = useParams();
+  const business = useOptionalBusinessData();
   const group = useGroup(groupId);
-  const activity = useGroupActivity(groupId);
+  const storedActivity = useGroupActivity(groupId);
   const invitations = useGroupInvitations(groupId);
   const state = useAppState();
   const { adminConfig } = state;
   const { dispatch } = useAppStore();
-  const loading = useDemoLoading();
+  const loading = false;
   const [feedback, setFeedback] = useState<string | null>(null);
   const [memberSearchOpen, setMemberSearchOpen] = useState(false);
   const [memberDetailId, setMemberDetailId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<GroupDetail | null>(null);
+  const [members, setMembers] = useState<BusinessMember[] | null>(null);
+
+  useEffect(() => {
+    if (!business || !groupId) return;
+    let alive = true;
+    void Promise.all([
+      businessApi.group(groupId),
+      businessApi.groupMembers(groupId),
+    ])
+      .then(([groupDetail, memberResult]) => {
+        if (!alive) return;
+        setDetail(groupDetail);
+        setMembers(memberResult.members);
+      })
+      .catch((cause) => {
+        if (alive) setFeedback(errorMessage(cause));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [business, groupId]);
+
+  const actorId = business?.profile?.business.id ?? "";
+  const businessName =
+    business?.profile?.business.name ?? "Business";
+  const directoryLookup = (id: string) => {
+    if (business?.profile && id === business.profile.business.id) {
+      return {
+        id,
+        name: business.profile.business.name,
+        contactName: business.profile.business.contactName,
+        city: business.profile.business.city,
+        category: business.profile.business.category,
+        joinedAt: business.profile.joinedAt?.slice(0, 10),
+      };
+    }
+    return (
+      business?.directory.find((entry) => entry.id === id) ?? {
+        id,
+        name: id,
+        contactName: id,
+        city: "",
+        category: "",
+        joinedAt: "",
+      }
+    );
+  };
+  const activity = detail?.activity ?? storedActivity;
 
   if (loading) {
     return (
@@ -73,29 +128,56 @@ export default function GroupDetailsPage() {
     return <GroupMissingState title="04 — Group Details" />;
   }
 
-  const isOwner = group.ownerId === ACTOR_ID;
-  const isMember = group.memberIds.includes(ACTOR_ID) || isOwner;
+  const isOwner = group.ownerId === actorId;
+  const isMember = group.memberIds.includes(actorId) || isOwner;
   const activation = selectGroupActivation(state, group);
   const pendingInvites = invitations.filter(
     (invitation) => invitation.status === "pending"
   ).length;
-  const campaign = CAMPAIGNS.find((entry) => entry.groupIds?.includes(group.id));
-  const programme = PROGRAMMES.find((entry) => entry.id === group.programmeId);
-  const previewMembers = group.memberIds.slice(0, 6).map(findDirectoryEntry);
-  const memberItems: MemberSearchItem[] = group.memberIds.map((id) => {
-    const entry = findDirectoryEntry(id);
-    return {
-      id,
-      name: entry.name,
-      contactName: entry.contactName,
-      category: entry.category,
-      city: entry.city,
-      joinedAt: entry.joinedAt ?? group.createdAt,
-      isOwner: id === group.ownerId,
-      isSelf: id === ACTOR_ID,
-      online: id === group.ownerId || id === ACTOR_ID || isOnline(id),
-    };
-  });
+  const campaign =
+    detail?.campaigns.find((entry) => entry.groupIds?.includes(group.id)) ??
+    business?.campaigns?.items.find((entry) => entry.groupIds?.includes(group.id));
+  const programme =
+    (detail?.programme &&
+    detail.programme.id === group.programmeId
+      ? detail.programme
+      : null) ?? business?.programmes?.items.find((entry) => entry.id === group.programmeId);
+  const memberSource: BusinessMember[] | null =
+    members ??
+    group.memberIds.map((id) => {
+      const entry = directoryLookup(id);
+      return {
+        id,
+        membershipId: id,
+        fullName: entry.contactName,
+        businessName: entry.name,
+        category: entry.category,
+        location: entry.city,
+        status: "active",
+        role: id === group.ownerId ? "owner" : "peripheral",
+        tier: "Bronze",
+        joinedAt: entry.joinedAt,
+      };
+    });
+  const previewMembers = memberSource.slice(0, 6).map((member) => ({
+    id: member.id,
+    name: member.businessName ?? member.fullName,
+    contactName: member.fullName,
+    city: member.location ?? "—",
+    category: member.category ?? "—",
+    joinedAt: member.joinedAt,
+  }));
+  const memberItems: MemberSearchItem[] = memberSource.map((member) => ({
+    id: member.id,
+    name: member.businessName ?? member.fullName,
+    contactName: member.fullName,
+    category: member.category ?? "—",
+    city: member.location ?? "—",
+    joinedAt: member.joinedAt ?? group.createdAt,
+    isOwner: member.id === group.ownerId,
+    isSelf: member.id === actorId,
+    online: member.id === group.ownerId || member.id === actorId || isOnline(member.id),
+  }));
   const memberDetail = memberDetailId
     ? memberItems.find((item) => item.id === memberDetailId) ?? null
     : null;
@@ -104,13 +186,13 @@ export default function GroupDetailsPage() {
   const pendingRequest = invitations.some(
     (invitation) =>
       invitation.kind === "request" &&
-      invitation.inviteeId === ACTOR_ID &&
+      invitation.inviteeId === actorId &&
       invitation.status === "pending"
   );
   const pendingInvite = invitations.some(
     (invitation) =>
       invitation.kind === "invite" &&
-      invitation.inviteeId === ACTOR_ID &&
+      invitation.inviteeId === actorId &&
       invitation.status === "pending"
   );
 
@@ -153,13 +235,30 @@ export default function GroupDetailsPage() {
     return { disabled: false, label: "Request to join", hint: ACCESS_LABELS[group.accessType] };
   };
 
-  const plan = joinPlan();
+  const apiPlan = business ? (group as BusinessGroup).joinPlan : undefined;
+  const plan = apiPlan
+    ? { disabled: apiPlan.disabled, label: apiPlan.label, hint: apiPlan.hint }
+    : joinPlan();
 
-  const handleJoin = () => {
+  const handleJoin = async () => {
+    if (business) {
+      try {
+        const result = await businessApi.joinGroup(group.id);
+        await business.refresh();
+        setFeedback(
+          result.status === "joined"
+            ? `You joined ${group.name}`
+            : `Join request sent to ${group.name}`
+        );
+      } catch (cause) {
+        setFeedback(errorMessage(cause));
+      }
+      return;
+    }
     dispatch({
       type: "group/join",
       groupId: group.id,
-      actor: { id: ACTOR_ID, name: CURRENT_BUSINESS.businessName },
+      actor: { id: actorId, name: businessName },
     });
     setFeedback(
       group.accessType === "open"
@@ -206,7 +305,17 @@ export default function GroupDetailsPage() {
               <Badge variant="gold">Paid · {contributionLabel(group)}</Badge>
             )}
           </div>
-          <GroupCircleView group={group} />
+          <GroupCircleView
+            group={group}
+            actorId={actorId}
+            directory={memberSource.map((member) => ({
+              id: member.id,
+              name: member.businessName ?? member.fullName,
+              contactName: member.fullName,
+              category: member.category ?? "—",
+              city: member.location ?? "—",
+            }))}
+          />
         </CardBody>
       </Card>
 
@@ -424,17 +533,17 @@ export default function GroupDetailsPage() {
             <RelationshipChip label="Programme" value={programme?.name} placeholder="Not linked" />
             <RelationshipChip
               label="Account manager"
-              value={relationshipName(group.accountManagerId)}
+              value={relationshipName(group.accountManagerId, detail)}
               placeholder="— not assigned"
             />
             <RelationshipChip
               label="Supporting agent"
-              value={relationshipName(group.agentId)}
+              value={relationshipName(group.agentId, detail)}
               placeholder="— not assigned"
             />
             <RelationshipChip
               label="Consultant"
-              value={relationshipName(group.consultantId)}
+              value={relationshipName(group.consultantId, detail)}
               placeholder="— not assigned"
             />
           </div>
@@ -485,7 +594,7 @@ export default function GroupDetailsPage() {
                       </p>
                     </div>
                     {member.id === group.ownerId && <Badge variant="gold">Owner</Badge>}
-                    {member.id === ACTOR_ID && member.id !== group.ownerId && (
+                    {member.id === actorId && member.id !== group.ownerId && (
                       <Badge variant="info">You</Badge>
                     )}
                     <ChevronRight className="size-4 shrink-0 text-slate-600 transition-transform group-hover:translate-x-0.5" />
@@ -545,9 +654,20 @@ export default function GroupDetailsPage() {
   );
 }
 
-function relationshipName(id?: string): string | undefined {
+function relationshipName(
+  id?: string,
+  detail?: GroupDetail | null,
+): string | undefined {
   if (!id) return undefined;
-  return RELATIONSHIPS.find((entry) => entry.id === id)?.name;
+  return (
+    detail?.relationships.accountManager?.id === id
+      ? detail.relationships.accountManager.name
+      : detail?.relationships.agent?.id === id
+        ? detail.relationships.agent.name
+        : detail?.relationships.consultant?.id === id
+          ? detail.relationships.consultant.name
+          : undefined
+  );
 }
 
 function RelationshipChip({

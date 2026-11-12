@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Check, Inbox, Send, X } from "lucide-react";
+import { ArrowRight, Check, Inbox, Send, X } from "lucide-react";
 import Badge from "../../components/ui/Badge";
 import type { BadgeVariant } from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
@@ -9,11 +9,10 @@ import LinkButton from "../../components/ui/LinkButton";
 import SectionHeader from "../../components/ui/SectionHeader";
 import Tabs from "../../components/ui/Tabs";
 import Toast from "../../components/ui/Toast";
-import { CURRENT_BUSINESS } from "../../data/businessData";
-import { useAppStore } from "../../store/context";
 import type { Invitation } from "../../domain/types";
-
-const ACTOR_ID = CURRENT_BUSINESS.id;
+import { useAppState } from "../../store/selectors";
+import { errorMessage } from "../../app/api";
+import { businessApi, useBusinessData } from "../../business/BusinessDataProvider";
 
 const STATUS_VARIANTS: Record<string, BadgeVariant> = {
   pending: "warning",
@@ -25,9 +24,11 @@ const STATUS_VARIANTS: Record<string, BadgeVariant> = {
 type TabId = "incoming" | "outgoing" | "requests";
 
 export default function InvitationsInboxPage() {
-  const { state, dispatch } = useAppStore();
+  const state = useAppState();
+  const { profile, refresh } = useBusinessData();
   const [tab, setTab] = useState<TabId>("incoming");
   const [feedback, setFeedback] = useState<string | null>(null);
+  const actorId = profile?.business.id ?? "";
 
   const groupName = useMemo(() => {
     const map = new Map(state.groups.map((group) => [group.id, group.name]));
@@ -37,43 +38,41 @@ export default function InvitationsInboxPage() {
 
   const incoming = state.invitations.filter(
     (invitation) =>
-      invitation.inviteeId === ACTOR_ID &&
+      invitation.inviteeId === actorId &&
       invitation.kind === "invite" &&
       invitation.direction === "incoming" &&
       !invitation.circleId
   );
 
   const myRequests = state.invitations.filter(
-    (invitation) => invitation.kind === "request" && invitation.inviteeId === ACTOR_ID
+    (invitation) => invitation.kind === "request" && invitation.inviteeId === actorId
   );
 
   const outgoing = state.invitations.filter(
     (invitation) =>
       invitation.kind === "invite" &&
-      invitation.invitedById === ACTOR_ID &&
-      invitation.inviteeId !== ACTOR_ID
+      invitation.invitedById === actorId &&
+      invitation.inviteeId !== actorId
   );
 
-  const actor = { id: ACTOR_ID, name: CURRENT_BUSINESS.businessName };
-
-  const respond = (invitation: Invitation) => {
-    dispatch({
-      type: "invitation/respond",
-      invitationId: invitation.id,
-      accept: false,
-      responder: actor,
-    });
-    setFeedback(`You declined the invitation from ${invitation.invitedByName}`);
+  const respond = async (invitation: Invitation) => {
+    try {
+      await businessApi.respondInvitation(invitation.id, false);
+      await refresh();
+      setFeedback(`You declined the invitation from ${invitation.invitedByName}`);
+    } catch (cause) {
+      setFeedback(errorMessage(cause));
+    }
   };
 
-  const cancel = (invitation: Invitation) => {
-    dispatch({
-      type: "invitation/respond",
-      invitationId: invitation.id,
-      accept: false,
-      responder: actor,
-    });
-    setFeedback(`Invitation to ${invitation.inviteeName} cancelled`);
+  const cancel = async (invitation: Invitation) => {
+    try {
+      await businessApi.cancelInvitation(invitation.id);
+      await refresh();
+      setFeedback(`Invitation to ${invitation.inviteeName} cancelled`);
+    } catch (cause) {
+      setFeedback(errorMessage(cause));
+    }
   };
 
   return (
@@ -132,9 +131,16 @@ export default function InvitationsInboxPage() {
                         <Check className="size-4" /> Review &amp; accept
                       </LinkButton>
                       <LinkButton
+                        to={`/business/invitations/${invitation.id}`}
+                        variant="outline"
+                        size="sm"
+                      >
+                        View details
+                      </LinkButton>
+                      <LinkButton
                         to={`/business/groups/${invitation.groupId ?? ""}`}
                         state={{ from: "/business/invitations", fromLabel: "Invitations" }}
-                        variant="outline"
+                        variant="ghost"
                         size="sm"
                       >
                         View group
@@ -148,9 +154,18 @@ export default function InvitationsInboxPage() {
                       </Button>
                     </div>
                   ) : (
-                    <p className="text-[11px] text-slate-500">
-                      Responded on {invitation.respondedAt?.slice(0, 10) ?? "—"}
-                    </p>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <p className="text-[11px] text-slate-500">
+                        Responded on {invitation.respondedAt?.slice(0, 10) ?? "—"}
+                      </p>
+                      <LinkButton
+                        to={`/business/invitations/${invitation.id}`}
+                        variant="ghost"
+                        size="sm"
+                      >
+                        View details <ArrowRight className="size-3.5" />
+                      </LinkButton>
+                    </div>
                   )}
                 </CardBody>
               </Card>
@@ -185,9 +200,27 @@ export default function InvitationsInboxPage() {
                     </Badge>
                   </div>
                   {invitation.status === "pending" && (
-                    <Button variant="ghost" size="sm" onClick={() => cancel(invitation)}>
-                      <X className="size-3.5" /> Cancel invitation
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <LinkButton
+                        to={`/business/invitations/${invitation.id}`}
+                        variant="outline"
+                        size="sm"
+                      >
+                        View details
+                      </LinkButton>
+                      <Button variant="ghost" size="sm" onClick={() => cancel(invitation)}>
+                        <X className="size-3.5" /> Cancel invitation
+                      </Button>
+                    </div>
+                  )}
+                  {invitation.status !== "pending" && (
+                    <LinkButton
+                      to={`/business/invitations/${invitation.id}`}
+                      variant="ghost"
+                      size="sm"
+                    >
+                      View details <ArrowRight className="size-3.5" />
+                    </LinkButton>
                   )}
                 </CardBody>
               </Card>
@@ -219,6 +252,13 @@ export default function InvitationsInboxPage() {
                       {invitation.status}
                     </Badge>
                   </div>
+                  <LinkButton
+                    to={`/business/invitations/${invitation.id}`}
+                    variant="ghost"
+                    size="sm"
+                  >
+                    View details <ArrowRight className="size-3.5" />
+                  </LinkButton>
                 </CardBody>
               </Card>
             ))}

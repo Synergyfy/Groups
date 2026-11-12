@@ -14,40 +14,70 @@ import LinkButton from "../../components/ui/LinkButton";
 import SectionHeader from "../../components/ui/SectionHeader";
 import StatCard from "../../components/ui/StatCard";
 import Toast from "../../components/ui/Toast";
-import { MEMBERSHIP_PLANS } from "../../data/membershipPlans";
 import { useAppStore } from "../../store/context";
 import { selectCreationRightsLabel } from "../../store/selectors";
+import { useAdminData } from "../../admin/AdminDataProvider";
 
 export default function AdminAccessRulesPage() {
   const { state, dispatch } = useAppStore();
+  const { data } = useAdminData();
   const [feedback, setFeedback] = useState<string | null>(null);
+
+  const access = (state.adminConfig.accessRules ?? {}) as {
+    temporaryAccess?: {
+      duration?: "none" | "7" | "14" | "30";
+      interactionLevel?: "read" | "message";
+      expiryAction?: "auto-leave" | "grace-period" | "prompt-upgrade";
+      requirePaymentForPermanent?: boolean;
+    };
+    joiningPolicy?: "invitation-first" | "open-request" | "strict-approval";
+    invitingPolicy?: "owners-only" | "all-members" | "admin-assisted";
+    quotas?: {
+      freeMaxGroups?: number;
+      paidMaxGroups?: number;
+      freeMaxCircles?: number;
+      paidMaxCircles?: number;
+    };
+  };
 
   // The persisted, enforced rules for who may create a group live on the
   // Group Creation Rules screen — this page summarises them.
   const creationRules = state.adminConfig.groupCreationRules;
   const rightsLabel = selectCreationRightsLabel(state);
-  const eligiblePlanCount = MEMBERSHIP_PLANS.filter(
+  const eligiblePlanCount = (data?.membershipPlans ?? []).filter(
     (plan) =>
       creationRules.allowedTiers.includes(plan.tier) &&
       creationRules.allowedVariants.includes(plan.variant)
   ).length;
 
   // Temporary access settings state (Henry's 7-day or 14-day requirement)
-  const [tempAccessDuration, setTempAccessDuration] = useState<"none" | "7" | "14" | "30">("14");
-  const [tempInteraction, setTempInteraction] = useState<"read" | "message">("message");
-  const [tempExpiryAction, setTempExpiryAction] = useState<"auto-leave" | "grace-period" | "prompt-upgrade">("auto-leave");
-  const [requirePaymentForPermanent, setRequirePaymentForPermanent] = useState(true);
+  const [tempAccessDuration, setTempAccessDuration] = useState<"none" | "7" | "14" | "30">(
+    access.temporaryAccess?.duration ?? "14",
+  );
+  const [tempInteraction, setTempInteraction] = useState<"read" | "message">(
+    access.temporaryAccess?.interactionLevel ?? "message",
+  );
+  const [tempExpiryAction, setTempExpiryAction] = useState<"auto-leave" | "grace-period" | "prompt-upgrade">(
+    access.temporaryAccess?.expiryAction ?? "auto-leave",
+  );
+  const [requirePaymentForPermanent, setRequirePaymentForPermanent] = useState(
+    access.temporaryAccess?.requirePaymentForPermanent ?? true,
+  );
 
   // Who can join groups
-  const [joiningPolicy, setJoiningPolicy] = useState<"invitation-first" | "open-request" | "strict-approval">("invitation-first");
+  const [joiningPolicy, setJoiningPolicy] = useState<"invitation-first" | "open-request" | "strict-approval">(
+    access.joiningPolicy ?? "invitation-first",
+  );
   // Who can invite members
-  const [invitingPolicy, setInvitingPolicy] = useState<"owners-only" | "all-members" | "admin-assisted">("owners-only");
+  const [invitingPolicy, setInvitingPolicy] = useState<"owners-only" | "all-members" | "admin-assisted">(
+    access.invitingPolicy ?? "owners-only",
+  );
 
   // Limits
-  const [freeMaxGroups, setFreeMaxGroups] = useState(3);
-  const [paidMaxGroups, setPaidMaxGroups] = useState(25);
-  const [freeMaxCircles, setFreeMaxCircles] = useState(2);
-  const [paidMaxCircles, setPaidMaxCircles] = useState(15);
+  const [freeMaxGroups, setFreeMaxGroups] = useState(access.quotas?.freeMaxGroups ?? 3);
+  const [paidMaxGroups, setPaidMaxGroups] = useState(access.quotas?.paidMaxGroups ?? 25);
+  const [freeMaxCircles, setFreeMaxCircles] = useState(access.quotas?.freeMaxCircles ?? 2);
+  const [paidMaxCircles, setPaidMaxCircles] = useState(access.quotas?.paidMaxCircles ?? 15);
 
   const saveRules = () => {
     dispatch({
@@ -58,6 +88,22 @@ export default function AdminAccessRulesPage() {
           maxCircles: paidMaxCircles,
           canCreateGroups: true,
           canInviteMembers: true,
+        },
+        accessRules: {
+          temporaryAccess: {
+            duration: tempAccessDuration,
+            interactionLevel: tempInteraction,
+            expiryAction: tempExpiryAction,
+            requirePaymentForPermanent,
+          },
+          joiningPolicy,
+          invitingPolicy,
+          quotas: {
+            freeMaxGroups,
+            paidMaxGroups,
+            freeMaxCircles,
+            paidMaxCircles,
+          },
         },
       },
     });
@@ -214,7 +260,7 @@ export default function AdminAccessRulesPage() {
               <div className="rounded-lg border border-gold-500/40 bg-gold-500/10 p-2.5 text-xs text-white">
                 <span className="font-semibold">{rightsLabel}</span>
                 <p className="mt-0.5 text-[10px] text-slate-400">
-                  {eligiblePlanCount} of {MEMBERSHIP_PLANS.length} published plans may run the
+                  {eligiblePlanCount} of {data?.membershipPlans.length ?? 0} published plans may run the
                   Create Group wizard.
                 </p>
               </div>

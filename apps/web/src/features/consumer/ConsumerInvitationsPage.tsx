@@ -2,22 +2,12 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Mail, Check, X, Users, ArrowRight } from "lucide-react";
 import Badge from "../../components/ui/Badge";
-import {
-  useAppState,
-  useGroup,
-  useIncomingInvitations,
-} from "../../store/selectors";
-import { useAppStore } from "../../store/context";
-import { readParticipantSession } from "../../app/authSession";
+import { useConsumerData } from "../../consumer/ConsumerDataProvider";
 import type { Invitation } from "../../domain/types";
 
 export default function ConsumerInvitationsPage() {
-  const { dispatch } = useAppStore();
-  const session = readParticipantSession();
-  const consumerId = session?.role === "consumer" ? (session.accountId || "cons-john") : "cons-john";
-  const consumerName = (session?.role === "consumer" && session.name) ? session.name : "John Doe";
+  const { invitations, respond } = useConsumerData();
 
-  const invitations = useIncomingInvitations(consumerId);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [acceptedCircleId, setAcceptedCircleId] = useState<string | null>(null);
 
@@ -30,23 +20,13 @@ export default function ConsumerInvitationsPage() {
   const groupCount = pending.length - circleCount;
 
   const handleDecline = (invitation: Invitation) => {
-    dispatch({
-      type: "invitation/respond",
-      invitationId: invitation.id,
-      accept: false,
-      responder: { id: consumerId, name: consumerName },
-    });
+    void respond(invitation.id, false);
     setFeedback(`Declined invitation.`);
     setAcceptedCircleId(null);
   };
 
   const handleAcceptCircle = (invitation: Invitation) => {
-    dispatch({
-      type: "invitation/respond",
-      invitationId: invitation.id,
-      accept: true,
-      responder: { id: consumerId, name: consumerName },
-    });
+    void respond(invitation.id, true);
     setFeedback(`Joined circle successfully!`);
     setAcceptedCircleId(invitation.circleId ?? null);
   };
@@ -175,16 +155,13 @@ function PendingCircleInvitation({
   onAccept: () => void;
   onDecline: () => void;
 }) {
-  const state = useAppState();
-  const circle = state.circles.find((entry) => entry.id === invitation.circleId);
-
   return (
     <div className="rounded-xl border border-gold-500/30 bg-gold-500/5 p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-1.5">
             <p className="text-sm font-semibold text-white">
-              {circle?.config.name ?? "Central Circle"}
+              {"Central Circle"}
             </p>
             <Badge variant="gold">Circle</Badge>
           </div>
@@ -194,12 +171,6 @@ function PendingCircleInvitation({
         </div>
         <Badge variant="warning">Pending</Badge>
       </div>
-
-      {circle?.config.description && (
-        <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
-          {circle.config.description}
-        </p>
-      )}
 
       <div className="mt-4 flex gap-2">
         <button
@@ -228,7 +199,8 @@ function PendingGroupInvitation({
   invitation: Invitation;
   onDecline: () => void;
 }) {
-  const group = useGroup(invitation.groupId);
+  const { groups } = useConsumerData();
+  const group = groups.find((entry) => entry.id === invitation.groupId);
 
   return (
     <div className="rounded-xl border border-white/10 bg-ink-900/60 p-4">

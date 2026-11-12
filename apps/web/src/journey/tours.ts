@@ -129,7 +129,7 @@ const TOURS: TourDef[] = [
       {
         target: "stats",
         title: "The whole network, counted",
-        body: "Groups, members, businesses and what needs attention — every figure from the live demo store, never from a mock array in the page.",
+        body: "Groups, members, businesses and what needs attention — every figure comes from the live API.",
       },
       {
         target: "attention",
@@ -439,7 +439,7 @@ const TOURS: TourDef[] = [
       {
         target: "growth",
         title: "Growth over time",
-        body: "Groups created per month, read straight from creation dates in the demo store.",
+        body: "Groups created per month, read straight from persisted creation dates.",
       },
       {
         target: "types",

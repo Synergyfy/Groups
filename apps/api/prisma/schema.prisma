@@ -1,0 +1,538 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum GroupVisibility {
+  PUBLIC
+  PRIVATE
+  INVITE_ONLY
+}
+
+enum UserRole {
+  BUSINESS
+  CUSTOMER
+  AGENT
+  CONSULTANT
+  ACCOUNT_MANAGER
+  PARTNER
+  ADMIN
+}
+
+model User {
+  id                      String       @id @default(uuid()) @db.Uuid
+  mcomUserId              String?      @unique @map("mcom_user_id")
+  email                   String       @unique
+  firstName               String?      @map("first_name")
+  lastName                String?      @map("last_name")
+  fullName                String?      @map("full_name")
+  displayName             String?      @map("display_name")
+  jobTitle                String?      @map("job_title")
+  avatarUrl               String?      @map("avatar_url")
+  phone                   String?
+  address                 String?
+  postcode                String?
+  country                 String?
+  role                    UserRole
+  profileType             String?      @map("profile_type")
+  isAffiliate             Boolean      @default(false) @map("is_affiliate")
+  passwordHash            String?      @map("password_hash")
+  businessId              String?      @map("business_id")
+  businessName            String?      @map("business_name")
+  membershipLevel         String?      @map("membership_level")
+  membershipTier          String?      @map("membership_tier")
+  membershipStatus        String?      @map("membership_status")
+  membershipPlanName      String?      @map("membership_plan_name")
+  membershipExpiresAt     DateTime?    @map("membership_expires_at")
+  trialAccessExpiresAt    DateTime?    @map("trial_access_expires_at")
+  businessProfile         Json?        @map("business_profile")
+  customerProfile         Json?        @map("customer_profile")
+  agentProfile            Json?        @map("agent_profile")
+  consultantProfile       Json?        @map("consultant_profile")
+  accountManagerProfile   Json?        @map("account_manager_profile")
+  entitlement              Json?
+  lastLoginAt             DateTime?    @map("last_login_at")
+  createdAt               DateTime     @default(now()) @map("created_at")
+  updatedAt               DateTime     @updatedAt @map("updated_at")
+
+  @@index([role])
+  @@map("users")
+}
+
+model Group {
+  id          String          @id @default(uuid()) @db.Uuid
+  name        String
+  slug        String          @unique
+  description String?
+  visibility  GroupVisibility @default(PUBLIC)
+  location    String?
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+
+  // Admin / group-building fields
+  type                  String   @default("B2B")
+  source                String   @default("user-created")
+  headStart             Boolean  @default(false) @map("head_start")
+  purpose               String   @default("")
+  ownerId               String?  @map("owner_id")
+  ownerName             String   @default("") @map("owner_name")
+  memberCount           Int      @default(0) @map("member_count")
+  city                  String?
+  localArea             String?  @map("local_area")
+  requiredSize          Int?     @map("required_size")
+  stage                 String?
+  status                String   @default("Active")
+  accessType            String   @default("open") @map("access_type")
+  directoryVisibility   String?  @map("directory_visibility")
+  interactionLevel      String?  @map("interaction_level")
+  pricing               String   @default("free")
+  contribution          Float?
+  contributionFrequency String?  @map("contribution_frequency")
+  campaignIds           String[] @default([]) @map("campaign_ids")
+  programmeId           String?  @map("programme_id")
+  accountManagerId      String?  @map("account_manager_id")
+  agentId               String?  @map("agent_id")
+  consultantId          String?  @map("consultant_id")
+
+  members    GroupMember[]
+  activities GroupActivity[]
+
+  @@index([visibility])
+  @@index([type])
+  @@index([status])
+  @@index([city])
+  @@index([ownerId])
+  @@index([programmeId])
+  @@map("groups")
+}
+
+// ---------------------------------------------------------------------------
+// Admin console entities
+// ---------------------------------------------------------------------------
+
+model PlatformAccount {
+  id        String   @id
+  name      String
+  email     String   @unique
+  phone     String?
+  role      String   @default("consumer")
+  status    String   @default("Active")
+  verified  Boolean  @default(false)
+  source    String   @default("invitation-onboarding")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([role])
+  @@index([status])
+  @@map("platform_accounts")
+}
+
+model Business {
+  id               String   @id
+  name             String
+  contactName      String   @map("contact_name")
+  email            String   @unique
+  phone            String?
+  city             String
+  localArea        String?  @map("local_area")
+  category         String
+  status           String   @default("Active")
+  verified         Boolean  @default(false)
+  tier             String   @default("Free")
+  joinedAt         DateTime @default(now()) @map("joined_at")
+  programmeId      String?  @map("programme_id")
+  accountManagerId String?  @map("account_manager_id")
+  agentId          String?  @map("agent_id")
+  consultantId     String?  @map("consultant_id")
+  isPartner        Boolean  @default(false) @map("is_partner")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  membership      BusinessMembership?
+  networkLists    NetworkList[]
+  networkContacts NetworkContact[]
+  circles         Circle[]
+
+  @@index([status])
+  @@index([tier])
+  @@index([city])
+  @@map("businesses")
+}
+
+/// The signed-in business's paid access record: plan, access fee and the
+/// mandatory access agreement. Mirrors MembershipAccess in the web domain.
+model BusinessMembership {
+  id                String    @id @default(uuid()) @db.Uuid
+  businessId        String    @unique @map("business_id")
+  tier              String    @default("Bronze")
+  variant           String    @default("Standard")
+  planId            String?   @map("plan_id")
+  planName          String    @default("") @map("plan_name")
+  status            String    @default("Pending")
+  paid              Boolean   @default(false)
+  accessDays        Int       @default(90) @map("access_days")
+  accessFee         Float     @default(0) @map("access_fee")
+  agreementAccepted Boolean   @default(false) @map("agreement_accepted")
+  agreedAt          DateTime? @map("agreed_at")
+  accessExpiresAt   DateTime? @map("access_expires_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("business_memberships")
+}
+
+/// A business-owned intake list. Lists capture raw contacts from one source;
+/// circles are built from one or more lists.
+model NetworkList {
+  id         String   @id @default(uuid()) @db.Uuid
+  businessId String   @map("business_id")
+  name       String
+  type       String   @default("B2B")
+  geography  String   @default("National")
+  status     String   @default("Active")
+  source     String   @default("Manual Contacts")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  business Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  contacts NetworkContact[]
+
+  @@index([businessId])
+  @@index([businessId, type])
+  @@map("network_lists")
+}
+
+/// A contact captured into one of the business's network lists.
+model NetworkContact {
+  id           String    @id @default(uuid()) @db.Uuid
+  businessId   String    @map("business_id")
+  listId       String    @map("list_id") @db.Uuid
+  fullName     String    @map("full_name")
+  email        String?
+  phone        String?
+  category     String?
+  location     String?
+  geography    String?
+  role         String    @default("peripheral")
+  tier         String    @default("Bronze")
+  confirmation String    @default("pending")
+  intake       String    @default("manual")
+  consentAt    DateTime? @map("consent_at")
+  addedByName  String    @map("added_by_name")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  business Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  list     NetworkList @relation(fields: [listId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([listId])
+  @@index([email])
+  @@map("network_contacts")
+}
+
+/// A business-owned group circle. Mirrors GroupCircle in the web domain but is
+/// owned by the business rather than a group.
+model Circle {
+  id               String   @id @default(uuid()) @db.Uuid
+  businessId       String   @map("business_id")
+  type             String
+  config           Json
+  memberIds        String[] @default([]) @map("member_ids")
+  sourceListIds    String[] @default([]) @map("source_list_ids")
+  status           String   @default("Active")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  business  Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  activities CircleActivity[]
+
+  @@index([businessId])
+  @@index([type])
+  @@map("circles")
+}
+
+model CircleActivity {
+  id       String   @id @default(uuid()) @db.Uuid
+  circleId String   @map("circle_id") @db.Uuid
+  memberId String?  @map("member_id")
+  kind     String
+  message  String
+  at       DateTime @default(now())
+
+  circle Circle @relation(fields: [circleId], references: [id], onDelete: Cascade)
+
+  @@index([circleId])
+  @@map("circle_activities")
+}
+
+model Partner {
+  id           String   @id
+  businessId   String   @map("business_id")
+  businessName String   @map("business_name")
+  tier         String   @default("Free")
+  status       String   @default("Active")
+  joinedAt     DateTime @default(now()) @map("joined_at")
+  programmeId  String?  @map("programme_id")
+  feeMonthly   Float    @default(0) @map("fee_monthly")
+  permissions  Json
+  notes        String?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([tier])
+  @@map("partners")
+}
+
+model Programme {
+  id          String   @id
+  name        String
+  tier        String   @default("Free")
+  status      String   @default("Active")
+  description String   @default("")
+  monthlyFee  Float    @default(0) @map("monthly_fee")
+  benefits    String[] @default([])
+  groupCount  Int      @default(0) @map("group_count")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("programmes")
+}
+
+model Campaign {
+  id        String    @id
+  name      String
+  platform  String    @default("FundOrDonate")
+  status    String    @default("Draft")
+  groupIds  String[]  @default([]) @map("group_ids")
+  budget    Float?
+  startDate DateTime? @map("start_date")
+  endDate   DateTime? @map("end_date")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  @@map("campaigns")
+}
+
+model Relationship {
+  id           String   @id
+  kind         String
+  name         String
+  role         String
+  email        String
+  phone        String?
+  activeGroups Int      @default(0) @map("active_groups")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@index([kind])
+  @@map("relationships")
+}
+
+model MembershipPlan {
+  id                 String   @id
+  tier               String
+  variant            String
+  name               String
+  priceMonthly       Float    @default(0) @map("price_monthly")
+  billingFrequency   String   @default("Monthly") @map("billing_frequency")
+  status             String   @default("Active")
+  groupQuota         Int      @default(0) @map("group_quota")
+  circleQuota        Int      @default(0) @map("circle_quota")
+  revenueSharePercent Int     @default(0) @map("revenue_share_percent")
+  features           String[] @default([])
+  subscriberCount    Int      @default(0) @map("subscriber_count")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@unique([tier, variant])
+  @@index([status])
+  @@map("membership_plans")
+}
+
+model RewardDeal {
+  id              String   @id
+  title           String
+  category        String
+  discountValue   String   @map("discount_value")
+  code            String?
+  targetAudience  String   @map("target_audience")
+  liveOnFrontend  Boolean  @default(false) @map("live_on_frontend")
+  status          String   @default("Draft")
+  expiryDate      DateTime @map("expiry_date")
+  claimsCount     Int      @default(0) @map("claims_count")
+  maxClaims       Int      @default(0) @map("max_claims")
+  sponsorBusiness String   @map("sponsor_business")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([category])
+  @@map("reward_deals")
+}
+
+model AdminConfig {
+  id                 String   @id @default("default")
+  automaticGrouping  Json
+  groupTypes         Json
+  stageLabels        String[] @default([]) @map("stage_labels")
+  paymentRules       Json     @map("payment_rules")
+  groupCreationRules Json     @map("group_creation_rules")
+  circleTypes        Json     @map("circle_types")
+  mandatoryCircles   Json     @map("mandatory_circles")
+  mandatoryGroups    Json     @map("mandatory_groups")
+  partnerDefaults    Json     @map("partner_defaults")
+  accessRules        Json     @map("access_rules")
+  platformSettings   Json     @map("platform_settings")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@map("admin_config")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  action     String
+  actorId    String   @map("actor_id")
+  actorName  String   @map("actor_name")
+  targetType String   @map("target_type")
+  targetId   String   @map("target_id")
+  targetName String   @map("target_name")
+  detail     String   @default("")
+  at         DateTime @default(now())
+
+  @@index([action])
+  @@index([targetType])
+  @@index([at])
+  @@map("audit_log")
+}
+
+model Invitation {
+  id                 String    @id
+  groupId            String?   @map("group_id")
+  circleId           String?   @map("circle_id")
+  direction          String    @default("outgoing")
+  kind               String    @default("invite")
+  inviteeId          String?   @map("invitee_id")
+  inviteeName        String    @map("invitee_name")
+  inviteeEmail       String?   @map("invitee_email")
+  inviteePhone       String?   @map("invitee_phone")
+  inviteeRole        String?   @map("invitee_role")
+  claimedByAccountId String?   @map("claimed_by_account_id")
+  invitedById        String    @map("invited_by_id")
+  invitedByName      String    @map("invited_by_name")
+  status             String    @default("pending")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  respondedAt        DateTime? @map("responded_at")
+
+  @@index([status])
+  @@index([groupId])
+  @@map("invitations")
+}
+
+model GroupActivity {
+  id        String   @id @default(uuid()) @db.Uuid
+  groupId   String   @map("group_id") @db.Uuid
+  actorName String   @map("actor_name")
+  kind      String
+  message   String
+  at        DateTime @default(now())
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([groupId])
+  @@map("group_activities")
+}
+
+model GroupMember {
+  id           String   @id @default(uuid()) @db.Uuid
+  groupId      String   @map("group_id") @db.Uuid
+  memberId     String   @map("member_id")
+  fullName     String   @map("full_name")
+  businessName String?  @map("business_name")
+  category     String?
+  location     String?
+  geography    String?
+  status       String   @default("active")
+  role         String   @default("peripheral")
+  tier         String   @default("Free")
+  joinedAt     DateTime @default(now()) @map("joined_at")
+  lastActiveAt DateTime @default(now()) @map("last_active_at")
+  photoUrl     String?  @map("photo_url")
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, memberId])
+  @@index([groupId])
+  @@map("group_members")
+}
+
+model GroupCircle {
+  id            String   @id
+  groupId       String   @map("group_id")
+  type          String
+  config        Json
+  memberIds     String[] @default([]) @map("member_ids")
+  sourceListIds String[] @default([]) @map("source_list_ids")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([groupId])
+  @@map("group_circles")
+}
+
+model LocationCity {
+  id        String         @id
+  name      String
+  areas     LocationArea[]
+  createdAt DateTime       @default(now()) @map("created_at")
+
+  @@map("location_cities")
+}
+
+model LocationArea {
+  id        String       @id
+  cityId    String       @map("city_id")
+  name      String
+  createdAt DateTime     @default(now()) @map("created_at")
+
+  city LocationCity @relation(fields: [cityId], references: [id], onDelete: Cascade)
+
+  @@unique([cityId, name])
+  @@index([cityId])
+  @@map("location_areas")
+}
+
+model ContentSection {
+  id          String    @id
+  label       String
+  draft       Json
+  published   Json
+  status      String    @default("draft")
+  publishedAt DateTime? @map("published_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@map("content_sections")
+}
+
+model ReportSchedule {
+  id         String    @id
+  name       String
+  type       String
+  frequency  String    @default("monthly")
+  recipients String[]  @default([])
+  status     String    @default("Active")
+  lastRunAt  DateTime? @map("last_run_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@map("report_schedules")
+}

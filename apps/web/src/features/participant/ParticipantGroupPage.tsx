@@ -95,137 +95,9 @@ export default function ParticipantGroupPage() {
   // Member Search State
   const [memberSearchQuery, setMemberSearchQuery] = useState("");
 
-  // Initial Seeded Posts
-  const [posts, setPosts] = useState<CommunityPost[]>([
-    {
-      id: "post-pin-1",
-      authorId: group?.ownerId || "owner-1",
-      authorName: group?.ownerName || "Community Host",
-      authorRole: "Host",
-      avatarBg: "bg-gold-500/20 text-gold-300 border-gold-500/40",
-      time: "Pinned Announcement · 2 days ago",
-      title: "Welcome to our community group!",
-      content:
-        "We are thrilled to welcome all new and returning members! This group is dedicated to sharing community updates, local activities, and exclusive benefits. Feel free to introduce yourself below and join our upcoming discussions.",
-      likes: 24,
-      liked: false,
-      isPinned: true,
-      comments: [
-        {
-          id: "c-1",
-          author: "Sarah Jenkins",
-          text: "So excited to connect with everyone in the local area!",
-          time: "Yesterday",
-        },
-        {
-          id: "c-2",
-          author: "Marcus Vance",
-          text: "Looking forward to the upcoming events schedule.",
-          time: "4 hours ago",
-        },
-      ],
-    },
-    {
-      id: "post-2",
-      authorId: "c-005",
-      authorName: "Elena Rostova",
-      authorRole: "Member",
-      avatarBg: "bg-sky-500/20 text-sky-300 border-sky-500/40",
-      time: "5 hours ago",
-      content:
-        "Quick question for the group: Is anyone heading to the upcoming Community Showcase next weekend? Would love to coordinate a coffee meetup beforehand!",
-      likes: 8,
-      liked: false,
-      comments: [
-        {
-          id: "c-3",
-          author: "David Chen",
-          text: "Count me in! The central cafe nearby has great seating.",
-          time: "2 hours ago",
-        },
-      ],
-    },
-    {
-      id: "post-3",
-      authorId: "c-011",
-      authorName: "Amara Patel",
-      authorRole: "Community Lead",
-      avatarBg: "bg-emerald-500/20 text-emerald-300 border-emerald-500/40",
-      time: "1 day ago",
-      title: "Local Partner Discount Updated",
-      content:
-        "Check out the Perks tab above! Our local partners have just renewed member discounts for the coming month. Show your group membership badge in-store to claim your perks.",
-      likes: 19,
-      liked: false,
-      comments: [],
-    },
-  ]);
-
-  // Seeded Upcoming Events
-  const [events, setEvents] = useState<GroupEvent[]>([
-    {
-      id: "evt-1",
-      title: "Community Meetup & Coffee Morning",
-      dateBadge: { month: "OCT", day: "25" },
-      time: "Saturday, 10:30 AM – 12:30 PM",
-      location: group?.location?.city ? `${group.location.city} Central Hub, Lounge 2` : "Central Hub Community Space",
-      description: "An informal morning gathering to meet fellow members, discuss local happenings, and enjoy refreshments.",
-      attendeesCount: 16,
-      userAttending: true,
-    },
-    {
-      id: "evt-2",
-      title: "Seasonal Showcase & Product Preview",
-      dateBadge: { month: "NOV", day: "08" },
-      time: "Friday, 2:00 PM – 4:00 PM",
-      location: "Interactive Online Broadcast",
-      isOnline: true,
-      description: "A digital walkthrough highlighting special member offers, seasonal collections, and Q&A with group leaders.",
-      attendeesCount: 38,
-      userAttending: false,
-    },
-    {
-      id: "evt-3",
-      title: "Neighborhood Walk & Local Business Tour",
-      dateBadge: { month: "NOV", day: "22" },
-      time: "Saturday, 11:00 AM – 1:00 PM",
-      location: group?.location?.city ? `${group.location.city} High Street` : "Main Square",
-      description: "Guided local walking tour visiting participating local community businesses with special tastings and discounts.",
-      attendeesCount: 22,
-      userAttending: false,
-    },
-  ]);
-
-  // Seeded Exclusive Perks
-  const perks: GroupPerk[] = useMemo(() => [
-    {
-      id: "prk-1",
-      title: "15% Off In-Store Purchases",
-      provider: group?.ownerName || "Partner Business",
-      discount: "15% OFF",
-      code: "CHS15MEMBER",
-      description: "Valid on all items at the registered location. Simply present your member badge or quote code at checkout.",
-      expires: "Valid through Nov 30, 2026",
-    },
-    {
-      id: "prk-2",
-      title: "Free Guest Pass for Upcoming Expo",
-      provider: "Central Hub Events",
-      discount: "100% OFF",
-      code: "EXPO-COMMUNITY-FREE",
-      description: "Exclusive complimentary admission ticket to the seasonal trade and community expo.",
-      expires: "Valid for single entry",
-    },
-    {
-      id: "prk-3",
-      title: "Complimentary Hot Beverage",
-      provider: "Local Cafe Partners",
-      discount: "FREE DRINK",
-      code: "MORNING-COFFEE",
-      description: "Enjoy one complimentary tea or artisan coffee during official group meetup hours.",
-      expires: "Valid during group meetups",
-    },
-  ], [group?.ownerName]);
+  const [posts, setPosts] = useState<CommunityPost[]>([]);
+  const [events, setEvents] = useState<GroupEvent[]>([]);
+  const perks: GroupPerk[] = [];
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -237,7 +109,7 @@ export default function ParticipantGroupPage() {
       <div className="flex flex-col gap-4">
         <EmptyState
           title="Group not found"
-          description="This group does not exist in the demo store, or it was removed."
+          description="This group does not exist, or it was removed."
           icon={<ShieldCheck className="size-6" />}
           action={
             <LinkButton to="/participant/my-groups" variant="outline" size="sm">

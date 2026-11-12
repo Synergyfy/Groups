@@ -11,10 +11,11 @@ import {
 import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
 import Card, { CardBody, CardTitle } from "../../components/ui/Card";
-import { MEMBERSHIP_PLANS } from "../../data/membershipPlans";
 import type { MembershipPlan } from "../../domain/types";
 import { TIERS_ORDERED } from "../../domain/types";
-import { useAppStore } from "../../store/context";
+import { useAppState } from "../../store/selectors";
+import { errorMessage } from "../../app/api";
+import { businessApi, useBusinessData } from "../../business/BusinessDataProvider";
 
 /**
  * Access agreement gate. A paid membership or access fee must be settled —
@@ -23,32 +24,51 @@ import { useAppStore } from "../../store/context";
  * picks here decides its group-creation rights and its recruitment threshold.
  */
 export default function MembershipAgreementPage() {
-  const { state, dispatch } = useAppStore();
-  const rules = state.adminConfig.groupCreationRules;
+  const state = useAppState();
+  const business = useBusinessData();
+  const rules = business.membership?.rules ?? state.adminConfig.groupCreationRules;
 
-  const activePlans = useMemo(
-    () => MEMBERSHIP_PLANS.filter((plan) => plan.status === "Active"),
-    []
+  const configuredPlans = useMemo(
+    () => business.membership?.plans ?? [],
+    [business.membership]
   );
-  const [selectedPlanId, setSelectedPlanId] = useState("plan-platinum-pro-plus");
+  const activePlans = useMemo(() => {
+    const configured = configuredPlans.filter((plan) => plan.status === "Active");
+    return configured;
+  }, [configuredPlans, rules]);
+  const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [agreed, setAgreed] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
 
-  const selected = activePlans.find((plan) => plan.id === selectedPlanId);
+  const effectivePlanId = selectedPlanId ?? activePlans[0]?.id ?? null;
+  const selected = activePlans.find((plan) => plan.id === effectivePlanId);
   const eligible = (plan: MembershipPlan) =>
     rules.allowedTiers.includes(plan.tier) && rules.allowedVariants.includes(plan.variant);
 
   const canSubmit = Boolean(selected) && agreed;
 
-  const submit = () => {
-    if (!selected || !canSubmit) return;
-    dispatch({
-      type: "membership/activate",
-      tier: selected.tier,
-      variant: selected.variant,
-      planName: selected.name,
-      accessDays: rules.entryAccessDays,
-      accessFee: rules.entryAccessFee,
-    });
+  const submit = async () => {
+    if (!selected || !canSubmit || submitting) return;
+    setSubmitting(true);
+    setFeedback(null);
+    try {
+      const persisted = configuredPlans.some((plan) => plan.id === selected.id);
+      await businessApi.activateMembership({
+        ...(persisted ? { planId: selected.id } : {}),
+        tier: selected.tier,
+        variant: selected.variant,
+        planName: selected.name,
+        accessDays: rules.entryAccessDays,
+        accessFee: rules.entryAccessFee,
+        agreementAccepted: true,
+      });
+      await business.refresh();
+    } catch (cause) {
+      setFeedback(errorMessage(cause));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -118,7 +138,7 @@ export default function MembershipAgreementPage() {
                   </p>
                   <div className="grid gap-2 sm:grid-cols-3">
                     {tierPlans.map((plan) => {
-                      const selectedCard = plan.id === selectedPlanId;
+                      const selectedCard = plan.id === effectivePlanId;
                       const canCreate = eligible(plan);
                       const target =
                         rules.recruitmentTargets[plan.tier][plan.variant];
@@ -219,13 +239,26 @@ export default function MembershipAgreementPage() {
                   ? `${selected.name} selected · £${rules.entryAccessFee} access fee due now`
                   : "Select a membership to continue"}
               </p>
-              <Button variant="primary" size="md" disabled={!canSubmit} onClick={submit}>
+              <Button
+                variant="primary"
+                size="md"
+                disabled={!canSubmit || submitting}
+                onClick={submit}
+              >
                 <CheckCircle2 className="size-4" />
-                Pay £{rules.entryAccessFee} &amp; enter dashboard
+                {submitting
+                  ? "Activating…"
+                  : `Pay £${rules.entryAccessFee} & enter dashboard`}
               </Button>
             </div>
           </CardBody>
         </Card>
+
+        {feedback && (
+          <p className="rounded-xl border border-danger-500/30 bg-danger-500/10 px-3 py-2.5 text-xs text-danger-400">
+            {feedback}
+          </p>
+        )}
       </div>
     </div>
   );

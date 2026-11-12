@@ -22,7 +22,7 @@ export default function MandatoryCirclesPage() {
         title="Mandatory Circles"
         back="/admin/groups"
         tip="Nothing here can be changed — this screen is a report until the rules are confirmed."
-        subtitle="The required circle structure at a glance: which circles exist in the demo store, how they are configured, and what still needs to be confirmed by the specification."
+        subtitle="The required circle structure at a glance: which circles exist across the platform, how they are configured, and what still needs to be confirmed by the specification."
       />
 
       <Card data-tour="notice">
@@ -49,7 +49,7 @@ export default function MandatoryCirclesPage() {
         <StatCard
           label="Circles configured"
           value={circles.length.toLocaleString("en-GB")}
-          hint="From the demo store"
+          hint="From the platform"
           accent="gold"
         />
         <StatCard
@@ -76,7 +76,7 @@ export default function MandatoryCirclesPage() {
         {circles.length === 0 ? (
           <Card>
             <CardBody>
-              <p className="text-xs text-slate-400">No circles are configured in the demo store.</p>
+              <p className="text-xs text-slate-400">No circles are configured across the platform.</p>
             </CardBody>
           </Card>
         ) : (

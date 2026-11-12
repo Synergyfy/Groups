@@ -3,6 +3,7 @@ import type {
   ActivityEvent,
   AdminGroupFilters,
   BusinessRecord,
+  BusinessProfile,
   CampaignRecord,
   CircleTypeConfigEntry,
   Group,
@@ -132,6 +133,9 @@ export interface GroupStats {
 }
 
 export function selectGroupStats(state: AppState, actorId: string): GroupStats {
+  if (state.businessStats) {
+    return state.businessStats;
+  }
   const ownedIds = new Set(selectOwnedGroups(state, actorId).map((group) => group.id));
   const pendingInvites = state.invitations.filter(
     (invitation) =>
@@ -338,6 +342,9 @@ export interface GroupActivation {
  * they follow the automatic-split threshold instead.
  */
 export function selectGroupActivation(state: AppState, group: Group): GroupActivation {
+  if (group.activation) {
+    return group.activation;
+  }
   const rules = state.adminConfig.groupCreationRules;
   const current = group.memberCount ?? group.memberIds.length;
   const { tier, variant } = membershipOfOwner(state, group.ownerId);
@@ -377,6 +384,16 @@ export function selectHeadStartGroups(state: AppState): Group[] {
 
 export function useAppState(): AppState {
   return useAppStore().state;
+}
+
+/** The signed-in business's server-backed id (empty until hydrated). */
+export function useBusinessId(): string {
+  return useAppState().businessProfile?.id ?? "";
+}
+
+/** The signed-in business's profile, hydrated from the business API. */
+export function useBusinessProfile(): BusinessProfile | null {
+  return useAppState().businessProfile;
 }
 
 export function useActor(actorId: string): {

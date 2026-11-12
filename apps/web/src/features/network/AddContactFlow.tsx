@@ -14,10 +14,8 @@ import FieldHint from "../../components/ui/FieldHint";
 import Modal from "../../components/ui/Modal";
 import Select from "../../components/ui/Select";
 import ShareLink from "../../components/ui/ShareLink";
-import { CURRENT_BUSINESS } from "../../data/businessData";
-import { LISTS } from "../../data/mockData";
-import { useAppStore } from "../../store/context";
-import { newNetworkContact } from "../../store/reducer";
+import { errorMessage } from "../../app/api";
+import { businessApi, useBusinessData } from "../../business/BusinessDataProvider";
 
 type View = "method" | "manual" | "link" | "done";
 
@@ -40,7 +38,7 @@ export default function AddContactFlow({
   open: boolean;
   onClose: () => void;
 }) {
-  const { dispatch } = useAppStore();
+  const { networkLists, refresh } = useBusinessData();
   const [view, setView] = useState<View>("method");
   const [listId, setListId] = useState("");
   const [fullName, setFullName] = useState("");
@@ -49,13 +47,15 @@ export default function AddContactFlow({
   const [consent, setConsent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<DoneInfo | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const listOptions = LISTS.map((list) => ({
+  const lists = networkLists?.items ?? [];
+  const listOptions = lists.map((list) => ({
     value: list.id,
     label: `${list.name} · ${list.type}`,
   }));
-  const selectedList = LISTS.find((list) => list.id === listId);
-  const doneList = LISTS.find((list) => list.id === done?.listId);
+  const selectedList = lists.find((list) => list.id === listId);
+  const doneList = lists.find((list) => list.id === done?.listId);
 
   const reset = () => {
     setView("method");
@@ -73,7 +73,7 @@ export default function AddContactFlow({
     reset();
   };
 
-  const submitManual = () => {
+  const submitManual = async () => {
     if (!listId) {
       setError("Choose which contact list this contact belongs to.");
       return;
@@ -96,20 +96,30 @@ export default function AddContactFlow({
       );
       return;
     }
-    const contact = newNetworkContact(
-      { fullName, email, phone, listId },
-      "manual",
-      CURRENT_BUSINESS.businessName
-    );
-    dispatch({ type: "contact/add", contact });
-    setDone({
-      contactId: contact.id,
-      fullName: contact.fullName,
-      email: contact.email,
-      listId: contact.listId,
-    });
-    setError(null);
-    setView("done");
+    setSubmitting(true);
+    try {
+      const contact = await businessApi.createContact({
+        listId,
+        fullName: fullName.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+        intake: "manual",
+        consent: true,
+      });
+      await refresh();
+      setDone({
+        contactId: contact.id,
+        fullName: contact.fullName,
+        email: contact.email,
+        listId: contact.listId,
+      });
+      setError(null);
+      setView("done");
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const footer =
@@ -122,8 +132,8 @@ export default function AddContactFlow({
         <Button variant="ghost" size="sm" onClick={() => { setError(null); setView("method"); }}>
           <ArrowLeft className="size-3.5" /> Back
         </Button>
-        <Button size="sm" onClick={submitManual}>
-          <Send className="size-3.5" /> Add contact
+        <Button size="sm" onClick={submitManual} disabled={submitting}>
+          <Send className="size-3.5" /> {submitting ? "Adding…" : "Add contact"}
         </Button>
       </>
     ) : view === "link" ? (
@@ -363,7 +373,7 @@ export default function AddContactFlow({
             to={`/join/${done.listId}/confirm/${done.contactId}`}
             className="text-[11px] font-semibold text-gold-300 transition-colors hover:text-gold-200"
           >
-            Preview the confirmation email (demo) →
+            Preview the confirmation email →
           </Link>
         </div>
       )}

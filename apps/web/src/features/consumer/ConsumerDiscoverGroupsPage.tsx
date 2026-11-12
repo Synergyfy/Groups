@@ -12,8 +12,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import Badge from "../../components/ui/Badge";
-import { useAppState } from "../../store/selectors";
-import { useAppStore } from "../../store/context";
+import { useConsumerData } from "../../consumer/ConsumerDataProvider";
 import {
   evaluateGroupEligibility,
   inferCityFromPostcode,
@@ -27,12 +26,11 @@ export default function ConsumerDiscoverGroupsPage() {
     document.title = "CHS Groups | Discover Groups";
   }, []);
 
-  const state = useAppState();
-  const { dispatch } = useAppStore();
+  const { explore, groups, join } = useConsumerData();
 
   // Location state (persisted to participant session)
   const initialSession = readParticipantSession();
-  const consumerId = initialSession?.role === "consumer" ? (initialSession.accountId || "cons-john") : "cons-john";
+  const consumerId = initialSession?.role === "consumer" ? (initialSession.accountId || initialSession.email || "") : "";
   const consumerName = (initialSession?.role === "consumer" && initialSession.name) ? initialSession.name : "John Doe";
 
   const [postcode, setPostcode] = useState(initialSession?.postcode || "B1 2AB");
@@ -77,10 +75,10 @@ export default function ConsumerDiscoverGroupsPage() {
 
   // Evaluate all groups against eligibility
   const evaluatedGroups = useMemo(() => {
-    return state.groups.map((group) =>
-      evaluateGroupEligibility(group, userProfile, state.invitations)
+    return [...explore, ...groups].map((group) =>
+      evaluateGroupEligibility(group, userProfile, [])
     );
-  }, [state.groups, userProfile, state.invitations]);
+  }, [explore, groups, userProfile]);
 
   // Filter and search
   const filteredResults = useMemo(() => {
@@ -119,20 +117,12 @@ export default function ConsumerDiscoverGroupsPage() {
   }, [evaluatedGroups, searchQuery, selectedFilter, city]);
 
   const handleJoinGroup = (result: EligibilityResult) => {
-    dispatch({
-      type: "group/join",
-      groupId: result.group.id,
-      actor: { id: consumerId, name: consumerName },
-    });
+    void join(result.group.id);
     setJustJoinedGroupId(result.group.id);
   };
 
   const handleRequestAccess = (result: EligibilityResult) => {
-    dispatch({
-      type: "group/join",
-      groupId: result.group.id,
-      actor: { id: consumerId, name: consumerName },
-    });
+    void join(result.group.id);
     setRequestedGroupId(result.group.id);
   };
 

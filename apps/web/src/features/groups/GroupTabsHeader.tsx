@@ -5,8 +5,7 @@ import EmptyState from "../../components/ui/EmptyState";
 import LinkButton from "../../components/ui/LinkButton";
 import Modal from "../../components/ui/Modal";
 import SectionHeader from "../../components/ui/SectionHeader";
-import { CURRENT_BUSINESS } from "../../data/businessData";
-import { useGroup } from "../../store/selectors";
+import { useBusinessId, useGroup } from "../../store/selectors";
 
 interface GroupTabsHeaderProps {
   title: string;
@@ -17,8 +16,6 @@ interface BackState {
   from?: string;
   fromLabel?: string;
 }
-
-const ACTOR_ID = CURRENT_BUSINESS.id;
 
 const TAB_CLASS = ({ isActive }: { isActive: boolean }) =>
   `inline-flex h-9 shrink-0 items-center whitespace-nowrap rounded-lg px-1.5 text-[11px] font-medium transition-colors sm:h-10 sm:px-3.5 sm:text-xs ${
@@ -37,7 +34,8 @@ export default function GroupTabsHeader({ title, subtitle }: GroupTabsHeaderProp
   const { groupId } = useParams();
   const location = useLocation();
   const group = useGroup(groupId);
-  const isOwner = group?.ownerId === ACTOR_ID;
+  const actorId = useBusinessId();
+  const isOwner = group?.ownerId === actorId;
   const base = `/business/groups/${groupId}`;
   const fromState = (location.state ?? undefined) as BackState | undefined;
   const onDetailsPage = location.pathname === base;
