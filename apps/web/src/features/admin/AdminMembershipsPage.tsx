@@ -130,10 +130,15 @@ export default function AdminMembershipsPage() {
     }
   };
 
-  // Metrics
-  const totalSubscribers = plans.reduce((s, p) => s + p.subscriberCount, 0);
-  const activePlanCount = plans.filter((p) => p.status === "Active").length;
-  const monthlyRevenue = plans.reduce((s, p) => s + p.priceMonthly * p.subscriberCount, 0);
+  // Metrics (API is the source of truth; local values are only a fallback)
+  const totalSubscribers =
+    data?.planStats?.totalSubscribers ??
+    plans.reduce((s, p) => s + p.subscriberCount, 0);
+  const activePlanCount =
+    data?.planStats?.activePlans ?? plans.filter((p) => p.status === "Active").length;
+  const monthlyRevenue =
+    data?.planStats?.monthlyRecurringRunRate ??
+    plans.reduce((s, p) => s + p.priceMonthly * p.subscriberCount, 0);
 
   // Filtered plans
   const filteredPlans = useMemo(() => {

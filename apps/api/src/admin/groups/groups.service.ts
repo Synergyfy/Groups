@@ -5,6 +5,7 @@ import {
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import type { SessionUser } from "../../auth/auth.types.js";
+import { Prisma } from "../../generated/prisma/client.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { AdminAuditService } from "../../admin/admin-audit.service.js";
 import {
@@ -43,80 +44,58 @@ export class AdminGroupsService {
   ) {}
 
   async list(query: AdminGroupQueryDto) {
+    const where: Prisma.GroupWhereInput = {};
+    const set = (field: keyof AdminGroupQueryDto, column: keyof Prisma.GroupWhereInput) => {
+      const value = query[field];
+      if (value && value !== "all") {
+        (where as unknown as Record<string, unknown>)[column] = value;
+      }
+    };
+
+    set("type", "type");
+    set("city", "city");
+    set("localArea", "localArea");
+    set("status", "status");
+    set("stage", "stage");
+    set("owner", "ownerName");
+    set("programme", "programmeId");
+    set("source", "source");
+    set("pricing", "pricing");
+
+    const needle = query.query?.trim();
+    if (needle) {
+      where.OR = [
+        { name: { contains: needle, mode: "insensitive" } },
+        { purpose: { contains: needle, mode: "insensitive" } },
+        { ownerName: { contains: needle, mode: "insensitive" } },
+        { type: { contains: needle, mode: "insensitive" } },
+      ];
+    }
+
     const groups = await this.prisma.group.findMany({
-      include: { members: true },
+      where,
+      include: { members: { select: { memberId: true } } },
       orderBy: { createdAt: "desc" },
     });
 
-    const needle = query.query?.trim().toLowerCase();
-
-    return groups
-      .filter((group) => {
-        if (query.type && query.type !== "all" && group.type !== query.type) {
-          return false;
-        }
-        if (query.city && query.city !== "all" && group.city !== query.city) {
-          return false;
-        }
-        if (
-          query.localArea &&
-          query.localArea !== "all" &&
-          group.localArea !== query.localArea
-        ) {
-          return false;
-        }
-        if (query.status && query.status !== "all" && group.status !== query.status) {
-          return false;
-        }
-        if (query.stage && query.stage !== "all" && group.stage !== query.stage) {
-          return false;
-        }
-        if (query.owner && query.owner !== "all" && group.ownerName !== query.owner) {
-          return false;
-        }
-        if (
-          query.programme &&
-          query.programme !== "all" &&
-          group.programmeId !== query.programme
-        ) {
-          return false;
-        }
-        if (query.source && query.source !== "all" && group.source !== query.source) {
-          return false;
-        }
-        if (
-          query.pricing &&
-          query.pricing !== "all" &&
-          group.pricing !== query.pricing
-        ) {
-          return false;
-        }
-        if (needle) {
-          const haystack =
-            `${group.name} ${group.purpose} ${group.ownerName} ${group.type}`.toLowerCase();
-          if (!haystack.includes(needle)) return false;
-        }
-        return true;
-      })
-      .map(mapGroup);
+    return groups.map(mapGroup);
   }
 
   async getHub() {
     const [groups, invitations] = await Promise.all([
       this.prisma.group.findMany({
-        include: { members: true },
+        include: { members: { select: { memberId: true } } },
         orderBy: { createdAt: "desc" },
       }),
       this.prisma.invitation.findMany({ orderBy: { createdAt: "desc" } }),
     ]);
 
-    const mapped = groups.map(mapGroup);
     const pendingInvitations = invitations.filter(
       (invitation) => invitation.status === "pending",
     );
 
     return {
-      groups: mapped,
+      groups: groups.map(mapGroup),
       invitations: invitations.map(mapInvitation),
       stats: {
         totalGroups: groups.length,
@@ -130,10 +109,7 @@ export class AdminGroupsService {
         ).length,
         suspendedGroups: groups.filter((group) => group.status === "Suspended")
           .length,
-        totalMembers: groups.reduce(
-          (sum, group) => sum + group.members.length,
-          0,
-        ),
+        totalMembers: groups.reduce((sum, group) => sum + group.memberCount, 0),
         pendingInvitations: pendingInvitations.length,
       },
     };
@@ -141,7 +117,15 @@ export class AdminGroupsService {
 
   async getDashboard() {
     const groups = await this.prisma.group.findMany({
-      include: { members: true },
+      select: {
+        id: true,
+        type: true,
+        city: true,
+        status: true,
+        source: true,
+        memberCount: true,
+        createdAt: true,
+      },
       orderBy: { createdAt: "asc" },
     });
 
@@ -163,16 +147,13 @@ export class AdminGroupsService {
     return {
       stats: {
         totalGroups: groups.length,
-        totalMembers: groups.reduce(
-          (sum, group) => sum + group.members.length,
-          0,
-        ),
+        totalMembers: groups.reduce((sum, group) => sum + group.memberCount, 0),
         networkGroups: groups.filter((group) => group.type === "Network").length,
         nationalCommunities: groups.filter(
           (group) => group.type === "National Community",
         ).length,
         automatic: groups.filter((group) => group.source === "automatic").length,
-        userCreated: groups.filter((group) => group.source === "user-created")
+        userCreated: groups.filter((group) => group.source !== "automatic")
           .length,
         active: groups.filter((group) => group.status === "Active").length,
         recruiting: groups.filter((group) => group.status === "Recruiting")
@@ -211,17 +192,18 @@ export class AdminGroupsService {
   }
 
   async findOne(id: string) {
-    const group = await this.prisma.group.findUnique({
-      where: { id },
-      include: { members: true },
-    });
+    const [group, activity] = await Promise.all([
+      this.prisma.group.findUnique({
+        where: { id },
+        include: { members: { select: { memberId: true } } },
+      }),
+      this.prisma.groupActivity.findMany({
+        where: { groupId: id },
+        orderBy: { at: "desc" },
+        take: 20,
+      }),
+    ]);
     if (!group) throw new NotFoundException(`Group ${id} not found`);
-
-    const activity = await this.prisma.groupActivity.findMany({
-      where: { groupId: id },
-      orderBy: { at: "desc" },
-      take: 20,
-    });
 
     return { ...mapGroup(group), activity: activity.map(mapGroupActivity) };
   }
@@ -258,7 +240,7 @@ export class AdminGroupsService {
         consultantId: dto.consultantId,
         visibility: "PUBLIC",
       },
-      include: { members: true },
+      include: { members: { select: { memberId: true } } },
     });
 
     await this.addActivity(
@@ -309,7 +291,7 @@ export class AdminGroupsService {
         agentId: dto.agentId,
         consultantId: dto.consultantId,
       },
-      include: { members: true },
+      include: { members: { select: { memberId: true } } },
     });
 
     await this.addActivity(
@@ -353,7 +335,7 @@ export class AdminGroupsService {
     const updated = await this.prisma.group.update({
       where: { id },
       data: { status },
-      include: { members: true },
+      include: { members: { select: { memberId: true } } },
     });
     await this.addActivity(id, actor?.name ?? "Administrator", "settings", detail);
     await this.audit.record(actor, {
@@ -388,31 +370,38 @@ export class AdminGroupsService {
       throw new ConflictException(`${dto.fullName} is already a member`);
     }
 
-    const member = await this.prisma.groupMember.create({
-      data: {
-        groupId: id,
-        memberId: dto.memberId,
-        fullName: dto.fullName,
-        businessName: dto.businessName,
-        category: dto.category,
-        location: dto.location,
-        geography: dto.geography,
-        status: dto.status ?? "active",
-        role: dto.role ?? "peripheral",
-        tier: dto.tier ?? "Free",
-      },
+    const member = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.groupMember.create({
+        data: {
+          groupId: id,
+          memberId: dto.memberId,
+          fullName: dto.fullName,
+          businessName: dto.businessName,
+          category: dto.category,
+          location: dto.location,
+          geography: dto.geography,
+          status: dto.status ?? "active",
+          role: dto.role ?? "peripheral",
+          tier: dto.tier ?? "Free",
+          contributionStatus: group.pricing === "paid" ? "pending" : "n/a",
+        },
+      });
+
+      await tx.group.update({
+        where: { id },
+        data: { memberCount: { increment: 1 } },
+      });
+      await tx.groupActivity.create({
+        data: {
+          groupId: id,
+          actorName: actor?.name ?? "Administrator",
+          kind: "join",
+          message: `${dto.fullName} added to ${group.name}`,
+        },
+      });
+      return created;
     });
 
-    await this.prisma.group.update({
-      where: { id },
-      data: { memberCount: { increment: 1 } },
-    });
-    await this.addActivity(
-      id,
-      actor?.name ?? "Administrator",
-      "join",
-      `${dto.fullName} added to ${group.name}`,
-    );
     await this.audit.record(actor, {
       action: "member-added",
       targetType: "member",
@@ -437,17 +426,22 @@ export class AdminGroupsService {
       throw new NotFoundException(`Member ${memberId} not found in group`);
     }
 
-    await this.prisma.groupMember.delete({ where: { id: member.id } });
-    await this.prisma.group.update({
-      where: { id },
-      data: { memberCount: { decrement: 1 } },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.groupMember.delete({ where: { id: member.id } });
+      await tx.group.updateMany({
+        where: { id, memberCount: { gt: 0 } },
+        data: { memberCount: { decrement: 1 } },
+      });
+      await tx.groupActivity.create({
+        data: {
+          groupId: id,
+          actorName: actor?.name ?? "Administrator",
+          kind: "leave",
+          message: `${member.fullName} removed from ${group.name}`,
+        },
+      });
     });
-    await this.addActivity(
-      id,
-      actor?.name ?? "Administrator",
-      "leave",
-      `${member.fullName} removed from ${group.name}`,
-    );
+
     await this.audit.record(actor, {
       action: "member-removed",
       targetType: "member",
@@ -459,11 +453,56 @@ export class AdminGroupsService {
     return { ok: true };
   }
 
+  async updateMemberContribution(
+    id: string,
+    memberId: string,
+    status: string,
+    actor?: SessionUser,
+  ) {
+    const group = await this.ensureGroup(id);
+    const member = await this.prisma.groupMember.findUnique({
+      where: { groupId_memberId: { groupId: id, memberId } },
+    });
+    if (!member) {
+      throw new NotFoundException(`Member ${memberId} not found in group`);
+    }
+    if (group.pricing !== "paid") {
+      throw new ConflictException("This group is not a paid group");
+    }
+
+    const updated = await this.prisma.groupMember.update({
+      where: { id: member.id },
+      data: {
+        contributionStatus: status,
+        contributionPaidAt: status === "paid" ? new Date() : null,
+      },
+    });
+
+    await this.prisma.groupActivity.create({
+      data: {
+        groupId: id,
+        actorName: actor?.name ?? "Administrator",
+        kind: "settings",
+        message: `Contribution for ${member.fullName} marked ${status}`,
+      },
+    });
+    await this.audit.record(actor, {
+      action: "contribution-updated",
+      targetType: "member",
+      targetId: memberId,
+      targetName: member.fullName,
+      detail: `Contribution marked ${status} in ${group.name}`,
+    });
+
+    return mapGroupMember(updated);
+  }
+
   async listActivity(id: string) {
     await this.ensureGroup(id);
     const activity = await this.prisma.groupActivity.findMany({
       where: { groupId: id },
       orderBy: { at: "desc" },
+      take: 500,
     });
     return activity.map(mapGroupActivity);
   }
@@ -471,9 +510,15 @@ export class AdminGroupsService {
   async getRelationships(id: string) {
     const group = await this.prisma.group.findUnique({
       where: { id },
-      include: { members: true },
+      include: { members: { select: { memberId: true } } },
     });
     if (!group) throw new NotFoundException(`Group ${id} not found`);
+
+    const relationshipIds = [
+      group.accountManagerId,
+      group.agentId,
+      group.consultantId,
+    ].filter((value): value is string => Boolean(value));
 
     const [owner, programme, campaignIds, relationships] = await Promise.all([
       group.ownerId
@@ -485,7 +530,11 @@ export class AdminGroupsService {
       this.prisma.campaign.findMany({
         where: { groupIds: { has: group.id } },
       }),
-      this.prisma.relationship.findMany(),
+      relationshipIds.length
+        ? this.prisma.relationship.findMany({
+            where: { id: { in: relationshipIds } },
+          })
+        : [],
     ]);
 
     const resolve = (relationshipId?: string | null) => {
@@ -525,7 +574,7 @@ export class AdminGroupsService {
         city: dto.city,
         localArea: dto.localArea,
       },
-      include: { members: true },
+      include: { members: { select: { memberId: true } } },
     });
     await this.audit.record(actor, {
       action: "relationship-assigned",
@@ -557,27 +606,19 @@ export class AdminGroupsService {
           fullName: member.fullName,
           status: "n/a",
           amount: 0,
+          paidAt: null,
         })),
       };
     }
 
     const amount = group.contribution;
-    const rows = members.map((member, index) => {
-      const isOwner = member.memberId === group.ownerId;
-      const status = isOwner
-        ? "paid"
-        : index % 4 === 1
-          ? "pending"
-          : index % 7 === 0
-            ? "overdue"
-            : "paid";
-      return {
-        memberId: member.memberId,
-        fullName: member.fullName,
-        status,
-        amount,
-      };
-    });
+    const rows = members.map((member) => ({
+      memberId: member.memberId,
+      fullName: member.fullName,
+      status: member.contributionStatus,
+      amount,
+      paidAt: member.contributionPaidAt?.toISOString() ?? null,
+    }));
 
     const collected = rows
       .filter((row) => row.status === "paid")
@@ -604,6 +645,35 @@ export class AdminGroupsService {
       orderBy: { createdAt: "asc" },
     });
     return circles.map(mapGroupCircle);
+  }
+
+  async listAllCircles() {
+    const [groupCircles, businessCircles, groups] = await Promise.all([
+      this.prisma.groupCircle.findMany({ orderBy: { createdAt: "desc" } }),
+      this.prisma.circle.findMany({ orderBy: { createdAt: "desc" } }),
+      this.prisma.group.findMany({ select: { id: true, name: true } }),
+    ]);
+    const groupNames = new Map(groups.map((group) => [group.id, group.name]));
+
+    return [
+      ...groupCircles.map((circle) => ({
+        ...mapGroupCircle(circle),
+        groupId: circle.groupId,
+        groupName: groupNames.get(circle.groupId) ?? null,
+      })),
+      ...businessCircles.map((circle) => ({
+        id: circle.id,
+        type: circle.type,
+        config: circle.config as Record<string, unknown>,
+        memberIds: circle.memberIds,
+        sourceListIds: circle.sourceListIds,
+        createdAt: circle.createdAt.toISOString(),
+        status: circle.status,
+        businessId: circle.businessId,
+        groupId: null as string | null,
+        groupName: null as string | null,
+      })),
+    ];
   }
 
   async listInvitations(id: string) {

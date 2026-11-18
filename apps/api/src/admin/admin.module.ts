@@ -24,7 +24,10 @@ import {
   AdminRelationshipsController,
 } from "./directory/directory.controller.js";
 import { AdminGroupsService } from "./groups/groups.service.js";
-import { AdminGroupsController } from "./groups/groups.controller.js";
+import {
+  AdminCirclesController,
+  AdminGroupsController,
+} from "./groups/groups.controller.js";
 import { AdminOperationsService } from "./operations/operations.service.js";
 import {
   AdminAuditLogController,
@@ -46,6 +49,7 @@ import { AdminUsersController } from "./users/users.controller.js";
     AdminOverviewController,
     AdminUsersController,
     AdminGroupsController,
+    AdminCirclesController,
     AdminBusinessesController,
     AdminPartnersController,
     AdminProgrammesController,

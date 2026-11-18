@@ -64,7 +64,7 @@ export class AdminDirectoryService {
 
     const groups = await this.prisma.group.findMany({
       where: { ownerId: id },
-      include: { members: true },
+      include: { members: { select: { memberId: true } } },
     });
 
     return { ...mapBusiness(business), groups: groups.map(mapGroup) };
@@ -145,7 +145,17 @@ export class AdminDirectoryService {
 
   async removeBusiness(id: string, actor?: SessionUser) {
     const business = await this.ensureBusiness(id);
-    await this.prisma.business.delete({ where: { id } });
+    await this.prisma.$transaction([
+      this.prisma.group.updateMany({
+        where: { ownerId: id },
+        data: { ownerId: null, ownerName: "" },
+      }),
+      this.prisma.business.updateMany({
+        where: { id },
+        data: { programmeId: null, accountManagerId: null, agentId: null, consultantId: null },
+      }),
+      this.prisma.business.delete({ where: { id } }),
+    ]);
     await this.audit.record(actor, {
       action: "business-updated",
       targetType: "business",
@@ -331,7 +341,17 @@ export class AdminDirectoryService {
 
   async removeProgramme(id: string, actor?: SessionUser) {
     const programme = await this.ensureProgramme(id);
-    await this.prisma.programme.delete({ where: { id } });
+    await this.prisma.$transaction([
+      this.prisma.group.updateMany({
+        where: { programmeId: id },
+        data: { programmeId: null },
+      }),
+      this.prisma.business.updateMany({
+        where: { programmeId: id },
+        data: { programmeId: null },
+      }),
+      this.prisma.programme.delete({ where: { id } }),
+    ]);
     await this.audit.record(actor, {
       action: "programme-updated",
       targetType: "programme",
@@ -517,7 +537,21 @@ export class AdminDirectoryService {
 
   async removeRelationship(id: string, actor?: SessionUser) {
     const relationship = await this.ensureRelationship(id);
-    await this.prisma.relationship.delete({ where: { id } });
+    await this.prisma.$transaction([
+      this.prisma.group.updateMany({
+        where: { accountManagerId: id },
+        data: { accountManagerId: null },
+      }),
+      this.prisma.group.updateMany({
+        where: { agentId: id },
+        data: { agentId: null },
+      }),
+      this.prisma.group.updateMany({
+        where: { consultantId: id },
+        data: { consultantId: null },
+      }),
+      this.prisma.relationship.delete({ where: { id } }),
+    ]);
     await this.audit.record(actor, {
       action: "relationship-assigned",
       targetType: "config",
@@ -546,7 +580,7 @@ export class AdminDirectoryService {
     const [groups, programme, partners] = await Promise.all([
       this.prisma.group.findMany({
         where: { type: "Partner" },
-        include: { members: true },
+        include: { members: { select: { memberId: true } } },
         orderBy: { createdAt: "desc" },
       }),
       this.prisma.programme.findFirst({
@@ -561,7 +595,7 @@ export class AdminDirectoryService {
       programme: programme ? mapProgramme(programme) : null,
       metrics: {
         partnerGroups: groups.length,
-        members: groups.reduce((sum, group) => sum + group.members.length, 0),
+        members: groups.reduce((sum, group) => sum + group.memberCount, 0),
       },
     };
   }

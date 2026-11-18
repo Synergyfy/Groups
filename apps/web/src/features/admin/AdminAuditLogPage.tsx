@@ -14,6 +14,7 @@ import {
   Megaphone,
   Handshake,
   CircleDot,
+  Banknote,
 } from "lucide-react";
 import Card, { CardBody, CardTitle } from "../../components/ui/Card";
 import SectionHeader from "../../components/ui/SectionHeader";
@@ -26,11 +27,13 @@ const ACTION_META: Record<AuditActionKind, { label: string; color: string; icon:
   "group-created": { label: "Group created", color: "bg-emerald-500/15 text-emerald-300", icon: <Building2 className="size-3" /> },
   "group-updated": { label: "Group updated", color: "bg-sky-500/15 text-sky-300", icon: <Settings className="size-3" /> },
   "group-approved": { label: "Group approved", color: "bg-emerald-500/15 text-emerald-300", icon: <CheckCircle2 className="size-3" /> },
+  "group-rejected": { label: "Group rejected", color: "bg-danger-500/15 text-danger-300", icon: <XCircle className="size-3" /> },
   "group-suspended": { label: "Group suspended", color: "bg-warning-500/15 text-warning-300", icon: <PauseCircle className="size-3" /> },
   "group-closed": { label: "Group closed", color: "bg-slate-500/15 text-slate-300", icon: <Archive className="size-3" /> },
   "group-deleted": { label: "Group deleted", color: "bg-danger-500/15 text-danger-300", icon: <Trash2 className="size-3" /> },
   "member-added": { label: "Member added", color: "bg-emerald-500/15 text-emerald-300", icon: <UserPlus className="size-3" /> },
   "member-removed": { label: "Member removed", color: "bg-danger-500/15 text-danger-300", icon: <UserMinus className="size-3" /> },
+  "contribution-updated": { label: "Contribution updated", color: "bg-gold-500/15 text-gold-300", icon: <Banknote className="size-3" /> },
   "invitation-approved": { label: "Invitation approved", color: "bg-emerald-500/15 text-emerald-300", icon: <CheckCircle2 className="size-3" /> },
   "invitation-declined": { label: "Invitation declined", color: "bg-danger-500/15 text-danger-300", icon: <XCircle className="size-3" /> },
   "invitation-cancelled": { label: "Invitation cancelled", color: "bg-slate-500/15 text-slate-300", icon: <XCircle className="size-3" /> },

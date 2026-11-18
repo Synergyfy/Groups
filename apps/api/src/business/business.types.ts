@@ -149,5 +149,6 @@ export interface JoinPlanView {
     | "invitation-only"
     | "eligible"
     | "request-required"
+    | "group-closed"
     | "open";
 }

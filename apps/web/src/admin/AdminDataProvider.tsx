@@ -17,6 +17,7 @@ import type {
   BusinessDirectoryEntry,
   Group,
   GroupActivity,
+  GroupCircle,
   Invitation,
   MembershipAccess,
   MembershipPlan,
@@ -46,6 +47,7 @@ export interface AdminData {
   groups: Group[];
   invitations: Invitation[];
   adminConfig: AdminConfig;
+  circles: GroupCircle[];
   accounts: PlatformAccount[];
   partners: PartnerRecord[];
   businesses: BusinessRecord[];
@@ -230,6 +232,7 @@ async function loadAll(): Promise<AdminData> {
     planStats,
     rewardStats,
     partnerGroups,
+    circles,
   ] = await Promise.all([
     adminApi.groups(),
     adminApi.invitations(),
@@ -252,12 +255,14 @@ async function loadAll(): Promise<AdminData> {
     adminApi.planStats(),
     adminApi.rewardStats(),
     adminApi.partnerGroups(),
+    adminApi.circles(),
   ]);
 
   return {
     groups,
     invitations,
     adminConfig: normaliseConfig(config),
+    circles,
     accounts: users
       .filter((user) => user.role !== "business" && user.role !== "admin")
       .map(accountFromUser),
@@ -355,7 +360,7 @@ export function AdminDataProvider({ children }: { children: ReactNode }) {
       groups: data.groups,
       invitations: data.invitations,
       groupActivities: [],
-      circles: [],
+      circles: data.circles,
       circleActivities: [],
       activeCircleId: "",
       adminConfig: { ...data.adminConfig, auditLog: data.auditLog },
@@ -930,7 +935,7 @@ async function handleAction(
           localArea: action.input.localArea,
           requiredSize: action.input.requiredSize,
           stage: action.input.stage,
-          status: "Active",
+          status: action.input.status ?? "Active",
         });
         apply((current) => ({
           ...current,

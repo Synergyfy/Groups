@@ -7,43 +7,47 @@ export class AdminOverviewService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getOverview() {
-    const [groups, businesses, accounts, invitations, partners, recentAudit] =
-      await Promise.all([
-        this.prisma.group.findMany({
-          select: {
-            id: true,
-            type: true,
-            status: true,
-            ownerId: true,
-            memberCount: true,
-          },
-        }),
-        this.prisma.business.findMany({ select: { id: true } }),
-        this.prisma.platformAccount.findMany({ select: { role: true } }),
-        this.prisma.invitation.findMany({ select: { id: true, status: true } }),
-        this.prisma.partner.findMany({ select: { id: true, status: true } }),
-        this.prisma.auditLog.findMany({
-          orderBy: { at: "desc" },
-          take: 10,
-        }),
-      ]);
+    const [
+      groupCount,
+      groupsByTypeRows,
+      groupsByStatusRows,
+      activeMemberSum,
+      businessCount,
+      consumerCount,
+      invitationCount,
+      pendingInviteCount,
+      partnerCount,
+      activePartnerCount,
+      ownerRows,
+      recentAudit,
+    ] = await Promise.all([
+      this.prisma.group.count(),
+      this.prisma.group.groupBy({ by: ["type"], _count: { _all: true } }),
+      this.prisma.group.groupBy({ by: ["status"], _count: { _all: true } }),
+      this.prisma.group.aggregate({
+        where: { status: { in: ["Active", "Recruiting"] } },
+        _sum: { memberCount: true },
+      }),
+      this.prisma.business.count(),
+      this.prisma.platformAccount.count({ where: { role: "consumer" } }),
+      this.prisma.invitation.count(),
+      this.prisma.invitation.count({ where: { status: "pending" } }),
+      this.prisma.partner.count(),
+      this.prisma.partner.count({ where: { status: "Active" } }),
+      this.prisma.group.groupBy({
+        by: ["ownerId"],
+        where: { ownerId: { not: null } },
+      }),
+      this.prisma.auditLog.findMany({
+        orderBy: { at: "desc" },
+        take: 10,
+      }),
+    ]);
 
-    const pendingReviewGroups = groups.filter(
-      (group) => group.status === "Pending Review",
-    ).length;
-    const pendingInvites = invitations.filter(
-      (invitation) => invitation.status === "pending",
-    ).length;
-
-    const byType = new Map<string, number>();
-    for (const group of groups) {
-      byType.set(group.type, (byType.get(group.type) ?? 0) + 1);
-    }
-
-    const byStatus = new Map<string, number>();
-    for (const group of groups) {
-      byStatus.set(group.status, (byStatus.get(group.status) ?? 0) + 1);
-    }
+    const statusCounts = new Map(
+      groupsByStatusRows.map((row) => [row.status, row._count._all]),
+    );
+    const pendingReviewGroups = statusCounts.get("Pending Review") ?? 0;
 
     const statusColours: Record<string, string> = {
       Active: "#10b981",
@@ -55,34 +59,24 @@ export class AdminOverviewService {
 
     return {
       metrics: {
-        businessOwners: Math.max(
-          businesses.length,
-          new Set(groups.map((group) => group.ownerId).filter(Boolean)).size,
-        ),
-        consumers: accounts.filter((account) => account.role === "consumer")
-          .length,
-        totalGroups: groups.length,
-        invitations: invitations.length,
-        activeMemberships: groups
-          .filter(
-            (group) =>
-              group.status === "Active" || group.status === "Recruiting",
-          )
-          .reduce((sum, group) => sum + group.memberCount, 0),
-        pendingRequests: pendingReviewGroups + pendingInvites,
+        businessOwners: Math.max(businessCount, ownerRows.length),
+        consumers: consumerCount,
+        totalGroups: groupCount,
+        invitations: invitationCount,
+        activeMemberships: activeMemberSum._sum.memberCount ?? 0,
+        pendingRequests: pendingReviewGroups + pendingInviteCount,
         pendingReviewGroups,
-        pendingInvites,
-        partners: partners.length,
-        activePartners: partners.filter((partner) => partner.status === "Active")
-          .length,
+        pendingInvites: pendingInviteCount,
+        partners: partnerCount,
+        activePartners: activePartnerCount,
       },
-      groupsByType: [...byType.entries()]
-        .map(([label, value]) => ({ label, value }))
+      groupsByType: groupsByTypeRows
+        .map((row) => ({ label: row.type, value: row._count._all }))
         .sort((a, b) => b.value - a.value),
-      groupsByStatus: [...byStatus.entries()].map(([label, value]) => ({
-        label,
-        value,
-        color: statusColours[label] ?? "#64748b",
+      groupsByStatus: groupsByStatusRows.map((row) => ({
+        label: row.status,
+        value: row._count._all,
+        color: statusColours[row.status] ?? "#64748b",
       })),
       recentActivity: recentAudit.map(mapAuditLog),
     };

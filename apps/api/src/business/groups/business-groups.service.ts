@@ -20,6 +20,7 @@ import {
   mapGroupCircle,
   mapGroupMember,
   mapInvitation,
+  mapInvitationForBusiness,
   mapProgramme,
   mapRelationship,
 } from "../../admin/admin.mappers.js";
@@ -34,6 +35,8 @@ import {
   groupStatsFor,
   joinPlanFor,
   membershipTierForOwner,
+  normalizeTier,
+  normalizeVariant,
 } from "../business.rules.js";
 import { isUuid } from "../business.utils.js";
 import type {
@@ -126,7 +129,13 @@ export class BusinessGroupsService {
 
     return {
       ...sections,
-      invitations: invitations.map(mapInvitation),
+      invitations: invitations.map((invitation) =>
+        mapInvitationForBusiness(
+          invitation,
+          ctx.business.id,
+          ctx.business.email,
+        ),
+      ),
       recentActivity: activity.map((entry) => ({
         ...mapGroupActivity(entry),
         groupName: entry.group.name,
@@ -165,10 +174,12 @@ export class BusinessGroupsService {
       this.prisma.group.count({ where: { source: "user-created" } }),
       this.prisma.invitation.count({
         where: {
-          direction: "incoming",
           kind: "invite",
           status: "pending",
-          inviteeId: membershipId,
+          OR: [
+            { inviteeId: membershipId },
+            { inviteeEmail: ctx.business.email.trim().toLowerCase() },
+          ],
         },
       }),
       this.prisma.invitation.count({
@@ -491,8 +502,11 @@ export class BusinessGroupsService {
         this.prisma.invitation.findMany({
           where: {
             groupId: group.id,
-            inviteeId: ctx.business.id,
             status: "pending",
+            OR: [
+              { inviteeId: ctx.business.id },
+              { inviteeEmail: ctx.business.email.trim().toLowerCase() },
+            ],
           },
         }),
       ]);
@@ -504,10 +518,9 @@ export class BusinessGroupsService {
     const typeConfig = ctx.config.groupTypes.find(
       (entry) => entry.type === group.type,
     );
-    const ownerTier =
-      owner?.id === ctx.business.id
-        ? undefined
-        : { tier: owner?.tier ?? "Bronze", variant: "Standard" };
+    const ownerTier = (await this.ownerTierMap([group], ctx)).get(
+      group.ownerId ?? "",
+    );
     const decorated = this.decorateGroup(group, ctx, ownerTier);
     const byId = new Map(relationships.map((entry) => [entry.id, entry]));
     const relationshipFor = (relationshipId: string | null) => {
@@ -559,9 +572,12 @@ export class BusinessGroupsService {
     const group = await this.findGroup(groupId);
     this.assertCanView(group, ctx.business.id);
 
+    const ownerTier = (await this.ownerTierMap([group], ctx)).get(
+      group.ownerId ?? "",
+    );
     const members = group.members ?? [];
     return {
-      group: this.decorateGroup(group, ctx),
+      group: this.decorateGroup(group, ctx, ownerTier),
       members: members.map(mapGroupMember),
       stats: {
         total: members.length,
@@ -594,7 +610,13 @@ export class BusinessGroupsService {
       where: { groupId },
       orderBy: { createdAt: "desc" },
     });
-    return invitations.map(mapInvitation);
+    return invitations.map((invitation) =>
+      mapInvitationForBusiness(
+        invitation,
+        ctx.business.id,
+        ctx.business.email,
+      ),
+    );
   }
 
   async create(ctx: BusinessContext, dto: CreateBusinessGroupDto) {
@@ -778,7 +800,7 @@ export class BusinessGroupsService {
     if (dto.city !== undefined) data.city = dto.city;
     if (dto.localArea !== undefined) data.localArea = dto.localArea;
     if (dto.requiredSize !== undefined) data.requiredSize = dto.requiredSize;
-    if (dto.stage !== undefined) data.stage = dto.stage;
+    if (dto.stage !== undefined) data.stage = dto.stage.trim() || null;
     if (dto.campaignIds !== undefined) data.campaignIds = dto.campaignIds;
 
     if (Object.keys(data).length === 0) {
@@ -881,9 +903,12 @@ export class BusinessGroupsService {
         });
         return result;
       });
+      const ownerTier = (await this.ownerTierMap([updated], ctx)).get(
+        updated.ownerId ?? "",
+      );
       return {
         status: "joined" as const,
-        group: this.decorateGroup(updated, ctx),
+        group: this.decorateGroup(updated, ctx, ownerTier),
       };
     }
 
@@ -898,7 +923,11 @@ export class BusinessGroupsService {
     if (existing) {
       return {
         status: "requested" as const,
-        invitation: mapInvitation(existing),
+        invitation: mapInvitationForBusiness(
+          existing,
+          ctx.business.id,
+          ctx.business.email,
+        ),
       };
     }
 
@@ -931,7 +960,11 @@ export class BusinessGroupsService {
 
     return {
       status: "requested" as const,
-      invitation: mapInvitation(invitation),
+      invitation: mapInvitationForBusiness(
+        invitation,
+        ctx.business.id,
+        ctx.business.email,
+      ),
     };
   }
 
@@ -1041,6 +1074,22 @@ export class BusinessGroupsService {
           throw new BadRequestException(
             `Invitation for ${entry.inviteeName} needs an invitee, email or phone number`,
           );
+        }
+        const emailInvitee = entry.inviteeEmail
+          ? await tx.business.findUnique({
+              where: { email: entry.inviteeEmail.trim().toLowerCase() },
+            })
+          : null;
+        const inviteeBusinessId = entry.inviteeId ?? emailInvitee?.id;
+        const alreadyMember =
+          Boolean(inviteeBusinessId) &&
+          (inviteeBusinessId === group.ownerId ||
+            (group.members ?? []).some(
+              (member) => member.memberId === inviteeBusinessId,
+            ));
+        if (alreadyMember) {
+          skipped += 1;
+          continue;
         }
         const duplicate = await tx.invitation.findFirst({
           where: {
@@ -1179,15 +1228,30 @@ export class BusinessGroupsService {
       ),
     ];
     if (ids.length === 0) return new Map();
-    const owners = await this.prisma.business.findMany({
-      where: { id: { in: ids } },
-      select: { id: true, tier: true },
-    });
+    const [owners, memberships] = await Promise.all([
+      this.prisma.business.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, tier: true },
+      }),
+      this.prisma.businessMembership.findMany({
+        where: { businessId: { in: ids } },
+        select: { businessId: true, tier: true, variant: true },
+      }),
+    ]);
+    const membershipByBusiness = new Map(
+      memberships.map((membership) => [membership.businessId, membership]),
+    );
     return new Map(
-      owners.map((owner) => [
-        owner.id,
-        { tier: owner.tier, variant: "Standard" },
-      ]),
+      owners.map((owner) => {
+        const membership = membershipByBusiness.get(owner.id);
+        return [
+          owner.id,
+          {
+            tier: normalizeTier(membership?.tier ?? owner.tier),
+            variant: normalizeVariant(membership?.variant),
+          },
+        ];
+      }),
     );
   }
 

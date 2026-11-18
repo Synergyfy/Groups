@@ -148,7 +148,16 @@ export default function InvitationReviewPage() {
     );
   }
 
-  const isInvitee = invitation.inviteeId === actor.id;
+  const actorEmail =
+    scope === "business"
+      ? business?.profile?.business.email?.trim().toLowerCase()
+      : undefined;
+  const isInvitee =
+    invitation.inviteeId === actor.id ||
+    Boolean(
+      actorEmail &&
+        invitation.inviteeEmail?.trim().toLowerCase() === actorEmail,
+    );
 
   if (!isInvitee) {
     return (

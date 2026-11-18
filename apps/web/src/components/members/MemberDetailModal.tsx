@@ -46,7 +46,7 @@ export default function MemberDetailModal({ member, onClose }: MemberDetailModal
               {role}
             </Badge>
             <Badge variant={member.online ? "success" : "muted"}>
-              {member.online ? "Online" : "Offline"}
+              {member.online ? "Online" : "Member"}
             </Badge>
           </div>
         </div>

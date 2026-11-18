@@ -5,16 +5,16 @@ import Card, { CardBody, CardTitle } from "../../components/ui/Card";
 import SectionHeader from "../../components/ui/SectionHeader";
 import StatCard from "../../components/ui/StatCard";
 import TipIcon from "../../components/ui/TipIcon";
-import { useAppState } from "../../store/selectors";
+import { useAdminData } from "../../admin/AdminDataProvider";
 import { memberCountOf } from "../groups/groupUtils";
 
 export default function PartnerGroupsPage() {
-  const state = useAppState();
-  const partnerGroups = state.groups.filter((group) => group.type === "Partner");
-  const programme = state.programmes.find((entry) =>
-    entry.name.toLowerCase().includes("partner"),
-  );
-  const members = partnerGroups.reduce((sum, group) => sum + memberCountOf(group), 0);
+  const { data } = useAdminData();
+  const partnerGroups = data?.partnerGroups?.groups ?? [];
+  const programme = data?.partnerGroups?.programme ?? null;
+  const members =
+    data?.partnerGroups?.metrics.members ??
+    partnerGroups.reduce((sum, group) => sum + memberCountOf(group), 0);
 
   return (
     <div className="flex flex-col gap-4">

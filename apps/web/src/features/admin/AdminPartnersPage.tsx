@@ -7,10 +7,10 @@ import StatCard from "../../components/ui/StatCard";
 import TipIcon from "../../components/ui/TipIcon";
 import Toast from "../../components/ui/Toast";
 import { usePartners } from "../../store/selectors";
-import { useAppStore } from "../../store/context";
+import { adminApi } from "../../admin/adminApi";
+import { useAdminData } from "../../admin/AdminDataProvider";
 import type { PartnerPermissions, PartnerRecord } from "../../domain/types";
 
-const ADMIN_ACTOR = { id: "admin", name: "Administrator" };
 
 const TIER_COLORS: Record<string, string> = {
   Free: "bg-slate-500/15 text-slate-300",
@@ -62,7 +62,7 @@ const PERMISSION_HINTS: Record<keyof PartnerPermissions, string> = {
 
 export default function AdminPartnersPage() {
   const partners = usePartners();
-  const { dispatch } = useAppStore();
+  const { refresh } = useAdminData();
   const [expanded, setExpanded] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
 
@@ -72,21 +72,36 @@ export default function AdminPartnersPage() {
   const paidPartners = partners.filter((p) => p.tier !== "Free").length;
   const totalMonthlyFees = partners.filter((p) => p.status === "Active").reduce((sum, p) => sum + p.feeMonthly, 0);
 
-  const togglePermission = (partner: PartnerRecord, key: keyof PartnerPermissions) => {
+  const togglePermission = async (
+    partner: PartnerRecord,
+    key: keyof PartnerPermissions,
+    nextValue?: boolean | number,
+  ) => {
     const current = partner.permissions[key];
-    const nextValue = typeof current === "boolean" ? !current : current;
-    dispatch({
-      type: "admin/partner-update",
-      partnerId: partner.id,
-      patch: { permissions: { ...partner.permissions, [key]: nextValue } },
-      actor: ADMIN_ACTOR,
-    });
-    setFeedback(`${partner.businessName}: ${key} updated`);
+    const value =
+      nextValue ?? (typeof current === "boolean" ? !current : current);
+    try {
+      await adminApi.updatePartner(partner.id, {
+        permissions: { ...partner.permissions, [key]: value },
+      });
+      await refresh();
+      setFeedback(`${partner.businessName}: ${key} updated`);
+    } catch {
+      setFeedback(`Could not update ${partner.businessName}.`);
+    }
   };
 
-  const setStatus = (partner: PartnerRecord, status: PartnerRecord["status"]) => {
-    dispatch({ type: "admin/partner-update", partnerId: partner.id, patch: { status }, actor: ADMIN_ACTOR });
-    setFeedback(`${partner.businessName} set to ${status}`);
+  const setStatus = async (
+    partner: PartnerRecord,
+    status: PartnerRecord["status"],
+  ) => {
+    try {
+      await adminApi.updatePartner(partner.id, { status });
+      await refresh();
+      setFeedback(`${partner.businessName} set to ${status}`);
+    } catch {
+      setFeedback(`Could not update ${partner.businessName}.`);
+    }
   };
 
   return (
@@ -217,17 +232,20 @@ export default function AdminPartnersPage() {
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                       Permissions — click to toggle
                     </p>
-                    <TipIcon text="Switches flip on click. The numbers are shown for reference and cannot be edited here." />
+                    <TipIcon text="Toggle switches or edit numeric limits — every change saves immediately." />
                   </div>
                   <div className="grid gap-1.5 sm:grid-cols-2">
                     {PERMISSION_LABELS.map(({ key, label, type }) => {
                       const value = partner.permissions[key];
                       return (
                         <div key={key}>
-                          <button
-                            type="button"
-                            onClick={() => togglePermission(partner, key)}
-                            className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg bg-white/5 px-3 py-2 text-left transition-colors hover:bg-white/10"
+                          <div
+                            onClick={() => {
+                              if (type === "boolean") {
+                                void togglePermission(partner, key);
+                              }
+                            }}
+                            className={`flex w-full items-center justify-between gap-2 rounded-lg bg-white/5 px-3 py-2 text-left transition-colors hover:bg-white/10 ${type === "boolean" ? "cursor-pointer" : ""}`}
                           >
                             <span className="text-xs text-slate-300">{label}</span>
                             {type === "boolean" ? (
@@ -243,11 +261,21 @@ export default function AdminPartnersPage() {
                                 />
                               </span>
                             ) : (
-                              <span className="rounded bg-white/10 px-2 py-0.5 text-xs font-semibold text-gold-300">
-                                {String(value)}
-                              </span>
+                              <input
+                                type="number"
+                                min={0}
+                                value={Number(value)}
+                                onChange={(event) =>
+                                  void togglePermission(
+                                    partner,
+                                    key,
+                                    Math.max(0, Number(event.target.value) || 0),
+                                  )
+                                }
+                                className="w-20 rounded border border-white/10 bg-ink-950 px-2 py-0.5 text-right text-xs font-semibold text-gold-300 focus:border-gold-500/40 focus:outline-none"
+                              />
                             )}
-                          </button>
+                          </div>
                           <FieldHint>{PERMISSION_HINTS[key]}</FieldHint>
                         </div>
                       );

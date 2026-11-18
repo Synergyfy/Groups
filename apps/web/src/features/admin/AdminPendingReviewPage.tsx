@@ -7,26 +7,42 @@ import SectionHeader from "../../components/ui/SectionHeader";
 import StatCard from "../../components/ui/StatCard";
 import Toast from "../../components/ui/Toast";
 import { useAppState, usePendingReviewGroups } from "../../store/selectors";
-import { useAppStore } from "../../store/context";
-
-const ADMIN_ACTOR = { id: "admin", name: "Administrator" };
+import { adminApi } from "../../admin/adminApi";
+import { useAdminData } from "../../admin/AdminDataProvider";
 
 export default function AdminPendingReviewPage() {
   const state = useAppState();
   const pending = usePendingReviewGroups();
-  const { dispatch } = useAppStore();
+  const { refresh } = useAdminData();
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const suspendedCount = state.groups.filter((g) => g.status === "Suspended").length;
   const activeCount = state.groups.filter((g) => g.status === "Active").length;
 
-  const approve = (id: string, name: string) => {
-    dispatch({ type: "admin/group-approve", groupId: id, actor: ADMIN_ACTOR });
-    setFeedback(`${name} approved`);
+  const approve = async (id: string, name: string) => {
+    setBusyId(id);
+    try {
+      await adminApi.approvePending(id);
+      await refresh();
+      setFeedback(`${name} approved`);
+    } catch {
+      setFeedback(`Could not approve ${name}. Please try again.`);
+    } finally {
+      setBusyId(null);
+    }
   };
-  const reject = (id: string, name: string) => {
-    dispatch({ type: "admin/group-close", groupId: id, actor: ADMIN_ACTOR });
-    setFeedback(`${name} rejected`);
+  const reject = async (id: string, name: string) => {
+    setBusyId(id);
+    try {
+      await adminApi.rejectPending(id);
+      await refresh();
+      setFeedback(`${name} rejected`);
+    } catch {
+      setFeedback(`Could not reject ${name}. Please try again.`);
+    } finally {
+      setBusyId(null);
+    }
   };
 
   return (
@@ -94,15 +110,17 @@ export default function AdminPendingReviewPage() {
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    onClick={() => approve(group.id, group.name)}
-                    className="inline-flex h-9 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-emerald-500 px-4 text-xs font-semibold text-white transition-colors hover:bg-emerald-400 sm:flex-none sm:px-6"
+                    disabled={busyId === group.id}
+                    onClick={() => void approve(group.id, group.name)}
+                    className="inline-flex h-9 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-emerald-500 px-4 text-xs font-semibold text-white transition-colors hover:bg-emerald-400 disabled:opacity-50 sm:flex-none sm:px-6"
                   >
                     <CheckCircle2 className="size-3.5" /> Approve
                   </button>
                   <button
                     type="button"
-                    onClick={() => reject(group.id, group.name)}
-                    className="inline-flex h-9 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-danger-500 px-4 text-xs font-semibold text-white transition-colors hover:bg-danger-400 sm:flex-none sm:px-6"
+                    disabled={busyId === group.id}
+                    onClick={() => void reject(group.id, group.name)}
+                    className="inline-flex h-9 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-danger-500 px-4 text-xs font-semibold text-white transition-colors hover:bg-danger-400 disabled:opacity-50 sm:flex-none sm:px-6"
                   >
                     <XCircle className="size-3.5" /> Reject
                   </button>

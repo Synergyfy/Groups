@@ -174,7 +174,7 @@ export default function StatsPanel({
                 </span>
               </span>
               <span className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-slate-300">
-                {list.contactIds.length}
+                {list.contactCount ?? list.contactIds?.length ?? 0}
               </span>
             </li>
           ))}
