@@ -90,6 +90,7 @@ export interface NewGroupInput {
   type: GroupType;
   purpose: string;
   accessType: GroupAccessType;
+  status?: "Active" | "Recruiting" | "Pending Review";
   city?: string;
   localArea?: string;
   requiredSize?: number;

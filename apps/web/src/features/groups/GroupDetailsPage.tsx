@@ -32,7 +32,6 @@ import {
 import { SkeletonCard, SkeletonRows } from "../../components/ui/Skeleton";
 import MemberSearch, { type MemberSearchItem } from "../../components/members/MemberSearch";
 import MemberDetailModal from "../../components/members/MemberDetailModal";
-import { isOnline } from "../../lib/presence";
 import {
   GroupSourceBadge,
   GroupStatusBadge,
@@ -176,7 +175,7 @@ export default function GroupDetailsPage() {
     joinedAt: member.joinedAt ?? group.createdAt,
     isOwner: member.id === group.ownerId,
     isSelf: member.id === actorId,
-    online: member.id === group.ownerId || member.id === actorId || isOnline(member.id),
+    online: member.id === actorId,
   }));
   const memberDetail = memberDetailId
     ? memberItems.find((item) => item.id === memberDetailId) ?? null
@@ -202,6 +201,13 @@ export default function GroupDetailsPage() {
         disabled: true,
         label: "System allocated",
         hint: "Automatic groups are allocated by the system — you cannot join this one manually.",
+      };
+    }
+    if (group.status === "Closed" || group.status === "Suspended") {
+      return {
+        disabled: true,
+        label: "Group closed",
+        hint: `This group is ${group.status.toLowerCase()} and is not accepting members.`,
       };
     }
     const config = adminConfig.groupTypes.find((entry) => entry.type === group.type);

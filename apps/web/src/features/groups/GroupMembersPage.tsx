@@ -8,14 +8,12 @@ import StatCard from "../../components/ui/StatCard";
 import Table from "../../components/ui/Table";
 import type { TableColumn } from "../../components/ui/Table";
 import Toast from "../../components/ui/Toast";
-import { findDirectoryEntry } from "../../data/businessData";
 import { useGroup } from "../../store/selectors";
 import { errorMessage } from "../../app/api";
 import { businessApi, useBusinessData, type BusinessMember } from "../../business/BusinessDataProvider";
 import { SkeletonCard, SkeletonRows } from "../../components/ui/Skeleton";
 import MemberSearch, { type MemberSearchItem } from "../../components/members/MemberSearch";
 import MemberDetailModal from "../../components/members/MemberDetailModal";
-import { isOnline } from "../../lib/presence";
 import GroupTabsHeader, { GroupMissingState } from "./GroupTabsHeader";
 
 interface MemberRow {
@@ -49,7 +47,10 @@ export default function GroupMembersPage() {
         if (alive) setMembers(result.members);
       })
       .catch((cause) => {
-        if (alive) setFeedback(errorMessage(cause));
+        if (alive) {
+          setMembers([]);
+          setFeedback(errorMessage(cause));
+        }
       });
     return () => {
       alive = false;
@@ -69,21 +70,16 @@ export default function GroupMembersPage() {
     return <GroupMissingState title="11 — Group Members" />;
   }
 
-  const rows: MemberRow[] = (members ?? group.memberIds.map((id) => {
-    const entry = findDirectoryEntry(id);
-    return {
-      id,
-      membershipId: id,
-      fullName: entry.contactName,
-      businessName: entry.name,
-      category: entry.category,
-      location: entry.city,
-      status: "active",
-      role: id === group.ownerId ? "owner" : "peripheral",
-      tier: "Bronze",
-      joinedAt: entry.joinedAt ?? group.createdAt,
-    } as BusinessMember;
-  })).map((member) => {
+  if (members === null) {
+    return (
+      <div className="flex flex-col gap-4">
+        <SkeletonCard />
+        <SkeletonRows rows={6} />
+      </div>
+    );
+  }
+
+  const rows: MemberRow[] = members.map((member) => {
     const fallback = directory.find((entry) => entry.id === member.id);
     return {
       id: member.id,
@@ -178,7 +174,7 @@ export default function GroupMembersPage() {
     joinedAt: row.joinedAt,
     isOwner: row.isOwner,
     isSelf: row.isSelf,
-    online: row.isOwner || row.isSelf || isOnline(row.id),
+    online: row.isSelf,
   }));
   const selectedMember = selectedId
     ? searchItems.find((item) => item.id === selectedId) ?? null

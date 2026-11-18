@@ -55,6 +55,40 @@ export class AuthController {
     return response.redirect(this.authService.buildAuthorizeUrl(state));
   }
 
+  @Get("mcom/register")
+  mcomRegister(
+    @Query("next") next: string | undefined,
+    @Res() response: Response,
+  ) {
+    const state = randomBytes(32).toString("hex");
+    const cookie: OauthStateCookie = {
+      state,
+      next: normalizeNext(next),
+    };
+
+    response.cookie(OAUTH_COOKIE, JSON.stringify(cookie), {
+      ...this.cookieBase(),
+      maxAge: OAUTH_COOKIE_TTL_MS,
+    });
+
+    const frontendUrl = this.config
+      .get<string>("MCOM_FRONTEND_URL", "http://localhost:3000")
+      .replace(/\/+$/, "");
+    const params = new URLSearchParams({
+      client_id: this.config.getOrThrow<string>("MCOM_CLIENT_ID"),
+      redirect_uri: this.config.getOrThrow<string>("MCOM_REDIRECT_URI"),
+      scope: this.config.get<string>(
+        "MCOM_SCOPES",
+        "profile email business membership packages",
+      ),
+      state,
+    });
+
+    return response.redirect(
+      `${frontendUrl}/getstarted/business?${params.toString()}`,
+    );
+  }
+
   @Post("mcom/callback")
   @HttpCode(HttpStatus.OK)
   async mcomCallback(

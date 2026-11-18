@@ -29,7 +29,9 @@ export const jsonObject = (value: unknown): Record<string, unknown> =>
 export const jsonArray = (value: unknown): unknown[] =>
   Array.isArray(value) ? value : [];
 
-type GroupWithMembers = Group & { members?: GroupMember[] };
+type GroupWithMembers = Group & {
+  members?: Pick<GroupMember, "memberId">[];
+};
 
 export function mapGroup(group: GroupWithMembers) {
   return {
@@ -44,7 +46,7 @@ export function mapGroup(group: GroupWithMembers) {
     ownerId: group.ownerId ?? undefined,
     ownerName: group.ownerName,
     memberIds: group.members?.map((member) => member.memberId) ?? [],
-    memberCount: group.members?.length ?? group.memberCount,
+    memberCount: group.memberCount,
     location:
       group.city || group.localArea
         ? {
@@ -82,6 +84,8 @@ export function mapGroupMember(member: GroupMember) {
     status: member.status,
     role: member.role,
     tier: member.tier,
+    contributionStatus: member.contributionStatus,
+    contributionPaidAt: iso(member.contributionPaidAt),
     joinedAt: iso(member.joinedAt),
     lastActiveAt: iso(member.lastActiveAt),
     photoUrl: member.photoUrl ?? undefined,
@@ -251,6 +255,31 @@ export function mapInvitation(invitation: Invitation) {
     status: invitation.status,
     createdAt: iso(invitation.createdAt),
     respondedAt: iso(invitation.respondedAt),
+  };
+}
+
+/**
+ * The stored direction is from the creator's perspective. A dashboard request
+ * needs it relative to the signed-in business, otherwise the invitee's inbox
+ * never sees invitations sent to them.
+ */
+export function mapInvitationForBusiness(
+  invitation: Invitation,
+  businessId: string,
+  businessEmail?: string | null,
+) {
+  const mapped = mapInvitation(invitation);
+  const email = businessEmail?.trim().toLowerCase();
+  const isInvitee =
+    invitation.inviteeId === businessId ||
+    (Boolean(email) &&
+      invitation.inviteeEmail?.trim().toLowerCase() === email);
+  return {
+    ...mapped,
+    direction:
+      isInvitee && invitation.invitedById !== businessId
+        ? "incoming"
+        : "outgoing",
   };
 }
 

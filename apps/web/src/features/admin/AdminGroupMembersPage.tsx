@@ -34,8 +34,19 @@ interface MemberRow {
   category: string;
   city: string;
   role: "Owner" | "Member";
-  contributionStatus: "paid" | "pending" | "overdue";
+  contributionStatus: "paid" | "pending" | "overdue" | "n/a";
   amount: number;
+  joinedAt?: string;
+}
+
+interface GroupMemberRecord {
+  id: string;
+  fullName?: string;
+  businessName?: string;
+  category?: string;
+  location?: string;
+  contributionStatus?: string;
+  joinedAt?: string;
 }
 
 export default function AdminGroupMembersPage() {
@@ -50,6 +61,7 @@ export default function AdminGroupMembersPage() {
   const [contributions, setContributions] = useState<
     Record<string, { status: string; amount: number }>
   >({});
+  const [members, setMembers] = useState<GroupMemberRecord[]>([]);
   const [addOpen, setAddOpen] = useState(false);
   const [addSearch, setAddSearch] = useState("");
   const [showLedger, setShowLedger] = useState(false);
@@ -60,9 +72,11 @@ export default function AdminGroupMembersPage() {
   useEffect(() => {
     if (!group) return;
     let active = true;
-    adminApi
-      .groupContribution(group.id)
-      .then((result) => {
+    Promise.all([
+      adminApi.groupContribution(group.id),
+      adminApi.groupMembers(group.id),
+    ])
+      .then(([result, memberRows]) => {
         if (!active) return;
         setContributions(
           Object.fromEntries(
@@ -72,9 +86,13 @@ export default function AdminGroupMembersPage() {
             ]),
           ),
         );
+        setMembers(memberRows as GroupMemberRecord[]);
       })
       .catch(() => {
-        if (active) setContributions({});
+        if (active) {
+          setContributions({});
+          setMembers([]);
+        }
       });
     return () => {
       active = false;
@@ -102,28 +120,35 @@ export default function AdminGroupMembersPage() {
   const isPaid = group.pricing === "paid";
   const amount = group.contribution ?? 0;
 
-  const rows: MemberRow[] = group.memberIds.map((id) => {
+  const memberRecords: GroupMemberRecord[] = members.length
+    ? members
+    : group.memberIds.map((id) => ({ id }));
+
+  const rows: MemberRow[] = memberRecords.map((member) => {
+    const id = member.id;
     const entry = findDirectoryEntry(id);
     const isOwner = id === group.ownerId;
     const contribution = contributions[id];
-    const contributionStatus: "paid" | "pending" | "overdue" =
-      contribution?.status === "pending" || contribution?.status === "overdue"
-        ? contribution.status
-        : "paid";
+    const rawStatus = contribution?.status ?? member.contributionStatus ?? "pending";
+    const contributionStatus: MemberRow["contributionStatus"] =
+      rawStatus === "paid" || rawStatus === "overdue" || rawStatus === "n/a"
+        ? rawStatus
+        : "pending";
 
     return {
       id,
-      name: entry.name,
-      contactName: entry.contactName,
-      category: entry.category,
-      city: entry.city,
+      name: entry.name === id ? member.fullName ?? entry.name : entry.name,
+      contactName: entry.contactName === "—" ? member.businessName ?? "—" : entry.contactName,
+      category: entry.category === "—" ? member.category ?? "—" : entry.category,
+      city: entry.city === "—" ? member.location ?? "—" : entry.city,
       role: isOwner ? "Owner" : "Member",
       contributionStatus,
       amount: contribution?.amount ?? amount,
+      joinedAt: member.joinedAt,
     };
   });
 
-  const cities = new Set(rows.map((row) => row.city).filter((city) => city !== "-")).size;
+  const cities = new Set(rows.map((row) => row.city).filter((city) => city !== "—" && city !== "-")).size;
   const owners = rows.filter((row) => row.role === "Owner").length;
   const rule = state.adminConfig.automaticGrouping;
 
@@ -193,6 +218,8 @@ export default function AdminGroupMembersPage() {
                     ? "success"
                     : row.contributionStatus === "pending"
                     ? "warning"
+                    : row.contributionStatus === "n/a"
+                    ? "muted"
                     : "danger"
                 }
               >
@@ -200,13 +227,23 @@ export default function AdminGroupMembersPage() {
                   ? `Paid · £${row.amount}`
                   : row.contributionStatus === "pending"
                   ? `Pending · £${row.amount}`
+                  : row.contributionStatus === "n/a"
+                  ? "Not applicable"
                   : `Overdue · £${row.amount}`}
               </Badge>
             ),
           },
         ]
       : []),
-    { key: "joined", header: "Group since", render: () => <span className="text-slate-300">{group.createdAt.slice(0, 10)}</span> },
+    {
+      key: "joined",
+      header: "Group since",
+      render: (row) => (
+        <span className="text-slate-300">
+          {row.joinedAt ? row.joinedAt.slice(0, 10) : "—"}
+        </span>
+      ),
+    },
     {
       key: "actions",
       header: "Actions",

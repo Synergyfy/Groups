@@ -9,7 +9,7 @@ import {
   GroupStatusBadge,
   GroupTypeBadge,
 } from "./GroupBadges";
-import { memberCountOf } from "./groupUtils";
+import { memberCountOf, contributionLabel } from "./groupUtils";
 
 interface GroupProgress {
   current: number;
@@ -63,6 +63,9 @@ export default function GroupListItem({
           <GroupSourceBadge source={group.source} />
           {group.headStart && <Badge variant="info">Head start</Badge>}
           {group.stage && <BadgeMuted>{group.stage}</BadgeMuted>}
+          {group.pricing === "paid" && (
+            <Badge variant="warning">{contributionLabel(group)}</Badge>
+          )}
         </div>
         <span className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
           <Users className="size-3.5" />

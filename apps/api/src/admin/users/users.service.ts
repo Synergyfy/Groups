@@ -159,6 +159,9 @@ export class AdminUsersService {
       this.prisma.business.findMany({ orderBy: { joinedAt: "desc" } }),
     ]);
 
+    const accountEmails = new Set(
+      accounts.map((account) => account.email.toLowerCase()),
+    );
     const items = [
       ...accounts.map((account) => ({
         id: account.id,
@@ -171,10 +174,7 @@ export class AdminUsersService {
       ...businesses
         .filter(
           (business) =>
-            !accounts.some(
-              (account) =>
-                account.email.toLowerCase() === business.email.toLowerCase(),
-            ),
+            !accountEmails.has(business.email.toLowerCase()),
         )
         .map((business) => ({
           id: business.id,

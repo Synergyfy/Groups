@@ -19,8 +19,6 @@ import StatCard from "../../components/ui/StatCard";
 import Toast from "../../components/ui/Toast";
 import BarChart from "../../components/ui/charts/BarChart";
 import Donut from "../../components/ui/charts/Donut";
-import { useAppState } from "../../store/selectors";
-import { memberCountOf } from "../groups/groupUtils";
 import { adminApi } from "../../admin/adminApi";
 import { useAdminData } from "../../admin/AdminDataProvider";
 
@@ -83,12 +81,11 @@ const SIGN_OFF_RULES = [
 ];
 
 export default function AdminSettingsReportsPage() {
-  const state = useAppState();
   const { data, refresh } = useAdminData();
   const [activeTab, setActiveTab] = useState<"settings" | "reports" | "completeness">("settings");
   const [feedback, setFeedback] = useState<string | null>(null);
 
-  const settings = (state.adminConfig.platformSettings ?? {}) as {
+  const settings = (data?.adminConfig.platformSettings ?? {}) as {
     defaultRequiredSize?: number;
     defaultPricing?: "free" | "paid";
     defaultVisibility?: "directory" | "members";
@@ -140,9 +137,16 @@ export default function AdminSettingsReportsPage() {
     }
   };
 
-  const groups = state.groups;
-  const totalMembers = groups.reduce((s, g) => s + memberCountOf(g), 0);
   const stats = data?.settingsReport?.stats;
+  const completenessByRule = new Map(
+    (data?.settingsReport?.completeness ?? []).map((rule) => [
+      rule.id,
+      rule.status,
+    ]),
+  );
+  const verifiedRules = [...completenessByRule.values()].filter(
+    (status) => status === "Verified",
+  ).length;
 
   const growthBars =
     data?.settingsReport?.growth ?? [];
@@ -329,8 +333,8 @@ export default function AdminSettingsReportsPage() {
             />
             <StatCard
               label="Total memberships"
-              value={totalMembers}
-              hint="Seats across active groups"
+              value={stats?.totalMemberships ?? 0}
+              hint="Active plan subscribers"
               accent="success"
             />
             <StatCard
@@ -389,19 +393,24 @@ export default function AdminSettingsReportsPage() {
                   Confirmation of the five platform rules before development sign-off.
                 </p>
               </div>
-              <Badge variant="success">All 5 Rules Verified</Badge>
+              <Badge variant={verifiedRules === SIGN_OFF_RULES.length ? "success" : "warning"}>
+                {verifiedRules} / {SIGN_OFF_RULES.length} Rules Verified
+              </Badge>
             </div>
 
             <div className="flex flex-col gap-3.5">
-              {SIGN_OFF_RULES.map((rule) => (
+              {SIGN_OFF_RULES.map((rule) => {
+                const status = completenessByRule.get(rule.id) ?? "Not configured";
+                const verified = status === "Verified";
+                return (
                 <div
                   key={rule.id}
                   className="rounded-xl border border-white/10 bg-ink-950/60 p-4 transition-colors hover:border-gold-500/30"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-sm font-bold text-white">{rule.title}</p>
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-semibold text-emerald-300">
-                      <CheckCircle2 className="size-3.5" /> {rule.status}
+                    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${verified ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-300"}`}>
+                      <CheckCircle2 className="size-3.5" /> {status}
                     </span>
                   </div>
 
@@ -417,7 +426,8 @@ export default function AdminSettingsReportsPage() {
                     </Link>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </CardBody>
         </Card>

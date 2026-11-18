@@ -21,7 +21,7 @@ const STATUS_VARIANTS: Record<string, BadgeVariant> = {
   cancelled: "muted",
 };
 
-type TabId = "incoming" | "outgoing" | "requests";
+type TabId = "incoming" | "outgoing" | "requests" | "owner-requests";
 
 export default function InvitationsInboxPage() {
   const state = useAppState();
@@ -29,6 +29,7 @@ export default function InvitationsInboxPage() {
   const [tab, setTab] = useState<TabId>("incoming");
   const [feedback, setFeedback] = useState<string | null>(null);
   const actorId = profile?.business.id ?? "";
+  const actorEmail = profile?.business.email?.trim().toLowerCase() ?? "";
 
   const groupName = useMemo(() => {
     const map = new Map(state.groups.map((group) => [group.id, group.name]));
@@ -36,16 +37,37 @@ export default function InvitationsInboxPage() {
       (groupId && map.get(groupId)) ?? "Unknown group";
   }, [state.groups]);
 
+  const ownedGroupIds = useMemo(
+    () =>
+      new Set(
+        state.groups
+          .filter((group) => group.ownerId === actorId)
+          .map((group) => group.id),
+      ),
+    [state.groups, actorId],
+  );
+
   const incoming = state.invitations.filter(
     (invitation) =>
-      invitation.inviteeId === actorId &&
       invitation.kind === "invite" &&
       invitation.direction === "incoming" &&
-      !invitation.circleId
+      !invitation.circleId &&
+      (invitation.inviteeId === actorId ||
+        (Boolean(actorEmail) &&
+          invitation.inviteeEmail?.trim().toLowerCase() === actorEmail)),
   );
 
   const myRequests = state.invitations.filter(
     (invitation) => invitation.kind === "request" && invitation.inviteeId === actorId
+  );
+
+  const ownerRequests = state.invitations.filter(
+    (invitation) =>
+      invitation.kind === "request" &&
+      invitation.status === "pending" &&
+      invitation.inviteeId !== actorId &&
+      Boolean(invitation.groupId) &&
+      ownedGroupIds.has(invitation.groupId ?? ""),
   );
 
   const outgoing = state.invitations.filter(
@@ -60,6 +82,20 @@ export default function InvitationsInboxPage() {
       await businessApi.respondInvitation(invitation.id, false);
       await refresh();
       setFeedback(`You declined the invitation from ${invitation.invitedByName}`);
+    } catch (cause) {
+      setFeedback(errorMessage(cause));
+    }
+  };
+
+  const respondToRequest = async (invitation: Invitation, accept: boolean) => {
+    try {
+      await businessApi.respondInvitation(invitation.id, accept);
+      await refresh();
+      setFeedback(
+        accept
+          ? `${invitation.inviteeName} added to ${groupName(invitation.groupId)}`
+          : `Request from ${invitation.inviteeName} declined`,
+      );
     } catch (cause) {
       setFeedback(errorMessage(cause));
     }
@@ -88,6 +124,7 @@ export default function InvitationsInboxPage() {
             { id: "incoming", label: "Incoming", count: incoming.filter((i) => i.status === "pending").length },
             { id: "outgoing", label: "Outgoing", count: outgoing.length },
             { id: "requests", label: "My requests", count: myRequests.length },
+            { id: "owner-requests", label: "Requests to join", count: ownerRequests.length },
           ]}
           value={tab}
           onChange={(id) => setTab(id as TabId)}
@@ -192,7 +229,7 @@ export default function InvitationsInboxPage() {
                       </p>
                       <p className="mt-1 text-[11px] text-slate-500">
                         To {groupName(invitation.groupId)} ·{" "}
-                        {invitation.inviteeEmail ?? invitation.inviteeId}
+                        {invitation.inviteeEmail ?? "Business directory"}
                       </p>
                     </div>
                     <Badge variant={STATUS_VARIANTS[invitation.status] ?? "default"}>
@@ -259,6 +296,61 @@ export default function InvitationsInboxPage() {
                   >
                     View details <ArrowRight className="size-3.5" />
                   </LinkButton>
+                </CardBody>
+              </Card>
+            ))}
+          </div>
+        ))}
+
+      {tab === "owner-requests" &&
+        (ownerRequests.length === 0 ? (
+          <EmptyState
+            title="No join requests waiting"
+            description="When another business asks to join a group you own, it will appear here for approval."
+            icon={<Inbox className="size-6" />}
+          />
+        ) : (
+          <div className="grid gap-3 lg:grid-cols-2">
+            {ownerRequests.map((invitation) => (
+              <Card key={invitation.id}>
+                <CardBody className="flex flex-col gap-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-white">
+                        {invitation.inviteeName}
+                      </p>
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Wants to join {groupName(invitation.groupId)} ·{" "}
+                        {invitation.createdAt.slice(0, 10)}
+                      </p>
+                    </div>
+                    <Badge variant={STATUS_VARIANTS[invitation.status] ?? "default"}>
+                      {invitation.status}
+                    </Badge>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => respondToRequest(invitation, true)}
+                    >
+                      <Check className="size-4" /> Accept request
+                    </Button>
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      onClick={() => respondToRequest(invitation, false)}
+                    >
+                      <X className="size-4" /> Decline
+                    </Button>
+                    <LinkButton
+                      to={`/business/groups/${invitation.groupId ?? ""}`}
+                      variant="ghost"
+                      size="sm"
+                    >
+                      View group
+                    </LinkButton>
+                  </div>
                 </CardBody>
               </Card>
             ))}

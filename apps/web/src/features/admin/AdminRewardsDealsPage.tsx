@@ -66,6 +66,9 @@ export default function AdminRewardsDealsPage() {
   const [newAudience, setNewAudience] = useState<RewardDeal["targetAudience"]>("All Users");
   const [newSponsor, setNewSponsor] = useState("Central Solution Network");
   const [newMaxClaims, setNewMaxClaims] = useState(100);
+  const [newExpiry, setNewExpiry] = useState(() =>
+    new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+  );
 
   const toggleFrontendVisibility = async (id: string) => {
     const deal = deals.find((entry) => entry.id === id);
@@ -88,6 +91,10 @@ export default function AdminRewardsDealsPage() {
       setFeedback("Please enter title and discount value.");
       return;
     }
+    if (!newExpiry) {
+      setFeedback("Please choose an expiry date.");
+      return;
+    }
 
     try {
       await adminApi.createReward({
@@ -98,7 +105,7 @@ export default function AdminRewardsDealsPage() {
         targetAudience: newAudience,
         liveOnFrontend: true,
         status: "Active",
-        expiryDate: "2026-12-31",
+        expiryDate: newExpiry,
         claimsCount: 0,
         maxClaims: newMaxClaims,
         sponsorBusiness: newSponsor.trim(),
@@ -109,6 +116,11 @@ export default function AdminRewardsDealsPage() {
       setNewTitle("");
       setNewDiscount("");
       setNewCode("");
+      setNewExpiry(
+        new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
+          .toISOString()
+          .slice(0, 10),
+      );
     } catch {
       setFeedback("Could not create the reward or deal.");
     }
@@ -178,7 +190,7 @@ export default function AdminRewardsDealsPage() {
           <div className="h-1 w-20 rounded-full bg-ink-800 mt-1 overflow-hidden">
             <div
               className="h-full bg-gold-400"
-              style={{ width: `${Math.min(100, (d.claimsCount / d.maxClaims) * 100)}%` }}
+              style={{ width: `${d.maxClaims > 0 ? Math.min(100, (d.claimsCount / d.maxClaims) * 100) : 0}%` }}
             />
           </div>
         </div>
@@ -246,8 +258,8 @@ export default function AdminRewardsDealsPage() {
         />
         <StatCard
           label="Frontend delivery"
-          value="100% Operational"
-          hint="Syncing to /rewards"
+          value={data?.rewardStats?.frontendDelivery ?? "Paused"}
+          hint={`${data?.rewardStats?.liveOnFrontend ?? liveCount} live offers`}
           accent="gold"
         />
       </div>
@@ -398,6 +410,17 @@ export default function AdminRewardsDealsPage() {
                 />
               </label>
             </div>
+
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium text-slate-300">Expiry Date</span>
+              <input
+                type="date"
+                value={newExpiry}
+                onChange={(e) => setNewExpiry(e.target.value)}
+                className="h-10 rounded-lg border border-white/10 bg-ink-800 px-3 text-xs text-white focus:outline-none"
+                required
+              />
+            </label>
 
             <div className="mt-2 flex justify-end gap-2">
               <Button variant="ghost" size="sm" type="button" onClick={() => setCreateModalOpen(false)}>

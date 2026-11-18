@@ -16,11 +16,12 @@ import StatCard from "../../components/ui/StatCard";
 import Toast from "../../components/ui/Toast";
 import { useAppStore } from "../../store/context";
 import { selectCreationRightsLabel } from "../../store/selectors";
+import { adminApi } from "../../admin/adminApi";
 import { useAdminData } from "../../admin/AdminDataProvider";
 
 export default function AdminAccessRulesPage() {
-  const { state, dispatch } = useAppStore();
-  const { data } = useAdminData();
+  const { state } = useAppStore();
+  const { data, refresh } = useAdminData();
   const [feedback, setFeedback] = useState<string | null>(null);
 
   const access = (state.adminConfig.accessRules ?? {}) as {
@@ -79,16 +80,9 @@ export default function AdminAccessRulesPage() {
   const [freeMaxCircles, setFreeMaxCircles] = useState(access.quotas?.freeMaxCircles ?? 2);
   const [paidMaxCircles, setPaidMaxCircles] = useState(access.quotas?.paidMaxCircles ?? 15);
 
-  const saveRules = () => {
-    dispatch({
-      type: "admin/update-config",
-      patch: {
-        partnerDefaults: {
-          maxGroups: paidMaxGroups,
-          maxCircles: paidMaxCircles,
-          canCreateGroups: true,
-          canInviteMembers: true,
-        },
+  const saveRules = async () => {
+    try {
+      await adminApi.patchConfig({
         accessRules: {
           temporaryAccess: {
             duration: tempAccessDuration,
@@ -105,9 +99,12 @@ export default function AdminAccessRulesPage() {
             paidMaxCircles,
           },
         },
-      },
-    });
-    setFeedback("Access rules and temporary access configuration saved successfully.");
+      });
+      await refresh();
+      setFeedback("Access rules and temporary access configuration saved successfully.");
+    } catch {
+      setFeedback("Could not save the access rules.");
+    }
   };
 
   return (
@@ -117,7 +114,7 @@ export default function AdminAccessRulesPage() {
         subtitle="Define who can create groups, join groups, invite members and manage participants. Configure 7-day or 14-day temporary access periods."
         tip="Temporary access allows new members to preview groups before formal membership or payment confirmation."
         actions={
-          <Button variant="primary" size="sm" onClick={saveRules}>
+          <Button variant="primary" size="sm" onClick={() => void saveRules()}>
             <Save className="size-4" /> Save Access Rules
           </Button>
         }

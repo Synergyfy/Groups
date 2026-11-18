@@ -252,7 +252,7 @@ export default function GroupInvitationsPage() {
           <div className="min-w-0">
             <p className="truncate text-xs font-semibold text-white">{row.inviteeName}</p>
             <p className="truncate text-[11px] text-slate-500">
-              {row.inviteeEmail ?? row.inviteeId ?? "—"}
+              {row.inviteeEmail ?? (row.inviteeId ? "Business directory" : "—")}
             </p>
           </div>
         </div>
@@ -584,6 +584,8 @@ export default function GroupInvitationsPage() {
                           <Button
                             variant="outline"
                             size="sm"
+                            aria-label={`Accept request from ${entry.inviteeName}`}
+                            title={`Accept request from ${entry.inviteeName}`}
                             onClick={() => respondToRequest(entry, true)}
                           >
                             <Check className="size-3.5" />
@@ -591,6 +593,8 @@ export default function GroupInvitationsPage() {
                           <Button
                             variant="danger"
                             size="sm"
+                            aria-label={`Decline request from ${entry.inviteeName}`}
+                            title={`Decline request from ${entry.inviteeName}`}
                             onClick={() => respondToRequest(entry, false)}
                           >
                             <X className="size-3.5" />

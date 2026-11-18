@@ -95,6 +95,7 @@ export class BusinessCirclesService {
               businessId: ctx.business.id,
               id: { in: circle.sourceListIds },
             },
+            include: { _count: { select: { contacts: true } } },
           })
         : Promise.resolve([]),
     ]);
@@ -147,6 +148,8 @@ export class BusinessCirclesService {
         geography: list.geography,
         status: list.status,
         source: list.source,
+        contactIds: [],
+        contactCount: list._count.contacts,
       })),
       activity: activities.map(mapCircleActivity),
       stats: {
@@ -376,6 +379,7 @@ export class BusinessCirclesService {
     const unique = [...new Set(ids)];
     const lists = await this.prisma.networkList.findMany({
       where: { businessId: ctx.business.id, id: { in: unique } },
+      include: { _count: { select: { contacts: true } } },
     });
     if (lists.length !== unique.length) {
       throw new NotFoundException("One or more source lists were not found.");

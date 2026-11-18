@@ -39,6 +39,7 @@ import type { Group, GroupStatus, GroupType, Invitation } from "../../domain/typ
 import { useAppState } from "../../store/selectors";
 import { useAppStore } from "../../store/context";
 import { useAdminData } from "../../admin/AdminDataProvider";
+import { adminApi } from "../../admin/adminApi";
 import type { AppAction } from "../../store/reducer";
 import { memberCountOf } from "../groups/groupUtils";
 import AdminGroupContributionCard from "./AdminGroupContributionCard";
@@ -53,6 +54,20 @@ type Tab =
   | "members-invitations"
   | "access-rules"
   | "reports";
+
+function downloadCsv(filename: string, rows: Array<Array<string | number>>) {
+  const escape = (value: string | number) => {
+    const text = String(value ?? "");
+    return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+  const csv = rows.map((row) => row.map(escape).join(",")).join("\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "overview", label: "Overview", icon: <BarChart3 className="size-3.5" /> },
@@ -186,9 +201,9 @@ export default function AdminGroupsHubPage() {
         <BusinessGroupsTab groups={businessGroups} onApprove={approveGroup} onUpdateStatus={updateStatus} setFeedback={setFeedback} />
       )}
       {activeTab === "members-invitations" && (
-        <MembersInvitationsTab groups={groups} invitations={invitations} dispatch={dispatch} setFeedback={setFeedback} />
+        <MembersInvitationsTab groups={groups} invitations={invitations} setFeedback={setFeedback} />
       )}
-      {activeTab === "access-rules" && <AccessRulesTab setFeedback={setFeedback} />}
+      {activeTab === "access-rules" && <AccessRulesTab />}
       {activeTab === "reports" && (
         <ReportsTab groups={groups} invitations={invitations} adminGroups={adminGroups} businessGroups={businessGroups} activeGroups={activeGroups} suspendedGroups={suspendedGroups} />
       )}
@@ -552,7 +567,17 @@ function PlatformGroupsTab({
     dispatch({
       type: "group/create",
       owner: { id: "admin", name: "Platform Administrator" },
-      input: { name: form.name.trim(), type: form.type as GroupType, purpose: form.purpose.trim(), accessType: form.joinMethod, visibility: "directory", interactionLevel: "message", pricing: "free" },
+      input: {
+        name: form.name.trim(),
+        type: form.type as GroupType,
+        purpose: form.purpose.trim(),
+        accessType: form.joinMethod,
+        visibility: "directory",
+        interactionLevel: "message",
+        pricing: "free",
+        status: form.status === "draft" ? "Pending Review" : "Active",
+        requiredSize: form.memberLimit ? Number(form.memberLimit) : undefined,
+      },
     });
     setFeedback(`Platform group "${form.name}" created!`);
     setCreateOpen(false);
@@ -924,16 +949,40 @@ function BusinessGroupsTab({
 // TAB 5 — Members & Invitations
 // ===========================================================================
 function MembersInvitationsTab({
-  groups, invitations, dispatch, setFeedback,
+  groups, invitations, setFeedback,
 }: {
   groups: Group[];
   invitations: Invitation[];
-  dispatch: Dispatch<AppAction>;
   setFeedback: (m: string) => void;
 }) {
   const [subTab, setSubTab] = useState<"members" | "invitations" | "join-requests">("members");
   const [search, setSearch] = useState("");
   const [invStatusFilter, setInvStatusFilter] = useState("all");
+  const { refresh } = useAdminData();
+
+  const respondToRequest = async (invitation: Invitation, accept: boolean) => {
+    try {
+      await (accept
+        ? adminApi.approveInvitation(invitation.id)
+        : adminApi.declineInvitation(invitation.id));
+      await refresh();
+      setFeedback(
+        `Join request from ${invitation.inviteeName} ${accept ? "approved" : "declined"}`,
+      );
+    } catch {
+      setFeedback(`Could not respond to ${invitation.inviteeName}'s request.`);
+    }
+  };
+
+  const revokeInvitation = async (invitation: Invitation) => {
+    try {
+      await adminApi.cancelInvitation(invitation.id);
+      await refresh();
+      setFeedback(`Invitation to ${invitation.inviteeName} revoked.`);
+    } catch {
+      setFeedback(`Could not revoke the invitation to ${invitation.inviteeName}.`);
+    }
+  };
 
   const allMembers = useMemo(() => {
     const result: { memberId: string; groupName: string; groupId: string }[] = [];
@@ -1020,7 +1069,7 @@ function MembersInvitationsTab({
                     </div>
                     <div className="flex shrink-0 items-center gap-1.5">
                       {inv.status === "pending" && (
-                        <button type="button" onClick={() => { dispatch({ type: "invitation/cancel", invitationId: inv.id, actor: ADMIN_ACTOR }); setFeedback(`Invitation to ${inv.inviteeName} revoked.`); }} className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-rose-400 hover:bg-rose-500/10">Revoke</button>
+                        <button type="button" onClick={() => void revokeInvitation(inv)} className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-rose-400 hover:bg-rose-500/10">Revoke</button>
                       )}
                       {inv.groupId && <Link to={`/admin/groups/${inv.groupId}`} className="text-[10px] text-gold-400 hover:text-gold-300">View group</Link>}
                     </div>
@@ -1049,8 +1098,8 @@ function MembersInvitationsTab({
                       <p className="text-[11px] text-slate-500">{req.inviteeEmail} · Requested {new Date(req.createdAt).toLocaleDateString()}</p>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      <button type="button" className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[10px] text-emerald-300 hover:bg-emerald-500/20" onClick={() => setFeedback(`Join request from ${req.inviteeName} approved`)}>Approve</button>
-                      <button type="button" className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-rose-400 hover:bg-rose-500/10" onClick={() => setFeedback(`Join request from ${req.inviteeName} declined`)}>Decline</button>
+                      <button type="button" className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[10px] text-emerald-300 hover:bg-emerald-500/20" onClick={() => void respondToRequest(req, true)}>Approve</button>
+                      <button type="button" className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-rose-400 hover:bg-rose-500/10" onClick={() => void respondToRequest(req, false)}>Decline</button>
                     </div>
                   </div>
                 ))}
@@ -1070,7 +1119,7 @@ function MembersInvitationsTab({
 // ===========================================================================
 // TAB 6 — Access Rules
 // ===========================================================================
-function AccessRulesTab({ setFeedback }: { setFeedback: (m: string) => void }) {
+function AccessRulesTab() {
   const [eligibilityMode, setEligibilityMode] = useState<"location" | "sector" | "membership">("location");
 
   return (
@@ -1119,7 +1168,9 @@ function AccessRulesTab({ setFeedback }: { setFeedback: (m: string) => void }) {
                 ))}
               </div>
             )}
-            <button type="button" onClick={() => setFeedback("Eligibility rules saved.")} className="mt-auto rounded-lg bg-gold-500/10 border border-gold-500/20 py-2 text-xs font-medium text-gold-300 hover:bg-gold-500/20 transition-colors">Save eligibility rules</button>
+            <p className="mt-auto rounded-lg border border-white/10 bg-ink-900/40 px-3 py-2 text-[11px] text-slate-400">
+              Eligibility criteria are shown for reference. They are not persisted until an eligibility rules API is configured.
+            </p>
           </CardBody>
         </Card>
 
@@ -1219,7 +1270,9 @@ function AccessRulesTab({ setFeedback }: { setFeedback: (m: string) => void }) {
             ))}
           </div>
           <div className="flex justify-end">
-            <button type="button" onClick={() => setFeedback("Access rules saved.")} className="rounded-lg bg-gold-500/10 border border-gold-500/20 px-4 py-2 text-xs font-medium text-gold-300 hover:bg-gold-500/20 transition-colors">Save access rules</button>
+            <p className="rounded-lg border border-white/10 bg-ink-900/40 px-3 py-2 text-[11px] text-slate-400">
+              Business group creation permissions are not configurable in this build.
+            </p>
           </div>
         </CardBody>
       </Card>
@@ -1387,8 +1440,46 @@ function ReportsTab({
       )}
 
       <div className="flex justify-end gap-2">
-        <button type="button" className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-xs text-slate-300 hover:bg-white/10 transition-colors">Export groups CSV</button>
-        <button type="button" className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-xs text-slate-300 hover:bg-white/10 transition-colors">Export invitations CSV</button>
+        <button
+          type="button"
+          onClick={() =>
+            downloadCsv("admin-groups.csv", [
+              ["ID", "Name", "Type", "Status", "Owner", "City", "Members"],
+              ...groups.map((g) => [
+                g.id,
+                g.name,
+                g.type,
+                g.status,
+                g.ownerName,
+                g.location?.city ?? "",
+                memberCountOf(g),
+              ]),
+            ])
+          }
+          className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-xs text-slate-300 hover:bg-white/10 transition-colors"
+        >
+          Export groups CSV
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            downloadCsv("admin-invitations.csv", [
+              ["ID", "Invitee", "Email", "Status", "Kind", "Invited by", "Created"],
+              ...invitations.map((inv) => [
+                inv.id,
+                inv.inviteeName,
+                inv.inviteeEmail ?? "",
+                inv.status,
+                inv.kind,
+                inv.invitedByName,
+                inv.createdAt,
+              ]),
+            ])
+          }
+          className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-xs text-slate-300 hover:bg-white/10 transition-colors"
+        >
+          Export invitations CSV
+        </button>
       </div>
     </div>
   );

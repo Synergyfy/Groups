@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Crown, Users } from "lucide-react";
 import type { Group } from "../../domain/types";
 import { CURRENT_BUSINESS, findDirectoryEntry } from "../../data/businessData";
-import { isOnline } from "../../lib/presence";
 import Avatar from "../../components/ui/Avatar";
 import NodePopover from "../../components/ui/NodePopover";
 import { contributionLabel } from "./groupUtils";
@@ -130,7 +129,7 @@ export default function GroupCircleView({
         city: entry.city,
         owner: id === group.ownerId,
         you: id === actor,
-        online: id === group.ownerId || id === actor || isOnline(id),
+        online: id === actor,
       };
     });
   }, [group, actor, directory]);
@@ -399,7 +398,7 @@ function GroupNode({
   const showCrown = size >= 26 && member.owner;
   const showDot = size >= 20 && member.online;
   const showRibbon = member.you && size >= 24;
-  const ribbonColor = member.online ? "#34d399" : "#f87171";
+  const ribbonColor = member.online ? "#34d399" : member.owner ? "#e6a92b" : "#64748b";
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
 
   return (
@@ -412,7 +411,7 @@ function GroupNode({
         ref={setAnchor}
         onClick={onToggle}
         aria-expanded={open}
-        aria-label={`${member.name}${member.online ? " — online" : " — offline"}${member.you ? " — you" : ""}`}
+        aria-label={`${member.name}${member.online ? " — online" : ""}${member.you ? " — you" : ""}`}
         className={`animate-node-zoom relative flex size-full cursor-pointer items-center justify-center rounded-full border border-white/10 font-bold text-white transition-[filter,border-color] duration-200 hover:border-white/40 hover:brightness-110 focus-visible:border-gold-300 focus-visible:outline-none ${fontClassFor(size)} ${member.online || member.owner ? "ring-2" : "ring-1"}`}
         style={{
           boxShadow: glow,
@@ -489,7 +488,7 @@ function GroupNode({
               className={`size-2 rounded-full ${member.online ? "bg-emerald-400" : "bg-slate-500"}`}
             />
             <span className={member.online ? "text-emerald-300" : "text-slate-400"}>
-              {member.online ? "Online now" : "Offline"}
+              {member.online ? "Online now" : "Member"}
             </span>
           </p>
         </NodePopover>

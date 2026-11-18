@@ -107,6 +107,8 @@ export default function ExploreGroupsPage() {
         const config = adminConfig.groupTypes.find((entry) => entry.type === group.type);
         if (config && (config.enabled === false || config.allowJoin === false))
           state = "blocked";
+        else if (group.status === "Closed" || group.status === "Suspended")
+          state = "blocked";
         else if (group.accessType === "invitation") state = "blocked";
         else if (group.accessType === "open") state = "instant";
         else state = "approval";
@@ -140,6 +142,9 @@ export default function ExploreGroupsPage() {
     if (group.source === "automatic") {
       return { disabled: true, label: "System allocated", hint: "Automatic groups are allocated by the system." };
     }
+    if (group.status === "Closed" || group.status === "Suspended") {
+      return { disabled: true, label: "Group closed", hint: `This group is ${group.status.toLowerCase()} and is not accepting members.` };
+    }
     const config = adminConfig.groupTypes.find((entry) => entry.type === group.type);
     if (config && (config.enabled === false || config.allowJoin === false)) {
       return { disabled: true, label: "Joining disabled", hint: "Administrators turned off joining for this type." };
@@ -153,7 +158,7 @@ export default function ExploreGroupsPage() {
     if (group.accessType === "open") {
       return { disabled: false, label: "Join group", hint: ACCESS_INFO.open.hint };
     }
-    return { disabled: false, label: "Request to join", hint: ACCESS_INFO[group.accessType].hint };
+    return { disabled: false, label: group.accessType === "eligibility" ? "Check eligibility" : "Request to join", hint: ACCESS_INFO[group.accessType].hint };
   };
 
   const handleJoin = async (group: Group) => {

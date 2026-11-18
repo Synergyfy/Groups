@@ -51,15 +51,21 @@ export class AdminCatalogService {
   }
 
   async getPlanStats() {
-    const plans = await this.prisma.membershipPlan.findMany();
+    const [totalPlans, activePlans, aggregate] = await Promise.all([
+      this.prisma.membershipPlan.count(),
+      this.prisma.membershipPlan.count({ where: { status: "Active" } }),
+      this.prisma.membershipPlan.findMany({
+        select: { priceMonthly: true, subscriberCount: true },
+      }),
+    ]);
     return {
-      totalPlans: plans.length,
-      activePlans: plans.filter((plan) => plan.status === "Active").length,
-      totalSubscribers: plans.reduce(
+      totalPlans,
+      activePlans,
+      totalSubscribers: aggregate.reduce(
         (sum, plan) => sum + plan.subscriberCount,
         0,
       ),
-      monthlyRecurringRunRate: plans.reduce(
+      monthlyRecurringRunRate: aggregate.reduce(
         (sum, plan) => sum + plan.priceMonthly * plan.subscriberCount,
         0,
       ),
@@ -182,14 +188,16 @@ export class AdminCatalogService {
   }
 
   async getRewardStats() {
-    const deals = await this.prisma.rewardDeal.findMany();
+    const [totalDeals, liveOnFrontend, aggregate] = await Promise.all([
+      this.prisma.rewardDeal.count(),
+      this.prisma.rewardDeal.count({ where: { liveOnFrontend: true } }),
+      this.prisma.rewardDeal.aggregate({ _sum: { claimsCount: true } }),
+    ]);
     return {
-      totalDeals: deals.length,
-      liveOnFrontend: deals.filter((deal) => deal.liveOnFrontend).length,
-      totalRedemptions: deals.reduce((sum, deal) => sum + deal.claimsCount, 0),
-      frontendDelivery: deals.some((deal) => deal.liveOnFrontend)
-        ? "Live"
-        : "Paused",
+      totalDeals,
+      liveOnFrontend,
+      totalRedemptions: aggregate._sum.claimsCount ?? 0,
+      frontendDelivery: liveOnFrontend > 0 ? "Live" : "Paused",
     };
   }
 

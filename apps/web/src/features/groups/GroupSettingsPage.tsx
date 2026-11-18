@@ -77,7 +77,7 @@ function GroupSettingsForm({ group, isOwner }: { group: Group; isOwner: boolean 
         status,
         accessType,
         visibility,
-        stage: stage || undefined,
+        stage,
       });
       await refresh();
       setFeedback("Group settings saved");

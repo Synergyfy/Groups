@@ -188,8 +188,8 @@ receive `401`, non-admin sessions `403`.
 | ---- | --------- |
 | Overview | `GET /api/admin/overview` |
 | Users | `GET /api/admin/users`, `GET /api/admin/users/registrations`, `GET/PATCH /api/admin/users/:id`, `POST /api/admin/users/:id/suspend\|activate` |
-| Groups | `GET/POST /api/admin/groups`, `GET /api/admin/groups/dashboard`, `GET /api/admin/groups/hub`, `GET/PATCH/DELETE /api/admin/groups/:id`, `POST /api/admin/groups/:id/approve\|suspend\|close` |
-| Group detail tabs | `GET/POST /api/admin/groups/:id/members`, `DELETE /api/admin/groups/:id/members/:memberId`, `GET /api/admin/groups/:id/activity`, `GET/PATCH /api/admin/groups/:id/relationships`, `GET /api/admin/groups/:id/contribution`, `GET /api/admin/groups/:id/circles`, `GET /api/admin/groups/:id/invitations` |
+| Groups | `GET/POST /api/admin/groups`, `GET /api/admin/groups/dashboard`, `GET /api/admin/groups/hub`, `GET/PATCH/DELETE /api/admin/groups/:id`, `POST /api/admin/groups/:id/approve\|suspend\|close`, `GET /api/admin/circles` |
+| Group detail tabs | `GET/POST /api/admin/groups/:id/members`, `DELETE /api/admin/groups/:id/members/:memberId`, `PATCH /api/admin/groups/:id/members/:memberId/contribution`, `GET /api/admin/groups/:id/activity`, `GET/PATCH /api/admin/groups/:id/relationships`, `GET /api/admin/groups/:id/contribution`, `GET /api/admin/groups/:id/circles`, `GET /api/admin/groups/:id/invitations` |
 | Businesses | `GET/POST /api/admin/businesses`, `GET/PATCH/DELETE /api/admin/businesses/:id`, `POST /api/admin/businesses/:id/verify\|suspend` |
 | Partners | `GET/POST /api/admin/partners`, `GET/PATCH/DELETE /api/admin/partners/:id`, `GET /api/admin/partner-groups` |
 | Programmes | `GET/POST /api/admin/programmes`, `PATCH/DELETE /api/admin/programmes/:id` |
@@ -219,5 +219,6 @@ pnpm admin:smoke
 ```
 
 The script signs in as the seeded administrator, exercises every admin page's
-endpoint (reads plus create/update/delete flows), and verifies anonymous access
-is rejected. Override the target with `API_PORT` if needed.
+endpoint, creates the data it needs (plus create/update/delete flows), verifies
+anonymous access is rejected, and cleans its own fixtures up again. Override the
+target with `API_PORT` if needed.

@@ -88,7 +88,10 @@ export default function InvitationDetailPage() {
 
   const invitee = detail?.invitee;
   const inviter = detail?.inviter;
-  const isInvitee = Boolean(invitee && invitee.id === actorId);
+  const isInvitee =
+    Boolean(
+      detail?.canRespond && detail?.invitation.kind === "invite",
+    ) || Boolean(invitee && invitee.id === actorId);
   const isInviter = Boolean(inviter && inviter.id === actorId);
   const isPending = detail?.invitation.status === "pending";
 

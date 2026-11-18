@@ -13,7 +13,6 @@ import NodePopover from "../../components/ui/NodePopover";
 import Toast from "../../components/ui/Toast";
 import { useAdminDirectoryEntry } from "../../admin/AdminDataProvider";
 import { adminApi } from "../../admin/adminApi";
-import { isOnline } from "../../lib/presence";
 import type { Group } from "../../domain/types";
 
 interface CircleNodeData {
@@ -93,10 +92,11 @@ export default function AdminGroupCircleVisualization({
       const entry = findDirectoryEntry(id);
       const isOwner = id === group.ownerId;
       const contribution = contributions[id];
+      const rawStatus = contribution?.status;
       const contributionStatus: "paid" | "pending" | "overdue" =
-        contribution?.status === "pending" || contribution?.status === "overdue"
-          ? contribution.status
-          : "paid";
+        rawStatus === "paid" || rawStatus === "overdue"
+          ? rawStatus
+          : "pending";
 
       return {
         id,
@@ -106,7 +106,7 @@ export default function AdminGroupCircleVisualization({
         city: entry.city,
         role: isOwner ? "Owner" : "Member",
         isOwner,
-        online: isOwner || isOnline(id),
+        online: false,
         contributionStatus,
         amount: contribution?.amount ?? amount,
       };
@@ -150,7 +150,7 @@ export default function AdminGroupCircleVisualization({
   };
 
   const paidCount = allMembers.filter((m) => m.contributionStatus === "paid").length;
-  const onlineCount = allMembers.filter((m) => m.online).length;
+  const pendingCount = satellites.length - satellites.filter((m) => m.contributionStatus === "paid").length;
 
   return (
     <div className="flex flex-col gap-4">
@@ -173,10 +173,9 @@ export default function AdminGroupCircleVisualization({
               ...(isPaidGroup
                 ? [
                     { id: "paid", label: `Paid (${paidCount})` },
-                    { id: "pending", label: `Pending/Overdue (${satellites.length - paidCount + 1})` },
+                    { id: "pending", label: `Pending/Overdue (${pendingCount})` },
                   ]
                 : []),
-              { id: "online", label: `Online (${onlineCount})` },
             ] as const
           ).map((btn) => (
             <button
@@ -455,10 +454,6 @@ export default function AdminGroupCircleVisualization({
             </span>
           </>
         )}
-        <span className="flex items-center gap-1.5">
-          <span className="size-2 rounded-full bg-emerald-400 ring-2 ring-ink-900" />
-          Online Now
-        </span>
       </div>
 
       {feedback && <Toast message={feedback} onDismiss={() => setFeedback(null)} />}

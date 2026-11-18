@@ -65,9 +65,11 @@ export default function MandatoryCirclesPage() {
           accent="success"
         />
         <StatCard
-          label="Active circle"
-          value={state.activeCircleId ? "Set" : "None"}
-          hint="The circle currently open in the workspace"
+          label="Circle memberships"
+          value={circles
+            .reduce((sum, circle) => sum + circle.memberIds.length, 0)
+            .toLocaleString("en-GB")}
+          hint="Across all circles"
           accent="warning"
         />
       </div>
@@ -89,7 +91,7 @@ export default function MandatoryCirclesPage() {
                     <TipIcon text="Report only — the values come from the circle's configuration and cannot be edited here." />
                   </div>
                   <Badge variant={circle.id === state.activeCircleId ? "gold" : "muted"}>
-                    {circle.id === state.activeCircleId ? "Active" : circle.type}
+                    {circle.status ?? circle.type}
                   </Badge>
                 </div>
                 <p className="text-xs leading-relaxed text-slate-400">{circle.config.description}</p>

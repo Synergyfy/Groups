@@ -10,11 +10,18 @@ import SectionHeader from "../../components/ui/SectionHeader";
 import StatCard from "../../components/ui/StatCard";
 import Table, { type TableColumn } from "../../components/ui/Table";
 import Toast from "../../components/ui/Toast";
-import { useAppState } from "../../store/selectors";
 import { adminApi } from "../../admin/adminApi";
 import { useAdminData } from "../../admin/AdminDataProvider";
 
-export type AdminUserRole = "business" | "consumer" | "business-invitee" | "admin";
+export type AdminUserRole =
+  | "business"
+  | "consumer"
+  | "business-invitee"
+  | "admin"
+  | "agent"
+  | "consultant"
+  | "account-manager"
+  | "partner";
 export type AdminUserStatus = "Active" | "Pending" | "Suspended";
 
 interface UnifiedUser {
@@ -34,6 +41,10 @@ const ROLE_VARIANTS: Record<AdminUserRole, BadgeVariant> = {
   consumer: "info",
   "business-invitee": "default",
   admin: "warning",
+  agent: "info",
+  consultant: "info",
+  "account-manager": "info",
+  partner: "success",
 };
 
 const ROLE_LABELS: Record<AdminUserRole, string> = {
@@ -41,11 +52,14 @@ const ROLE_LABELS: Record<AdminUserRole, string> = {
   consumer: "Consumer",
   "business-invitee": "Invited Business",
   admin: "Administrator",
+  agent: "Agent",
+  consultant: "Consultant",
+  "account-manager": "Account Manager",
+  partner: "Partner",
 };
 
 export default function AdminUsersPage() {
-  const state = useAppState();
-  const { refresh } = useAdminData();
+  const { data, refresh } = useAdminData();
 
   const [activeTab, setActiveTab] = useState<"all" | "business" | "consumer" | "registrations">("all");
   const [search, setSearch] = useState("");
@@ -53,58 +67,23 @@ export default function AdminUsersPage() {
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [feedback, setFeedback] = useState<string | null>(null);
 
-  // Local overrides for status / verified toggles in this admin console
-  const [statusOverrides, setStatusOverrides] = useState<Record<string, AdminUserStatus>>({});
-  const [verifiedOverrides, setVerifiedOverrides] = useState<Record<string, boolean>>({});
-
-  // Merge platform accounts + businesses into a unified list
   const unifiedUsers = useMemo<UnifiedUser[]>(() => {
-    const list: UnifiedUser[] = [];
-
-    // 1. Business directory accounts
-    for (const b of state.businesses) {
-      list.push({
-        id: b.id,
-        name: b.name,
-        email: b.email,
-        phone: b.phone,
-        role: "business",
-        status: (b.status === "Closed" ? "Suspended" : b.status) as AdminUserStatus,
-        verified: b.verified,
-        registeredAt: b.joinedAt,
-        source: "business-directory",
-      });
-    }
-
-    // 2. Platform accounts (created via invitation onboarding or seeded)
-    for (const a of state.accounts) {
-      // Don't duplicate if already in businesses
-      if (!list.some((u) => u.email.toLowerCase() === a.email.toLowerCase())) {
-        list.push({
-          id: a.id,
-          name: a.name,
-          email: a.email,
-          phone: a.phone,
-          role: a.role as AdminUserRole,
-          status: "Active",
-          verified: true,
-          registeredAt: a.createdAt ? a.createdAt.slice(0, 10) : "—",
-          source: "invitation-onboarding",
-        });
-      }
-    }
-
-    return list;
-  }, [state.businesses, state.accounts]);
+    return (data?.users ?? []).map((user) => ({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      role: user.role as AdminUserRole,
+      status: user.status as AdminUserStatus,
+      verified: user.verified,
+      registeredAt: user.registeredAt ?? "—",
+      source: user.source as UnifiedUser["source"],
+    }));
+  }, [data?.users]);
 
   // Apply filters
   const filteredUsers = useMemo(() => {
     return unifiedUsers
-      .map((user) => ({
-        ...user,
-        status: statusOverrides[user.id] ?? user.status,
-        verified: verifiedOverrides[user.id] ?? user.verified,
-      }))
       .filter((user) => {
         // Tab filter
         if (activeTab === "business" && user.role !== "business") return false;
@@ -126,15 +105,13 @@ export default function AdminUsersPage() {
 
         return true;
       });
-  }, [unifiedUsers, activeTab, statusFilter, roleFilter, search, statusOverrides, verifiedOverrides]);
+  }, [unifiedUsers, activeTab, statusFilter, roleFilter, search]);
 
   const toggleStatus = async (user: UnifiedUser) => {
-    const current = statusOverrides[user.id] ?? user.status;
-    const next: AdminUserStatus = current === "Active" ? "Suspended" : "Active";
+    const next: AdminUserStatus = user.status === "Active" ? "Suspended" : "Active";
     try {
       await adminApi.updateUser(user.id, { status: next });
       await refresh();
-      setStatusOverrides((prev) => ({ ...prev, [user.id]: next }));
       setFeedback(`${user.name} status updated to ${next}`);
     } catch {
       setFeedback(`Could not update ${user.name}.`);
@@ -142,11 +119,9 @@ export default function AdminUsersPage() {
   };
 
   const toggleVerified = async (user: UnifiedUser) => {
-    const current = verifiedOverrides[user.id] ?? user.verified;
     try {
-      await adminApi.updateUser(user.id, { verified: !current });
+      await adminApi.updateUser(user.id, { verified: !user.verified });
       await refresh();
-      setVerifiedOverrides((prev) => ({ ...prev, [user.id]: !current }));
       setFeedback(`${user.name} verification toggled`);
     } catch {
       setFeedback(`Could not update verification for ${user.name}.`);
@@ -182,7 +157,7 @@ export default function AdminUsersPage() {
       key: "status",
       header: "Status",
       render: (u) => {
-        const s = statusOverrides[u.id] ?? u.status;
+        const s = u.status;
         return (
           <span
             className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
@@ -207,7 +182,7 @@ export default function AdminUsersPage() {
       key: "verified",
       header: "Verified",
       render: (u) => {
-        const v = verifiedOverrides[u.id] ?? u.verified;
+        const v = u.verified;
         return v ? (
           <span className="inline-flex items-center gap-1 text-[11px] text-emerald-300">
             <ShieldCheck className="size-3" /> Yes
@@ -230,7 +205,7 @@ export default function AdminUsersPage() {
       align: "right",
       render: (u) => {
         if (u.role === "admin") return <span className="text-[10px] text-slate-500">Protected</span>;
-        const s = statusOverrides[u.id] ?? u.status;
+        const s = u.status;
         return (
           <div className="flex items-center justify-end gap-1.5">
             <button

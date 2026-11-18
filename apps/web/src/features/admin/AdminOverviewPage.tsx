@@ -21,8 +21,7 @@ import TipIcon from "../../components/ui/TipIcon";
 import BarChart from "../../components/ui/charts/BarChart";
 import Donut from "../../components/ui/charts/Donut";
 import { SkeletonCard, SkeletonRows } from "../../components/ui/Skeleton";
-import { useAppState } from "../../store/selectors";
-import { memberCountOf } from "../groups/groupUtils";
+import { useAdminData } from "../../admin/AdminDataProvider";
 
 const COMPLETENESS_RULES = [
   {
@@ -73,69 +72,22 @@ const COMPLETENESS_RULES = [
 ];
 
 export default function AdminOverviewPage() {
-  const loading = false;
-  const state = useAppState();
+  const { data, loading } = useAdminData();
+  const metrics = data?.overview?.metrics;
 
-  const groups = state.groups;
-  const accounts = state.accounts;
-  const businesses = state.businesses;
-  const invitations = state.invitations;
+  const totalBusinessOwners = metrics?.businessOwners ?? 0;
+  const totalConsumers = metrics?.consumers ?? 0;
+  const totalGroups = metrics?.totalGroups ?? 0;
+  const totalInvitations = metrics?.invitations ?? 0;
+  const activeMemberships = metrics?.activeMemberships ?? 0;
+  const pendingRequests = metrics?.pendingRequests ?? 0;
 
-  // 1. Total business owners (distinct business owners in directory or accounts)
-  const totalBusinessOwners = Math.max(
-    businesses.length,
-    new Set(
-      groups
-        .map((g) => g.ownerId)
-        .filter((id): id is string => Boolean(id)),
-    ).size,
-  );
-
-  // 2. Total consumers (registered consumers + seeded consumers)
-  const totalConsumers = accounts.filter((acc) => acc.role === "consumer").length;
-
-  // 3. Total groups
-  const totalGroups = groups.length;
-
-  // 4. Total invitations
-  const totalInvitations = invitations.length;
-
-  // 5. Active memberships (total member seats across active groups)
-  const activeMemberships = groups
-    .filter((g) => g.status === "Active" || g.status === "Recruiting")
-    .reduce((sum, g) => sum + memberCountOf(g), 0);
-
-  // 6. Pending requests (group join requests + pending moderation + pending invitations)
-  const pendingReviewGroups = groups.filter((g) => g.status === "Pending Review").length;
-  const pendingInvites = invitations.filter((inv) => inv.status === "pending").length;
-  const pendingRequests = pendingReviewGroups + pendingInvites;
-
-  // Group type chart data
-  const byTypeMap = new Map<string, number>();
-  for (const g of groups) {
-    byTypeMap.set(g.type, (byTypeMap.get(g.type) ?? 0) + 1);
-  }
-  const byTypeBars = [...byTypeMap.entries()]
-    .map(([label, value]) => ({ label, value }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 5);
-
-  const statusMap = new Map<string, number>();
-  for (const g of groups) {
-    statusMap.set(g.status, (statusMap.get(g.status) ?? 0) + 1);
-  }
-  const statusSegments = [...statusMap.entries()].map(([label, value]) => ({
-    label,
-    value,
-    color:
-      label === "Active"
-        ? "#10b981"
-        : label === "Recruiting"
-          ? "#38bdf8"
-          : label === "Pending Review"
-            ? "#f59e0b"
-            : "#64748b",
-  }));
+  const byTypeBars = (data?.overview?.groupsByType ?? []).slice(0, 5);
+  const statusSegments = data?.overview?.groupsByStatus ?? [];
+  const completeness = data?.settingsReport?.completeness ?? [];
+  const verifiedCount = completeness.filter(
+    (rule) => rule.status === "Verified",
+  ).length;
 
   if (loading) {
     return (
@@ -281,11 +233,21 @@ export default function AdminOverviewPage() {
                 </p>
               </div>
             </div>
-            <Badge variant="success">5 / 5 Rules Operational</Badge>
+            <Badge variant={verifiedCount === completeness.length && completeness.length > 0 ? "success" : "warning"}>
+              {verifiedCount} / {completeness.length || COMPLETENESS_RULES.length} Rules Verified
+            </Badge>
           </div>
 
           <div className="grid gap-3 lg:grid-cols-2">
-            {COMPLETENESS_RULES.map((rule, idx) => (
+            {completeness.length === 0 ? (
+              <p className="text-xs text-slate-400">
+                Completeness checks are not available yet.
+              </p>
+            ) : null}
+            {completeness.map((rule, idx) => {
+              const meta = COMPLETENESS_RULES.find((entry) => entry.id === rule.id);
+              const isVerified = rule.status === "Verified";
+              return (
               <div
                 key={rule.id}
                 className="flex flex-col justify-between rounded-xl border border-white/10 bg-ink-950/50 p-3.5 transition-colors hover:border-gold-500/30"
@@ -296,26 +258,31 @@ export default function AdminOverviewPage() {
                       <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 text-[10px] font-bold text-emerald-300">
                         {idx + 1}
                       </span>
-                      <p className="text-xs font-semibold text-white">{rule.title}</p>
+                      <p className="text-xs font-semibold text-white">{meta?.title ?? rule.title}</p>
                     </div>
-                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-400">
-                      <CheckCircle2 className="size-3.5" /> Verified
+                    <span className={`inline-flex items-center gap-1 text-[11px] font-medium ${isVerified ? "text-emerald-400" : "text-amber-400"}`}>
+                      <CheckCircle2 className="size-3.5" /> {rule.status}
                     </span>
                   </div>
-                  <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
-                    {rule.description}
-                  </p>
+                  {meta ? (
+                    <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
+                      {meta.description}
+                    </p>
+                  ) : null}
                 </div>
                 <div className="mt-3 flex items-center justify-end">
-                  <Link
-                    to={rule.link}
-                    className="inline-flex items-center gap-1 text-[11px] font-medium text-gold-400 transition-colors hover:text-gold-300"
-                  >
-                    {rule.linkText} <ArrowRight className="size-3" />
-                  </Link>
+                  {meta ? (
+                    <Link
+                      to={meta.link}
+                      className="inline-flex items-center gap-1 text-[11px] font-medium text-gold-400 transition-colors hover:text-gold-300"
+                    >
+                      {meta.linkText} <ArrowRight className="size-3" />
+                    </Link>
+                  ) : null}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </CardBody>
       </Card>

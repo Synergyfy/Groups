@@ -377,6 +377,15 @@ export function joinPlanFor(
       reason: "owner",
     };
   }
+  if (group.status === "Closed" || group.status === "Suspended") {
+    return {
+      action: "none",
+      label: "Group closed",
+      hint: `This group is ${group.status.toLowerCase()} and is not accepting members.`,
+      disabled: true,
+      reason: "group-closed",
+    };
+  }
   if (typeConfig && (!typeConfig.enabled || !typeConfig.allowJoin)) {
     return {
       action: "none",

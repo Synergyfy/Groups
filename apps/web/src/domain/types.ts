@@ -18,6 +18,7 @@ export interface NetworkList {
   status: ListStatus;
   source: NetworkListSource;
   contactIds: string[];
+  contactCount?: number;
 }
 
 export type ContactConfirmation = "pending" | "confirmed";
@@ -500,11 +501,13 @@ export type AuditActionKind =
   | "group-created"
   | "group-updated"
   | "group-approved"
+  | "group-rejected"
   | "group-suspended"
   | "group-closed"
   | "group-deleted"
   | "member-added"
   | "member-removed"
+  | "contribution-updated"
   | "invitation-approved"
   | "invitation-declined"
   | "invitation-cancelled"

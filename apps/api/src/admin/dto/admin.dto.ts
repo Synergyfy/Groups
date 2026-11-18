@@ -159,6 +159,10 @@ export class UpdateGroupRelationshipsDto {
   @IsOptional() @IsString() localArea?: string;
 }
 
+export class UpdateMemberContributionDto {
+  @IsIn(["paid", "pending", "overdue", "n/a"]) status!: string;
+}
+
 // ---------------------------------------------------------------------------
 // Users
 // ---------------------------------------------------------------------------
@@ -167,9 +171,20 @@ export class UpdateAdminUserDto {
   @IsOptional() @IsString() @MaxLength(120) name?: string;
   @IsOptional() @IsEmail() email?: string;
   @IsOptional() @IsString() phone?: string;
-  @IsOptional() @IsString() status?: string;
+  @IsOptional()
+  @IsIn(["Active", "Pending", "Suspended"])
+  status?: string;
   @IsOptional() @IsBoolean() verified?: boolean;
-  @IsOptional() @IsString() role?: string;
+  @IsOptional()
+  @IsIn([
+    "consumer",
+    "business-invitee",
+    "agent",
+    "consultant",
+    "account-manager",
+    "partner",
+  ])
+  role?: string;
 }
 
 // ---------------------------------------------------------------------------

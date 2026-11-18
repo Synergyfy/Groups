@@ -6,7 +6,8 @@ import SectionHeader from "../../components/ui/SectionHeader";
 import TipIcon from "../../components/ui/TipIcon";
 import Toast from "../../components/ui/Toast";
 import { useAppState } from "../../store/selectors";
-import { useAppStore } from "../../store/context";
+import { adminApi } from "../../admin/adminApi";
+import { useAdminData } from "../../admin/AdminDataProvider";
 import type { PartnerPermissions } from "../../domain/types";
 
 const PERMISSION_GROUPS: { title: string; description: string; keys: (keyof PartnerPermissions)[] }[] = [
@@ -58,14 +59,22 @@ const PERMISSION_GROUP_TIPS: Record<string, string> = {
 
 export default function AdminPermissionsPage() {
   const state = useAppState();
-  const { dispatch } = useAppStore();
+  const { refresh } = useAdminData();
   const [feedback, setFeedback] = useState<string | null>(null);
 
   const defaults = state.adminConfig.partnerDefaults;
 
-  const updateDefault = (key: keyof PartnerPermissions, value: boolean | number) => {
-    dispatch({ type: "admin/update-config", patch: { partnerDefaults: { [key]: value } } });
-    setFeedback("Default permissions updated — applies to new partners");
+  const updateDefault = async (
+    key: keyof PartnerPermissions,
+    value: boolean | number,
+  ) => {
+    try {
+      await adminApi.patchConfig({ partnerDefaults: { [key]: value } });
+      await refresh();
+      setFeedback("Default permissions updated — applies to new partners");
+    } catch {
+      setFeedback("Could not update the default permissions.");
+    }
   };
 
   return (
@@ -73,7 +82,7 @@ export default function AdminPermissionsPage() {
       <SectionHeader
         title="Partner Permissions Matrix"
         subtitle="Default permissions applied to new partners. Existing partners keep their own overrides — edit them on the Partners page."
-        tip="Click any row to flip it — each change saves immediately."
+        tip="Toggle a permission or edit a numeric limit — each change saves immediately."
       />
 
       <div className="rounded-xl border border-gold-500/30 bg-gold-500/5 p-4">
@@ -106,10 +115,11 @@ export default function AdminPermissionsPage() {
                 const isBoolean = typeof value === "boolean";
                 return (
                   <div key={key}>
-                    <button
-                      type="button"
-                      onClick={() => updateDefault(key, isBoolean ? !value : value)}
-                      className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg bg-white/5 px-3 py-2.5 text-left transition-colors hover:bg-white/10"
+                    <div
+                      onClick={() => {
+                        if (isBoolean) void updateDefault(key, !value);
+                      }}
+                      className={`flex w-full items-center justify-between gap-2 rounded-lg bg-white/5 px-3 py-2.5 text-left transition-colors hover:bg-white/10 ${isBoolean ? "cursor-pointer" : ""}`}
                     >
                       <span className="text-xs text-slate-300">{key.replace(/([A-Z])/g, " $1").replace(/^./, (s) => s.toUpperCase())}</span>
                       {isBoolean ? (
@@ -125,9 +135,21 @@ export default function AdminPermissionsPage() {
                           />
                         </span>
                       ) : (
-                        <span className="rounded bg-white/10 px-2 py-0.5 text-xs font-semibold text-gold-300">{String(value)}</span>
+                        <input
+                          type="number"
+                          min={0}
+                          value={value}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={(event) =>
+                            void updateDefault(
+                              key,
+                              Math.max(0, Number(event.target.value) || 0),
+                            )
+                          }
+                          className="w-20 rounded border border-white/10 bg-ink-950 px-2 py-0.5 text-right text-xs font-semibold text-gold-300 focus:border-gold-500/40 focus:outline-none"
+                        />
                       )}
-                    </button>
+                    </div>
                     <FieldHint>{PERMISSION_TIPS[key]}</FieldHint>
                   </div>
                 );

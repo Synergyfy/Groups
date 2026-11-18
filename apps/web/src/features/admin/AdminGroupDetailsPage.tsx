@@ -22,7 +22,8 @@ import TipIcon from "../../components/ui/TipIcon";
 import Toast from "../../components/ui/Toast";
 import type { Group } from "../../domain/types";
 import { useAppState, useGroup } from "../../store/selectors";
-import { useAdminGroupActivity } from "../../admin/AdminDataProvider";
+import { useAdminGroupActivity, useAdminData } from "../../admin/AdminDataProvider";
+import { adminApi } from "../../admin/adminApi";
 import { useAppStore } from "../../store/context";
 import { SkeletonCard, SkeletonRows } from "../../components/ui/Skeleton";
 import { memberCountOf } from "../groups/groupUtils";
@@ -345,16 +346,25 @@ function InfoRow({ label, value, capitalize }: { label: string; value: string; c
 }
 
 function PendingReviewBanner({ groupId, groupName }: { groupId: string; groupName: string }) {
-  const { dispatch } = useAppStore();
+  const { refresh } = useAdminData();
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  const approve = () => {
-    dispatch({ type: "admin/group-approve", groupId, actor: ADMIN_ACTOR });
-    setFeedback(`${groupName} approved and activated`);
-  };
-  const reject = () => {
-    dispatch({ type: "admin/group-close", groupId, actor: ADMIN_ACTOR });
-    setFeedback(`${groupName} rejected`);
+  const decide = async (approve: boolean) => {
+    setBusy(true);
+    try {
+      if (approve) {
+        await adminApi.approvePending(groupId);
+      } else {
+        await adminApi.rejectPending(groupId);
+      }
+      await refresh();
+      setFeedback(`${groupName} ${approve ? "approved and activated" : "rejected"}`);
+    } catch {
+      setFeedback(`Could not ${approve ? "approve" : "reject"} ${groupName}.`);
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -367,15 +377,17 @@ function PendingReviewBanner({ groupId, groupName }: { groupId: string; groupNam
         <div className="mt-3 flex gap-2">
           <button
             type="button"
-            onClick={approve}
-            className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg bg-emerald-500 px-4 text-xs font-semibold text-white transition-colors hover:bg-emerald-400"
+            disabled={busy}
+            onClick={() => void decide(true)}
+            className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg bg-emerald-500 px-4 text-xs font-semibold text-white transition-colors hover:bg-emerald-400 disabled:opacity-50"
           >
             <CheckCircle2 className="size-3.5" /> Approve
           </button>
           <button
             type="button"
-            onClick={reject}
-            className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg bg-danger-500 px-4 text-xs font-semibold text-white transition-colors hover:bg-danger-400"
+            disabled={busy}
+            onClick={() => void decide(false)}
+            className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg bg-danger-500 px-4 text-xs font-semibold text-white transition-colors hover:bg-danger-400 disabled:opacity-50"
           >
             <XCircle className="size-3.5" /> Reject
           </button>

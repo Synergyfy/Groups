@@ -14,7 +14,7 @@ import { Prisma } from "../../generated/prisma/client.js";
 import {
   mapBusiness,
   mapGroup,
-  mapInvitation,
+  mapInvitationForBusiness,
 } from "../../admin/admin.mappers.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { BusinessContextService } from "../business-context.service.js";
@@ -52,7 +52,7 @@ export class BusinessInvitationsService {
       }),
     ]);
 
-    const items = await this.decorateMany(rows);
+    const items = await this.decorateMany(rows, ctx);
     const [counts] = await Promise.all([
       this.counts(ctx, ownedGroupIds, statusWhere),
     ]);
@@ -80,7 +80,11 @@ export class BusinessInvitationsService {
     ]);
 
     return {
-      invitation: mapInvitation(target.invitation),
+      invitation: mapInvitationForBusiness(
+        target.invitation,
+        ctx.business.id,
+        ctx.business.email,
+      ),
       group: target.group ? mapGroup(target.group) : null,
       circle: target.circle ? mapBusinessCircle(target.circle) : null,
       inviter: inviter ? mapBusiness(inviter) : null,
@@ -168,7 +172,11 @@ export class BusinessInvitationsService {
     });
 
     return {
-      invitation: mapInvitation(updated),
+      invitation: mapInvitationForBusiness(
+        updated,
+        ctx.business.id,
+        ctx.business.email,
+      ),
       group: target.group ? mapGroup(target.group) : null,
       circle: target.circle ? mapBusinessCircle(target.circle) : null,
     };
@@ -216,7 +224,14 @@ export class BusinessInvitationsService {
       },
     });
 
-    return { invitation: mapInvitation(updated), ok: true };
+    return {
+      invitation: mapInvitationForBusiness(
+        updated,
+        ctx.business.id,
+        ctx.business.email,
+      ),
+      ok: true,
+    };
   }
 
   async resend(ctx: BusinessContext, invitationId: string) {
@@ -250,7 +265,14 @@ export class BusinessInvitationsService {
       });
     }
 
-    return { invitation: mapInvitation(updated), resent: true };
+    return {
+      invitation: mapInvitationForBusiness(
+        updated,
+        ctx.business.id,
+        ctx.business.email,
+      ),
+      resent: true,
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -410,7 +432,7 @@ export class BusinessInvitationsService {
     return { invitation, group, circle };
   }
 
-  private async decorateMany(rows: Invitation[]) {
+  private async decorateMany(rows: Invitation[], ctx: BusinessContext) {
     const groupIds = [
       ...new Set(rows.map((row) => row.groupId).filter((id): id is string => Boolean(id))),
     ];
@@ -445,7 +467,7 @@ export class BusinessInvitationsService {
       const group = row.groupId ? groupById.get(row.groupId) : undefined;
       const circle = row.circleId ? circleById.get(row.circleId) : undefined;
       return {
-        ...mapInvitation(row),
+        ...mapInvitationForBusiness(row, ctx.business.id, ctx.business.email),
         groupName: group?.name,
         groupType: group?.type,
         circleName: circle ? circleName(circle) : undefined,

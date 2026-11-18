@@ -17,8 +17,20 @@ import {
   CreateGroupAdminDto,
   UpdateGroupAdminDto,
   UpdateGroupRelationshipsDto,
+  UpdateMemberContributionDto,
 } from "../dto/admin.dto.js";
 import { AdminGroupsService } from "./groups.service.js";
+
+@Controller("admin/circles")
+@AdminOnly()
+export class AdminCirclesController {
+  constructor(private readonly groups: AdminGroupsService) {}
+
+  @Get()
+  list() {
+    return this.groups.listAllCircles();
+  }
+}
 
 @Controller("admin/groups")
 @AdminOnly()
@@ -121,6 +133,16 @@ export class AdminGroupsController {
     @CurrentUser() user: SessionUser,
   ) {
     return this.groups.removeMember(id, memberId, user);
+  }
+
+  @Patch(":id/members/:memberId/contribution")
+  updateContribution(
+    @Param("id") id: string,
+    @Param("memberId") memberId: string,
+    @Body() dto: UpdateMemberContributionDto,
+    @CurrentUser() user: SessionUser,
+  ) {
+    return this.groups.updateMemberContribution(id, memberId, dto.status, user);
   }
 
   @Get(":id/activity")

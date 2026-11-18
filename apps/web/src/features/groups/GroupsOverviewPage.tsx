@@ -244,7 +244,11 @@ export default function GroupsOverviewPage() {
               icon={<Mail className="size-5" />}
               title="Invitations"
               description="Answer invitations and join requests from other businesses."
-              badge={stats.pendingInvites > 0 ? `${stats.pendingInvites} pending` : undefined}
+              badge={
+                stats.pendingInvites + stats.openRequests > 0
+                  ? `${stats.pendingInvites + stats.openRequests} pending`
+                  : undefined
+              }
               badgeVariant="warning"
             />
           </div>

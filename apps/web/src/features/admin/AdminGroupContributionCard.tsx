@@ -5,7 +5,6 @@ import {
   Clock,
   Coins,
   PieChart,
-  Send,
   TrendingUp,
   Users,
 } from "lucide-react";
@@ -38,6 +37,7 @@ function mapContributionRows(
     fullName: string;
     status: string;
     amount: number;
+    paidAt?: string | null;
   }>,
   group: Group,
   findDirectoryEntry: (id: string) => {
@@ -50,9 +50,9 @@ function mapContributionRows(
   return rows.map((row) => {
     const entry = findDirectoryEntry(row.memberId);
     const status =
-      row.status === "pending" || row.status === "overdue"
+      row.status === "paid" || row.status === "overdue"
         ? row.status
-        : "paid";
+        : "pending";
     return {
       memberId: row.memberId,
       name: row.fullName || entry.name,
@@ -62,7 +62,7 @@ function mapContributionRows(
       role: row.memberId === group.ownerId ? "Owner" : "Member",
       amount: row.amount,
       status,
-      paidDate: status === "paid" ? new Date().toISOString().slice(0, 10) : undefined,
+      paidDate: row.paidAt ? row.paidAt.slice(0, 10) : undefined,
       dueDate: "—",
       paymentMethod: status === "paid" ? "Recorded" : "Awaiting payment",
     };
@@ -77,6 +77,7 @@ export default function AdminGroupContributionCard({
   showHeader?: boolean;
 }) {
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [savingMemberId, setSavingMemberId] = useState<string | null>(null);
   const findDirectoryEntry = useAdminDirectoryEntry();
   const [ledger, setLedger] = useState<MemberContributionRecord[]>([]);
 
@@ -109,19 +110,28 @@ export default function AdminGroupContributionCard({
   const pendingPot = targetPot - collectedPot;
   const progressPct = targetPot > 0 ? Math.round((collectedPot / targetPot) * 100) : 100;
 
-  const handleRemind = (member: MemberContributionRecord) => {
-    setFeedback(`Payment reminder dispatched to ${member.name} (${member.contactName}).`);
-  };
-
-  const handleMarkPaid = (memberId: string) => {
-    setLedger((prev) =>
-      prev.map((item) =>
-        item.memberId === memberId
-          ? { ...item, status: "paid", paidDate: new Date().toISOString().slice(0, 10) }
-          : item
-      )
-    );
-    setFeedback("Contribution marked as paid.");
+  const handleMarkPaid = async (memberId: string) => {
+    setSavingMemberId(memberId);
+    try {
+      await adminApi.updateGroupMemberContribution(group.id, memberId, "paid");
+      setLedger((prev) =>
+        prev.map((item) =>
+          item.memberId === memberId
+            ? {
+                ...item,
+                status: "paid",
+                paidDate: new Date().toISOString().slice(0, 10),
+                paymentMethod: "Recorded",
+              }
+            : item,
+        ),
+      );
+      setFeedback("Contribution marked as paid.");
+    } catch {
+      setFeedback("Could not update the contribution. Please try again.");
+    } finally {
+      setSavingMemberId(null);
+    }
   };
 
   const columns: TableColumn<MemberContributionRecord>[] = [
@@ -172,7 +182,7 @@ export default function AdminGroupContributionCard({
       render: (m) => (
         <span className="text-[11px] text-slate-400">
           {m.status === "paid"
-            ? `Paid on ${m.paidDate}`
+            ? `Paid on ${m.paidDate ?? "—"}`
             : `Due: ${m.dueDate}`}
         </span>
       ),
@@ -191,22 +201,15 @@ export default function AdminGroupContributionCard({
       render: (m) => (
         <div className="flex items-center justify-end gap-1.5">
           {m.status !== "paid" ? (
-            <>
-              <button
-                type="button"
-                onClick={() => handleRemind(m)}
-                className="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[10px] font-semibold text-amber-300 hover:bg-amber-500/20"
-              >
-                <Send className="size-2.5" /> Remind
-              </button>
-              <button
-                type="button"
-                onClick={() => handleMarkPaid(m.memberId)}
-                className="inline-flex items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[10px] font-semibold text-emerald-300 hover:bg-emerald-500/20"
-              >
-                <CheckCircle2 className="size-2.5" /> Mark Paid
-              </button>
-            </>
+            <button
+              type="button"
+              disabled={savingMemberId === m.memberId}
+              onClick={() => void handleMarkPaid(m.memberId)}
+              className="inline-flex items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[10px] font-semibold text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50"
+            >
+              <CheckCircle2 className="size-2.5" />{" "}
+              {savingMemberId === m.memberId ? "Saving…" : "Mark Paid"}
+            </button>
           ) : (
             <span className="text-[10px] text-emerald-400 flex items-center gap-1">
               <CheckCircle2 className="size-3" /> Settled
@@ -353,17 +356,17 @@ export default function AdminGroupContributionCard({
 
             <div className="rounded-lg border border-white/5 bg-ink-950/60 p-2.5">
               <span className="text-[11px] text-slate-400 block mb-1">Disbursement / Payout Schedule</span>
-              <p className="font-semibold text-white">Rotational Peer Payout (Pardna)</p>
+              <p className="font-semibold text-white">Not configured</p>
               <p className="text-[10px] text-slate-500 mt-0.5">
-                Next payout scheduled: <strong className="text-slate-300">1st November 2026</strong> to owner & rotating members.
+                No payout schedule is configured for this group in the platform.
               </p>
             </div>
 
             <div className="rounded-lg border border-white/5 bg-ink-950/60 p-2.5">
               <span className="text-[11px] text-slate-400 block mb-1">Collection Channel</span>
-              <p className="font-semibold text-white">Direct Platform Gateway</p>
+              <p className="font-semibold text-white">Admin-recorded</p>
               <p className="text-[10px] text-slate-500 mt-0.5">
-                Automated Direct Debit & Card payment processing with admin audit logging.
+                Contribution status is recorded by an administrator. No payment gateway is connected.
               </p>
             </div>
           </div>

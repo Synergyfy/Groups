@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import type { SessionUser } from "../../auth/auth.types.js";
 import { Prisma } from "../../generated/prisma/client.js";
@@ -32,36 +32,39 @@ export class AdminOperationsService {
   // -------------------------------------------------------------------------
 
   async listInvitations(query: AdminListQueryDto) {
+    const where: Prisma.InvitationWhereInput = {};
+    if (query.status && query.status !== "all") where.status = query.status;
+    if (query.search?.trim()) {
+      const search = query.search.trim();
+      where.OR = [
+        { inviteeName: { contains: search, mode: "insensitive" } },
+        { inviteeEmail: { contains: search, mode: "insensitive" } },
+        { invitedByName: { contains: search, mode: "insensitive" } },
+      ];
+    }
+
     const invitations = await this.prisma.invitation.findMany({
+      where,
       orderBy: { createdAt: "desc" },
     });
-    const search = query.search?.trim().toLowerCase();
-
-    return invitations
-      .filter((invitation) => {
-        if (query.status && query.status !== "all" && invitation.status !== query.status) {
-          return false;
-        }
-        if (search) {
-          const haystack =
-            `${invitation.inviteeName} ${invitation.inviteeEmail ?? ""} ${invitation.invitedByName}`.toLowerCase();
-          if (!haystack.includes(search)) return false;
-        }
-        return true;
-      })
-      .map(mapInvitation);
+    return invitations.map(mapInvitation);
   }
 
   async getInvitationCounts() {
-    const invitations = await this.prisma.invitation.findMany({
-      select: { status: true },
+    const grouped = await this.prisma.invitation.groupBy({
+      by: ["status"],
+      _count: { _all: true },
     });
+    const counts = new Map(
+      grouped.map((row) => [row.status, row._count._all]),
+    );
+    const total = grouped.reduce((sum, row) => sum + row._count._all, 0);
     return {
-      total: invitations.length,
-      pending: invitations.filter((item) => item.status === "pending").length,
-      accepted: invitations.filter((item) => item.status === "accepted").length,
-      declined: invitations.filter((item) => item.status === "declined").length,
-      cancelled: invitations.filter((item) => item.status === "cancelled").length,
+      total,
+      pending: counts.get("pending") ?? 0,
+      accepted: counts.get("accepted") ?? 0,
+      declined: counts.get("declined") ?? 0,
+      cancelled: counts.get("cancelled") ?? 0,
     };
   }
 
@@ -74,13 +77,88 @@ export class AdminOperationsService {
       where: { id },
     });
     if (!invitation) throw new NotFoundException(`Invitation ${id} not found`);
+    if (invitation.status !== "pending") {
+      throw new ConflictException(
+        `Invitation ${id} is already ${invitation.status}`,
+      );
+    }
 
-    const updated = await this.prisma.invitation.update({
-      where: { id },
-      data: {
-        status: accept ? "accepted" : "declined",
-        respondedAt: new Date(),
-      },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.invitation.update({
+        where: { id },
+        data: {
+          status: accept ? "accepted" : "declined",
+          respondedAt: new Date(),
+        },
+      });
+
+      if (accept && invitation.groupId) {
+        const memberId =
+          invitation.inviteeId ??
+          invitation.claimedByAccountId ??
+          invitation.inviteeEmail ??
+          invitation.id;
+        const existing = await tx.groupMember.findUnique({
+          where: {
+            groupId_memberId: {
+              groupId: invitation.groupId,
+              memberId,
+            },
+          },
+        });
+        if (!existing) {
+          const group = await tx.group.findUnique({
+            where: { id: invitation.groupId },
+            select: { pricing: true, ownerId: true },
+          });
+          await tx.groupMember.create({
+            data: {
+              groupId: invitation.groupId,
+              memberId,
+              fullName: invitation.inviteeName,
+              businessName: invitation.inviteeName,
+              status: "active",
+              role: "peripheral",
+              tier: "Free",
+              contributionStatus:
+                group?.pricing === "paid" ? "pending" : "n/a",
+            },
+          });
+          await tx.group.update({
+            where: { id: invitation.groupId },
+            data: { memberCount: { increment: 1 } },
+          });
+          await tx.groupActivity.create({
+            data: {
+              groupId: invitation.groupId,
+              actorName: actor?.name ?? "Administrator",
+              kind: "join",
+              message: `${invitation.inviteeName} joined via invitation`,
+            },
+          });
+        }
+        // A member only needs one accepted invitation into the same group.
+        const siblingWhere: Prisma.InvitationWhereInput = {
+          groupId: invitation.groupId,
+          status: "pending",
+          id: { not: id },
+        };
+        if (invitation.inviteeId) {
+          siblingWhere.inviteeId = invitation.inviteeId;
+        } else if (invitation.claimedByAccountId) {
+          siblingWhere.claimedByAccountId = invitation.claimedByAccountId;
+        } else if (invitation.inviteeEmail) {
+          siblingWhere.inviteeEmail = invitation.inviteeEmail;
+        } else {
+          return result;
+        }
+        await tx.invitation.updateMany({
+          where: siblingWhere,
+          data: { status: "cancelled", respondedAt: new Date() },
+        });
+      }
+
+      return result;
     });
 
     await this.audit.record(actor, {
@@ -99,6 +177,11 @@ export class AdminOperationsService {
       where: { id },
     });
     if (!invitation) throw new NotFoundException(`Invitation ${id} not found`);
+    if (invitation.status !== "pending") {
+      throw new ConflictException(
+        `Invitation ${id} is already ${invitation.status}`,
+      );
+    }
 
     const updated = await this.prisma.invitation.update({
       where: { id },
@@ -123,7 +206,7 @@ export class AdminOperationsService {
   async listPendingReview() {
     const groups = await this.prisma.group.findMany({
       where: { status: "Pending Review" },
-      include: { members: true },
+      include: { members: { select: { memberId: true } } },
       orderBy: { createdAt: "desc" },
     });
     return groups.map(mapGroup);
@@ -144,26 +227,33 @@ export class AdminOperationsService {
   ) {
     const group = await this.prisma.group.findUnique({ where: { id } });
     if (!group) throw new NotFoundException(`Group ${id} not found`);
+    if (group.status !== "Pending Review") {
+      throw new ConflictException(
+        `Group ${id} is not waiting for review (status: ${group.status})`,
+      );
+    }
 
-    const updated = await this.prisma.group.update({
-      where: { id },
-      data: { status: approve ? "Active" : "Closed" },
-      include: { members: true },
-    });
-
-    await this.prisma.groupActivity.create({
-      data: {
-        groupId: id,
-        actorName: actor?.name ?? "Administrator",
-        kind: "settings",
-        message: approve
-          ? `${group.name} approved`
-          : `${group.name} rejected`,
-      },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.group.update({
+        where: { id },
+        data: { status: approve ? "Active" : "Closed" },
+        include: { members: { select: { memberId: true } } },
+      });
+      await tx.groupActivity.create({
+        data: {
+          groupId: id,
+          actorName: actor?.name ?? "Administrator",
+          kind: "settings",
+          message: approve
+            ? `${group.name} approved`
+            : `${group.name} rejected`,
+        },
+      });
+      return result;
     });
 
     await this.audit.record(actor, {
-      action: approve ? "group-approved" : "group-closed",
+      action: approve ? "group-approved" : "group-rejected",
       targetType: "group",
       targetId: id,
       targetName: group.name,
@@ -178,52 +268,48 @@ export class AdminOperationsService {
   // -------------------------------------------------------------------------
 
   async listAuditLog(query: AdminListQueryDto) {
+    const where: Prisma.AuditLogWhereInput = {};
+    if (query.action && query.action !== "all") where.action = query.action;
+    if (query.targetType && query.targetType !== "all") {
+      where.targetType = query.targetType;
+    }
+    if (query.search?.trim()) {
+      const search = query.search.trim();
+      where.OR = [
+        { actorName: { contains: search, mode: "insensitive" } },
+        { targetName: { contains: search, mode: "insensitive" } },
+        { detail: { contains: search, mode: "insensitive" } },
+      ];
+    }
+
     const entries = await this.prisma.auditLog.findMany({
+      where,
       orderBy: { at: "desc" },
       take: 500,
     });
-    const search = query.search?.trim().toLowerCase();
-
-    return entries
-      .filter((entry) => {
-        if (query.action && query.action !== "all" && entry.action !== query.action) {
-          return false;
-        }
-        if (
-          query.targetType &&
-          query.targetType !== "all" &&
-          entry.targetType !== query.targetType
-        ) {
-          return false;
-        }
-        if (search) {
-          const haystack =
-            `${entry.actorName} ${entry.targetName} ${entry.detail}`.toLowerCase();
-          if (!haystack.includes(search)) return false;
-        }
-        return true;
-      })
-      .map(mapAuditLog);
+    return entries.map(mapAuditLog);
   }
 
   // -------------------------------------------------------------------------
   // Content
   // -------------------------------------------------------------------------
 
+  private contentReady: Promise<void> | null = null;
+
   private async ensureContent() {
-    for (const section of DEFAULT_CONTENT_SECTIONS) {
-      await this.prisma.contentSection.upsert({
-        where: { id: section.id },
-        update: {},
-        create: {
+    this.contentReady ??= this.prisma.contentSection
+      .createMany({
+        data: DEFAULT_CONTENT_SECTIONS.map((section) => ({
           id: section.id,
           label: section.label,
           draft: {},
           published: {},
           status: "draft",
-        },
-      });
-    }
+        })),
+        skipDuplicates: true,
+      })
+      .then(() => undefined);
+    await this.contentReady;
   }
 
   async listContent() {
@@ -268,6 +354,12 @@ export class AdminOperationsService {
 
   async publishContentSection(id: string, actor?: SessionUser) {
     const existing = await this.getContentSection(id);
+    const draft = existing.draft as Record<string, unknown>;
+    if (!draft || Object.keys(draft).length === 0) {
+      throw new ConflictException(
+        `Content section ${id} has no draft changes to publish`,
+      );
+    }
     const section = await this.prisma.contentSection.update({
       where: { id },
       data: {
@@ -289,24 +381,32 @@ export class AdminOperationsService {
   async publishAllContent(actor?: SessionUser) {
     await this.ensureContent();
     const sections = await this.prisma.contentSection.findMany();
-    for (const section of sections) {
-      await this.prisma.contentSection.update({
-        where: { id: section.id },
-        data: {
-          published: section.draft as Prisma.InputJsonValue,
-          status: "published",
-          publishedAt: new Date(),
-        },
-      });
+    const publishable = sections.filter((section) => {
+      const draft = section.draft as Record<string, unknown> | null;
+      return draft && Object.keys(draft).length > 0;
+    });
+    if (publishable.length > 0) {
+      await this.prisma.$transaction(
+        publishable.map((section) =>
+          this.prisma.contentSection.update({
+            where: { id: section.id },
+            data: {
+              published: section.draft as Prisma.InputJsonValue,
+              status: "published",
+              publishedAt: new Date(),
+            },
+          }),
+        ),
+      );
     }
     await this.audit.record(actor, {
       action: "content-published",
       targetType: "content",
       targetId: "all",
       targetName: "Public website",
-      detail: "All content sections published",
+      detail: `Published ${publishable.length} content section(s) with draft changes`,
     });
-    return { ok: true, published: sections.length };
+    return { ok: true, published: publishable.length };
   }
 
   async getContentStatus() {
@@ -403,17 +503,27 @@ export class AdminOperationsService {
   // -------------------------------------------------------------------------
 
   async getGroupReport() {
-    const groups = await this.prisma.group.findMany({
-      include: { members: true },
-    });
-    const businesses = await this.prisma.business.findMany({
-      select: { id: true, city: true },
-    });
+    const [groups, businesses] = await Promise.all([
+      this.prisma.group.findMany({
+        select: {
+          id: true,
+          type: true,
+          city: true,
+          source: true,
+          memberCount: true,
+          createdAt: true,
+        },
+      }),
+      this.prisma.business.findMany({
+        select: { id: true, city: true },
+      }),
+    ]);
 
     const byType = new Map<string, number>();
     const byCity = new Map<string, number>();
     const growth = new Map<string, number>();
     const origin = new Map<string, number>();
+    const typeOrigins = new Map<string, { total: number; automatic: number }>();
 
     for (const group of groups) {
       byType.set(group.type, (byType.get(group.type) ?? 0) + 1);
@@ -422,6 +532,11 @@ export class AdminOperationsService {
       origin.set(group.source, (origin.get(group.source) ?? 0) + 1);
       const month = group.createdAt.toISOString().slice(0, 7);
       growth.set(month, (growth.get(month) ?? 0) + 1);
+
+      const typeEntry = typeOrigins.get(group.type) ?? { total: 0, automatic: 0 };
+      typeEntry.total += 1;
+      if (group.source === "automatic") typeEntry.automatic += 1;
+      typeOrigins.set(group.type, typeEntry);
     }
 
     const cities = new Set(
@@ -434,10 +549,7 @@ export class AdminOperationsService {
     return {
       stats: {
         groups: groups.length,
-        members: groups.reduce(
-          (sum, group) => sum + group.members.length,
-          0,
-        ),
+        members: groups.reduce((sum, group) => sum + group.memberCount, 0),
         businesses: businesses.length,
         citiesCovered: cities.size,
       },
@@ -457,15 +569,13 @@ export class AdminOperationsService {
         label,
         value,
       })),
-      typeTotals: [...byType.entries()].map(([type, total]) => ({
+      typeTotals: [...typeOrigins.entries()].map(([type, entry]) => ({
         type,
-        total,
-        origin: (() => {
-          const automatic = groups.filter(
-            (group) => group.type === type && group.source === "automatic",
-          ).length;
-          return { automatic, userCreated: total - automatic };
-        })(),
+        total: entry.total,
+        origin: {
+          automatic: entry.automatic,
+          userCreated: entry.total - entry.automatic,
+        },
       })),
     };
   }
@@ -546,26 +656,53 @@ export class AdminOperationsService {
   }
 
   async getSettingsReport() {
-    const [groups, businesses, accounts, invitations, plans] = await Promise.all([
-      this.prisma.group.findMany({ include: { members: true } }),
-      this.prisma.business.count(),
-      this.prisma.platformAccount.count(),
-      this.prisma.invitation.findMany({ select: { status: true } }),
-      this.prisma.membershipPlan.findMany(),
-    ]);
+    const [groups, businessCount, accountCount, invitationGroups, plans, config, rewardCount, campaignCount] =
+      await Promise.all([
+        this.prisma.group.findMany({ select: { createdAt: true } }),
+        this.prisma.business.count(),
+        this.prisma.platformAccount.count(),
+        this.prisma.invitation.groupBy({
+          by: ["status"],
+          _count: { _all: true },
+        }),
+        this.prisma.membershipPlan.aggregate({
+          _sum: { subscriberCount: true },
+        }),
+        this.prisma.adminConfig.findUnique({ where: { id: "default" } }),
+        this.prisma.rewardDeal.count(),
+        this.prisma.campaign.count(),
+      ]);
 
-    const accepted = invitations.filter(
-      (invitation) => invitation.status === "accepted",
-    ).length;
-    const totalInvitations = invitations.length;
+    const invitationCounts = new Map(
+      invitationGroups.map((row) => [row.status, row._count._all]),
+    );
+    const accepted = invitationCounts.get("accepted") ?? 0;
+    const pending = invitationCounts.get("pending") ?? 0;
+    const declined = invitationCounts.get("declined") ?? 0;
+    const totalInvitations =
+      accepted +
+      pending +
+      declined +
+      (invitationCounts.get("cancelled") ?? 0);
+
+    const accessRules = (config?.accessRules ?? {}) as Record<string, unknown>;
+    const groupTypes = Array.isArray(config?.groupTypes)
+      ? (config.groupTypes as unknown[])
+      : [];
+    const mandatoryGroups = Array.isArray(config?.mandatoryGroups)
+      ? (config.mandatoryGroups as unknown[])
+      : [];
+    const partnerDefaults = (config?.partnerDefaults ?? {}) as Record<
+      string,
+      unknown
+    >;
+    const verified = (condition: boolean) =>
+      condition ? "Verified" : "Needs attention";
 
     return {
       stats: {
-        registeredEntities: businesses + accounts,
-        totalMemberships: plans.reduce(
-          (sum, plan) => sum + plan.subscriberCount,
-          0,
-        ),
+        registeredEntities: businessCount + accountCount,
+        totalMemberships: plans._sum.subscriberCount ?? 0,
         invitationsSent: totalInvitations,
         invitationConversion:
           totalInvitations === 0
@@ -584,47 +721,44 @@ export class AdminOperationsService {
           .slice(-6);
       })(),
       invitationBreakdown: [
-        {
-          label: "Accepted",
-          value: accepted,
-          color: "#10b981",
-        },
-        {
-          label: "Pending",
-          value: invitations.filter((item) => item.status === "pending").length,
-          color: "#f59e0b",
-        },
-        {
-          label: "Declined",
-          value: invitations.filter((item) => item.status === "declined").length,
-          color: "#ef4444",
-        },
+        { label: "Accepted", value: accepted, color: "#10b981" },
+        { label: "Pending", value: pending, color: "#f59e0b" },
+        { label: "Declined", value: declined, color: "#ef4444" },
       ],
       completeness: [
         {
           id: "rule-1",
           title: "Invitation-first onboarding without prior account",
-          status: "Verified",
+          status: verified(
+            accessRules.joiningPolicy === "invitation-first" &&
+              totalInvitations > 0,
+          ),
         },
         {
           id: "rule-2",
           title: "Business owner and consumer role & permission separation",
-          status: "Verified",
+          status: verified(
+            Object.keys(partnerDefaults).length > 0 &&
+              businessCount + accountCount > 0,
+          ),
         },
         {
           id: "rule-3",
           title: "Mandatory business groups & full group type management",
-          status: "Verified",
+          status: verified(groupTypes.length > 0 && mandatoryGroups.length > 0),
         },
         {
           id: "rule-4",
           title: "Membership entitlements and temporary-access rules",
-          status: "Verified",
+          status: verified(
+            Boolean(accessRules.temporaryAccess) &&
+              Boolean(accessRules.quotas),
+          ),
         },
         {
           id: "rule-5",
           title: "Admin-controlled rewards, deals and campaigns",
-          status: "Verified",
+          status: verified(rewardCount > 0 && campaignCount > 0),
         },
       ],
     };

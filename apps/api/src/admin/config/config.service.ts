@@ -1,6 +1,7 @@
-import { Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable } from "@nestjs/common";
 import type { SessionUser } from "../../auth/auth.types.js";
 import { Prisma } from "../../generated/prisma/client.js";
+import type { AdminConfig } from "../../generated/prisma/client.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { AdminAuditService } from "../../admin/admin-audit.service.js";
 import {
@@ -16,7 +17,6 @@ import {
   DEFAULT_STAGE_LABELS,
   FREE_PARTNER_PERMISSIONS,
 } from "../../admin/admin-defaults.js";
-import { mapAuditLog } from "../../admin/admin.mappers.js";
 
 type Json = Record<string, unknown>;
 
@@ -30,19 +30,21 @@ const asArray = (value: unknown): unknown[] =>
 
 @Injectable()
 export class AdminConfigService {
+  private cached: {
+    row: AdminConfig;
+    expiresAt: number;
+  } | null = null;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AdminAuditService,
   ) {}
 
-  async ensureConfig() {
-    const existing = await this.prisma.adminConfig.findUnique({
+  private async loadConfigRow() {
+    return this.prisma.adminConfig.upsert({
       where: { id: "default" },
-    });
-    if (existing) return existing;
-
-    return this.prisma.adminConfig.create({
-      data: {
+      update: {},
+      create: {
         id: "default",
         automaticGrouping: DEFAULT_AUTOMATIC_GROUPING,
         groupTypes: DEFAULT_GROUP_TYPES,
@@ -59,12 +61,17 @@ export class AdminConfigService {
     });
   }
 
+  async ensureConfig() {
+    if (this.cached && this.cached.expiresAt > Date.now()) {
+      return this.cached.row;
+    }
+    const row = await this.loadConfigRow();
+    this.cached = { row, expiresAt: Date.now() + 30_000 };
+    return row;
+  }
+
   async getConfig() {
     const config = await this.ensureConfig();
-    const audit = await this.prisma.auditLog.findMany({
-      orderBy: { at: "desc" },
-      take: 50,
-    });
 
     return {
       id: config.id,
@@ -79,7 +86,7 @@ export class AdminConfigService {
       partnerDefaults: asObject(config.partnerDefaults),
       accessRules: asObject(config.accessRules),
       platformSettings: asObject(config.platformSettings),
-      auditLog: audit.map(mapAuditLog),
+      auditLog: [],
     };
   }
 
@@ -127,7 +134,13 @@ export class AdminConfigService {
       data.groupTypes = asArray(body.groupTypes) as Prisma.InputJsonValue;
     }
     if (body.stageLabels !== undefined) {
-      data.stageLabels = (body.stageLabels as string[]) ?? [];
+      if (
+        !Array.isArray(body.stageLabels) ||
+        !body.stageLabels.every((value) => typeof value === "string")
+      ) {
+        throw new BadRequestException("stageLabels must be an array of strings");
+      }
+      data.stageLabels = body.stageLabels;
     }
     if (body.circleTypes !== undefined) {
       data.circleTypes = asArray(body.circleTypes) as Prisma.InputJsonValue;
@@ -143,7 +156,12 @@ export class AdminConfigService {
       ) as Prisma.InputJsonValue;
     }
 
+    if (Object.keys(data).length === 0) {
+      throw new BadRequestException("No supported configuration fields supplied");
+    }
+
     await this.prisma.adminConfig.update({ where: { id: config.id }, data });
+    this.cached = null;
     await this.audit.record(actor, {
       action: "config-updated",
       targetType: "config",

@@ -157,6 +157,7 @@ export interface AdminGroupContribution {
     fullName: string;
     status: string;
     amount: number;
+    paidAt?: string | null;
   }>;
 }
 
@@ -233,6 +234,16 @@ export const adminApi = {
     apiRequest<{ ok: boolean }>(`/admin/groups/${id}/members/${memberId}`, {
       method: "DELETE",
     }),
+  updateGroupMemberContribution: (
+    id: string,
+    memberId: string,
+    status: "paid" | "pending" | "overdue" | "n/a",
+  ) =>
+    apiRequest<unknown>(
+      `/admin/groups/${id}/members/${encodeURIComponent(memberId)}/contribution`,
+      { method: "PATCH", body: JSON.stringify({ status }) },
+    ),
+  circles: () => apiRequest<GroupCircle[]>("/admin/circles"),
   groupActivity: (id: string) =>
     apiRequest<GroupActivity[]>(`/admin/groups/${id}/activity`),
   groupRelationships: (id: string) =>
