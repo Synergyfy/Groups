@@ -4,7 +4,7 @@ import { AdminAuditService } from "./admin-audit.service.js";
 import { AdminRoleGuard } from "./admin-role.guard.js";
 import { AdminCatalogService } from "./catalog/catalog.service.js";
 import {
-  AdminMembershipsController,
+  AdminPlansController,
   AdminRewardsDealsController,
 } from "./catalog/catalog.controller.js";
 import { AdminConfigService } from "./config/config.service.js";
@@ -60,7 +60,7 @@ import { AdminUsersController } from "./users/users.controller.js";
     AdminPermissionsController,
     AdminAccessRulesController,
     AdminSettingsController,
-    AdminMembershipsController,
+    AdminPlansController,
     AdminRewardsDealsController,
     AdminInvitationsController,
     AdminPendingReviewController,

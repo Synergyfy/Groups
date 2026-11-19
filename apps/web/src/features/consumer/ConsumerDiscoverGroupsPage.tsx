@@ -20,13 +20,17 @@ import {
   type EligibilityResult,
 } from "../groups/groupEligibility";
 import { readParticipantSession, writeAuthSession } from "../../app/authSession";
+import { ApiError, errorMessage } from "../../app/api";
+import PaymentDialog, {
+  type PaymentTarget,
+} from "../payments/PaymentDialog";
 
 export default function ConsumerDiscoverGroupsPage() {
   useEffect(() => {
     document.title = "CHS Groups | Discover Groups";
   }, []);
 
-  const { explore, groups, join } = useConsumerData();
+  const { explore, groups, join, refresh } = useConsumerData();
 
   // Location state (persisted to participant session)
   const initialSession = readParticipantSession();
@@ -44,6 +48,9 @@ export default function ConsumerDiscoverGroupsPage() {
   const [selectedFilter, setSelectedFilter] = useState<"all" | "local" | "events" | "national">("all");
   const [justJoinedGroupId, setJustJoinedGroupId] = useState<string | null>(null);
   const [requestedGroupId, setRequestedGroupId] = useState<string | null>(null);
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [paymentTarget, setPaymentTarget] = useState<PaymentTarget | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
 
   const handleSaveLocation = (e: React.FormEvent) => {
     e.preventDefault();
@@ -116,14 +123,59 @@ export default function ConsumerDiscoverGroupsPage() {
     });
   }, [evaluatedGroups, searchQuery, selectedFilter, city]);
 
-  const handleJoinGroup = (result: EligibilityResult) => {
-    void join(result.group.id);
-    setJustJoinedGroupId(result.group.id);
+  const handleJoinGroup = async (result: EligibilityResult) => {
+    setFeedback(null);
+    try {
+      await join(result.group.id);
+      setJustJoinedGroupId(result.group.id);
+    } catch (cause) {
+      handleJoinError(cause, result);
+    }
   };
 
-  const handleRequestAccess = (result: EligibilityResult) => {
-    void join(result.group.id);
-    setRequestedGroupId(result.group.id);
+  const handleRequestAccess = async (result: EligibilityResult) => {
+    setFeedback(null);
+    try {
+      await join(result.group.id);
+      setRequestedGroupId(result.group.id);
+    } catch (cause) {
+      handleJoinError(cause, result);
+    }
+  };
+
+  const handleJoinError = (cause: unknown, result: EligibilityResult) => {
+    if (cause instanceof ApiError) {
+      const body = cause.body as
+        | {
+            code?: string;
+            amount?: number;
+            amountMinor?: string;
+            frequency?: string;
+            groupId?: string;
+          }
+        | null;
+      if (body?.code === "PAYMENT_REQUIRED") {
+        setPaymentTarget({
+          kind: "CONTRIBUTION",
+          groupId: body.groupId ?? result.group.id,
+          groupName: result.group.name,
+          amountPounds:
+            body.amountMinor !== undefined
+              ? Number(body.amountMinor) / 100
+              : Number(body.amount ?? result.group.contribution ?? 0),
+          frequency:
+            body.frequency ?? result.group.contributionFrequency ?? "once",
+          onPaid: async () => {
+            await refresh();
+            setJustJoinedGroupId(result.group.id);
+            setFeedback(`Contribution paid — you joined ${result.group.name}`);
+          },
+        });
+        setPaymentOpen(true);
+        return;
+      }
+    }
+    setFeedback(errorMessage(cause));
   };
 
   return (
@@ -412,6 +464,18 @@ export default function ConsumerDiscoverGroupsPage() {
           })}
         </div>
       )}
+
+      {feedback && (
+        <div className="fixed bottom-6 left-1/2 z-40 -translate-x-1/2 rounded-full border border-danger-500/30 bg-ink-800 px-4 py-2 text-xs text-danger-400 shadow-2xl">
+          {feedback}
+        </div>
+      )}
+
+      <PaymentDialog
+        open={paymentOpen}
+        onClose={() => setPaymentOpen(false)}
+        target={paymentTarget}
+      />
     </div>
   );
 }

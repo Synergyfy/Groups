@@ -236,7 +236,7 @@ export default function GroupsOverviewPage() {
                   ? "Optional — start a group only when you need one."
                   : `Locked for your membership — ${rightsLabel} only. Other memberships join the admin platform group.`
               }
-              badge={canCreate ? undefined : "Membership locked"}
+              badge={canCreate ? undefined : "Plan locked"}
               badgeVariant="warning"
             />
             <NavRow

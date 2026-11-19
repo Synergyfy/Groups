@@ -25,7 +25,7 @@ import {
   useBusinessProfile,
   useCanCreateGroups,
   useCreationRightsLabel,
-  useMembership,
+  usePlan,
   useOwnedGroups,
   useAppState,
   usePlatformGroup,
@@ -71,7 +71,7 @@ export default function CreateGroupWizardPage() {
   const { adminConfig } = useAppState();
   const canCreate = useCanCreateGroups();
   const rightsLabel = useCreationRightsLabel();
-  const membership = useMembership();
+  const plan = usePlan();
   const platformGroup = usePlatformGroup();
   const creatableTypes = creatableGroupTypes(adminConfig);
   const blockedTypes = nonCreatableGroupTypes(adminConfig);
@@ -87,10 +87,10 @@ export default function CreateGroupWizardPage() {
 
       {!canCreate ? (
         <EmptyState
-          title="Your membership cannot create groups"
-          description={`${rightsLabel} may create groups. You are on ${membership.planName}, so administrators place your membership into ${
+          title="Your plan cannot create groups"
+          description={`${rightsLabel} may create groups. You are on ${plan.planName} ${plan.variant}, so administrators place your plan into ${
             platformGroup?.name ?? "the admin-set platform group"
-          } instead — head start groups are still provided in your dashboard. Upgrade your membership to open this wizard.`}
+          } instead — head start groups are still provided in your dashboard. Upgrade your plan to open this wizard.`}
           icon={<Lock className="size-6" />}
           action={
             <div className="flex flex-wrap items-center justify-center gap-2">

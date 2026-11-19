@@ -64,8 +64,8 @@ const ADMIN_NAV: NavSection[] = [
         end: true,
       },
       {
-        to: "/admin/memberships",
-        label: "Memberships",
+        to: "/admin/plans",
+        label: "Plans",
         icon: <Crown className="size-4" />,
         end: true,
       },
@@ -196,7 +196,7 @@ const ADMIN_BOTTOM_NAV: BottomNavItem[] = [
   { to: "/admin/users", label: "Users", icon: <Users className="size-5" /> },
   { to: "/admin/groups", label: "Groups", icon: <FolderKanban className="size-5" /> },
   { to: "/admin/invitations", label: "Invites", icon: <Mail className="size-5" /> },
-  { to: "/admin/memberships", label: "Members", icon: <Crown className="size-5" /> },
+  { to: "/admin/plans", label: "Plans", icon: <Crown className="size-5" /> },
 ];
 
 export default function AdminLayout() {

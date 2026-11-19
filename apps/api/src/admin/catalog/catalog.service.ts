@@ -1,23 +1,27 @@
 import {
-  ConflictException,
+  BadRequestException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import type { SessionUser } from "../../auth/auth.types.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
+import { toMinorPence } from "../../common/money.js";
 import { AdminAuditService } from "../../admin/admin-audit.service.js";
 import {
-  mapMembershipPlan,
+  mapPlan,
   mapRewardDeal,
 } from "../../admin/admin.mappers.js";
 import type {
   AdminListQueryDto,
-  CreateMembershipPlanDto,
+  CreatePlanDto,
   CreateRewardDealDto,
-  UpdateMembershipPlanDto,
+  PlanVariantConfigDto,
+  UpdatePlanDto,
   UpdateRewardDealDto,
 } from "../../admin/dto/admin.dto.js";
+
+type PlanVariant = "Standard" | "Pro" | "Pro+";
 
 @Injectable()
 export class AdminCatalogService {
@@ -27,12 +31,12 @@ export class AdminCatalogService {
   ) {}
 
   // -------------------------------------------------------------------------
-  // Membership plans
+  // Plans
   // -------------------------------------------------------------------------
 
   async listPlans(query: AdminListQueryDto) {
-    const plans = await this.prisma.membershipPlan.findMany({
-      orderBy: [{ tier: "asc" }, { variant: "asc" }],
+    const plans = await this.prisma.plan.findMany({
+      orderBy: [{ name: "asc" }, { variant: "asc" }],
     });
     const search = query.search?.trim().toLowerCase();
 
@@ -41,21 +45,26 @@ export class AdminCatalogService {
         if (query.status && query.status !== "all" && plan.status !== query.status) {
           return false;
         }
-        if (query.role && query.role !== "all" && plan.tier !== query.role) {
+        if (query.role && query.role !== "all" && plan.name !== query.role) {
           return false;
         }
-        if (search && !plan.name.toLowerCase().includes(search)) return false;
+        if (
+          search &&
+          !`${plan.name} ${plan.variant}`.toLowerCase().includes(search)
+        ) {
+          return false;
+        }
         return true;
       })
-      .map(mapMembershipPlan);
+      .map(mapPlan);
   }
 
   async getPlanStats() {
     const [totalPlans, activePlans, aggregate] = await Promise.all([
-      this.prisma.membershipPlan.count(),
-      this.prisma.membershipPlan.count({ where: { status: "Active" } }),
-      this.prisma.membershipPlan.findMany({
-        select: { priceMonthly: true, subscriberCount: true },
+      this.prisma.plan.count(),
+      this.prisma.plan.count({ where: { status: "Active" } }),
+      this.prisma.plan.findMany({
+        select: { priceMinor: true, subscriberCount: true },
       }),
     ]);
     return {
@@ -66,64 +75,87 @@ export class AdminCatalogService {
         0,
       ),
       monthlyRecurringRunRate: aggregate.reduce(
-        (sum, plan) => sum + plan.priceMonthly * plan.subscriberCount,
+        (sum, plan) => sum + plan.priceMinor * plan.subscriberCount,
         0,
-      ),
+      ) / 100,
     };
   }
 
-  async createPlan(dto: CreateMembershipPlanDto, actor?: SessionUser) {
-    const existing = await this.prisma.membershipPlan.findUnique({
-      where: { tier_variant: { tier: dto.tier, variant: dto.variant } },
-    });
-    if (existing) {
-      throw new ConflictException(
-        `A ${dto.tier} ${dto.variant} plan already exists`,
+  async createPlans(dto: CreatePlanDto, actor?: SessionUser) {
+    const configs: Array<[PlanVariant, PlanVariantConfigDto]> = [
+      ["Standard", dto.standard],
+      ["Pro", dto.pro],
+      ["Pro+", dto.proPlus],
+    ];
+
+    if (configs.some(([, config]) => !config)) {
+      throw new BadRequestException(
+        "A plan must be configured with Standard, Pro and Pro+ variants together.",
       );
     }
 
-    const plan = await this.prisma.membershipPlan.create({
-      data: {
-        id: randomUUID(),
-        tier: dto.tier,
-        variant: dto.variant,
-        name: dto.name,
-        priceMonthly: dto.priceMonthly ?? 0,
-        billingFrequency: dto.billingFrequency ?? "Monthly",
-        status: dto.status ?? "Active",
-        groupQuota: dto.groupQuota ?? 0,
-        circleQuota: dto.circleQuota ?? 0,
-        revenueSharePercent: dto.revenueSharePercent ?? 0,
-        features: dto.features ?? [],
-        subscriberCount: dto.subscriberCount ?? 0,
-      },
+    const name = dto.name.trim();
+    if (!name) {
+      throw new BadRequestException("A plan name is required.");
+    }
+
+    const existing = await this.prisma.plan.findMany({
+      where: { name },
+      select: { id: true, variant: true },
     });
+
+    const plans = await this.prisma.$transaction(
+      configs.map(([variant, config]) => {
+        const data = {
+          name,
+          priceMinor: toMinorPence(config.priceMonthly),
+          status: config.status ?? "Active",
+          groupQuota: config.groupQuota ?? 0,
+          circleQuota: config.circleQuota ?? 0,
+          revenueSharePercent: config.revenueSharePercent ?? 0,
+          features: config.features ?? [],
+        };
+        return this.prisma.plan.upsert({
+          where: { name_variant: { name, variant } },
+          create: {
+            id: randomUUID(),
+            variant,
+            ...data,
+          },
+          update: data,
+        });
+      }),
+    );
 
     await this.audit.record(actor, {
       action: "config-updated",
       targetType: "config",
-      targetId: plan.id,
-      targetName: plan.name,
-      detail: "Membership plan created",
+      targetId: plans[0]?.id ?? name,
+      targetName: `${name} plans`,
+      detail:
+        existing.length > 0
+          ? "Plan variants configured (Standard, Pro, Pro+)"
+          : "Plan variants created (Standard, Pro, Pro+)",
     });
 
-    return mapMembershipPlan(plan);
+    return plans.map(mapPlan);
   }
 
   async updatePlan(
     id: string,
-    dto: UpdateMembershipPlanDto,
+    dto: UpdatePlanDto,
     actor?: SessionUser,
   ) {
     await this.ensurePlan(id);
-    const plan = await this.prisma.membershipPlan.update({
+    const plan = await this.prisma.plan.update({
       where: { id },
       data: {
-        tier: dto.tier,
         variant: dto.variant,
         name: dto.name,
-        priceMonthly: dto.priceMonthly,
-        billingFrequency: dto.billingFrequency,
+        priceMinor:
+          dto.priceMonthly !== undefined
+            ? toMinorPence(dto.priceMonthly)
+            : undefined,
         status: dto.status,
         groupQuota: dto.groupQuota,
         circleQuota: dto.circleQuota,
@@ -138,28 +170,28 @@ export class AdminCatalogService {
       targetType: "config",
       targetId: plan.id,
       targetName: plan.name,
-      detail: "Membership plan updated",
+      detail: "Plan updated",
     });
 
-    return mapMembershipPlan(plan);
+    return mapPlan(plan);
   }
 
   async removePlan(id: string, actor?: SessionUser) {
     const plan = await this.ensurePlan(id);
-    await this.prisma.membershipPlan.delete({ where: { id } });
+    await this.prisma.plan.delete({ where: { id } });
     await this.audit.record(actor, {
       action: "config-updated",
       targetType: "config",
       targetId: id,
       targetName: plan.name,
-      detail: "Membership plan deleted",
+      detail: "Plan deleted",
     });
     return { ok: true };
   }
 
   private async ensurePlan(id: string) {
-    const plan = await this.prisma.membershipPlan.findUnique({ where: { id } });
-    if (!plan) throw new NotFoundException(`Membership plan ${id} not found`);
+    const plan = await this.prisma.plan.findUnique({ where: { id } });
+    if (!plan) throw new NotFoundException(`Plan ${id} not found`);
     return plan;
   }
 

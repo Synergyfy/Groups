@@ -27,12 +27,13 @@ import MyLocationPage from "../features/platform/MyLocationPage";
 import CampaignsPage from "../features/platform/CampaignsPage";
 import RewardsPage from "../features/platform/RewardsPage";
 import BusinessSettingsPage from "../features/settings/BusinessSettingsPage";
+import PlanPage from "../features/plan/PlanPage";
 import JourneyPage from "../journey/JourneyPage";
 import AdminOverviewPage from "../features/admin/AdminOverviewPage";
 import AdminUsersPage from "../features/admin/AdminUsersPage";
 import AdminGroupsHubPage from "../features/admin/AdminGroupsHubPage";
 import AdminAccessRulesPage from "../features/admin/AdminAccessRulesPage";
-import AdminMembershipsPage from "../features/admin/AdminMembershipsPage";
+import AdminPlansPage from "../features/admin/AdminPlansPage";
 import AdminRewardsDealsPage from "../features/admin/AdminRewardsDealsPage";
 import AdminSettingsReportsPage from "../features/admin/AdminSettingsReportsPage";
 import AdminGroupsDashboardPage from "../features/admin/AdminGroupsDashboardPage";
@@ -85,6 +86,10 @@ import DedicatedConsumerDiscoverGroupsPage from "../features/consumer/ConsumerDi
 import ConsumerInvitationsPage from "../features/consumer/ConsumerInvitationsPage";
 import ConsumerAccountPage from "../features/consumer/ConsumerAccountPage";
 import { ConsumerDataProvider } from "../consumer/ConsumerDataProvider";
+import {
+  PaymentCancelPage,
+  PaymentReturnPage,
+} from "../features/payments/PaymentReturnPage";
 
 const businessRoutes = [
   { index: true, element: <Navigate to="/business/groups" replace /> },
@@ -189,6 +194,10 @@ const businessRoutes = [
     element: <BusinessSettingsPage />,
   },
   {
+    path: "plan",
+    element: <PlanPage />,
+  },
+  {
     path: "journey",
     element: <JourneyPage />,
   },
@@ -213,8 +222,8 @@ const adminRoutes = [
     element: <AdminAccessRulesPage />,
   },
   {
-    path: "memberships",
-    element: <AdminMembershipsPage />,
+    path: "plans",
+    element: <AdminPlansPage />,
   },
   {
     path: "rewards-deals",
@@ -342,6 +351,14 @@ export const routes: RouteObject[] = [
   {
     path: "/auth/callback",
     element: <AuthCallbackPage />,
+  },
+  {
+    path: "/payment/return",
+    element: <PaymentReturnPage />,
+  },
+  {
+    path: "/payment/cancel",
+    element: <PaymentCancelPage />,
   },
   {
     path: "/admin/login",

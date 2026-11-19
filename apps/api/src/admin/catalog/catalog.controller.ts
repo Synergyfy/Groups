@@ -13,19 +13,19 @@ import { CurrentUser } from "../../auth/current-user.decorator.js";
 import { AdminOnly } from "../admin-only.decorator.js";
 import {
   AdminListQueryDto,
-  CreateMembershipPlanDto,
+  CreatePlanDto,
   CreateRewardDealDto,
-  UpdateMembershipPlanDto,
+  UpdatePlanDto,
   UpdateRewardDealDto,
 } from "../dto/admin.dto.js";
 import { AdminCatalogService } from "./catalog.service.js";
 
-@Controller("admin/memberships")
+@Controller("admin/plans")
 @AdminOnly()
-export class AdminMembershipsController {
+export class AdminPlansController {
   constructor(private readonly catalog: AdminCatalogService) {}
 
-  @Get("plans")
+  @Get()
   list(@Query() query: AdminListQueryDto) {
     return this.catalog.listPlans(query);
   }
@@ -35,24 +35,21 @@ export class AdminMembershipsController {
     return this.catalog.getPlanStats();
   }
 
-  @Post("plans")
-  create(
-    @Body() dto: CreateMembershipPlanDto,
-    @CurrentUser() user: SessionUser,
-  ) {
-    return this.catalog.createPlan(dto, user);
+  @Post()
+  create(@Body() dto: CreatePlanDto, @CurrentUser() user: SessionUser) {
+    return this.catalog.createPlans(dto, user);
   }
 
-  @Patch("plans/:id")
+  @Patch(":id")
   update(
     @Param("id") id: string,
-    @Body() dto: UpdateMembershipPlanDto,
+    @Body() dto: UpdatePlanDto,
     @CurrentUser() user: SessionUser,
   ) {
     return this.catalog.updatePlan(id, dto, user);
   }
 
-  @Delete("plans/:id")
+  @Delete(":id")
   remove(@Param("id") id: string, @CurrentUser() user: SessionUser) {
     return this.catalog.removePlan(id, user);
   }

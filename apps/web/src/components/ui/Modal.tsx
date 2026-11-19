@@ -7,9 +7,10 @@ interface ModalProps {
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
+  className?: string;
 }
 
-export default function Modal({ open, title, onClose, children, footer }: ModalProps) {
+export default function Modal({ open, title, onClose, children, footer, className = "max-w-lg" }: ModalProps) {
   if (!open) return null;
 
   return (
@@ -24,7 +25,7 @@ export default function Modal({ open, title, onClose, children, footer }: ModalP
         onClick={onClose}
         aria-hidden="true"
       />
-      <div className="relative z-10 flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-white/10 bg-ink-900 shadow-2xl shadow-black/50">
+      <div className={`relative z-10 flex max-h-[85vh] w-full ${className} flex-col overflow-hidden rounded-2xl border border-white/10 bg-ink-900 shadow-2xl shadow-black/50`}>
         <div className="flex items-center justify-between gap-3 border-b border-white/10 px-5 py-4">
           <h2 className="text-sm font-semibold text-white">{title}</h2>
           <button

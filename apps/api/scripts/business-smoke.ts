@@ -1,7 +1,7 @@
 /**
  * Business dashboard API smoke test.
  *
- * Creates throw-away BUSINESS/CUSTOMER users, a temporary membership plan and
+ * Creates throw-away BUSINESS/CUSTOMER users, a temporary plan and
  * all related records, then exercises every /api/business endpoint and asserts
  * the business rules. Everything is removed again in the `finally` block.
  *
@@ -148,7 +148,7 @@ const fixture = {
 const TABLES = [
   "user",
   "business",
-  "businessMembership",
+  "businessPlan",
   "group",
   "groupMember",
   "groupActivity",
@@ -158,7 +158,7 @@ const TABLES = [
   "circle",
   "circleActivity",
   "auditLog",
-  "membershipPlan",
+  "plan",
 ] as const;
 
 async function snapshot() {
@@ -169,14 +169,12 @@ async function snapshot() {
 }
 
 async function setup() {
-  const plan = await prisma.membershipPlan.create({
+  const plan = await prisma.plan.create({
     data: {
       id: `smoke-plan-${run}`,
-      tier: "Platinum",
       variant: "Pro+",
-      name: `Smoke Platinum Pro+ ${run}`,
+      name: `Smoke Platinum ${run}`,
       priceMonthly: 399,
-      billingFrequency: "Monthly",
       status: "Active",
       groupQuota: 10,
       circleQuota: 2,
@@ -330,14 +328,14 @@ async function cleanup() {
           },
         }),
     ],
-    ["business memberships", () => prisma.businessMembership.deleteMany({ where: { businessId: { in: biz } } })],
+    ["business plans", () => prisma.businessPlan.deleteMany({ where: { businessId: { in: biz } } })],
     ["businesses", () => prisma.business.deleteMany({ where: { id: { in: biz } } })],
     ["users", () => prisma.user.deleteMany({ where: { id: { in: users } } })],
     [
-      "membership plan",
+      "plan",
       () =>
         fixture.planId
-          ? prisma.membershipPlan.deleteMany({ where: { id: fixture.planId } })
+          ? prisma.plan.deleteMany({ where: { id: fixture.planId } })
           : Promise.resolve(),
     ],
   ];
@@ -377,19 +375,19 @@ async function main() {
     expectStatus(result, 200, "overview as BUSINESS A");
     const firstOverview = result.data;
     eq(firstOverview.business.email, f.emailA, "overview resolves the signed-in business");
-    eq(firstOverview.membership.status, "Pending", "new membership starts pending");
-    eq(firstOverview.membership.paid, false, "new membership is unpaid");
-    eq(firstOverview.membership.agreementAccepted, false, "new membership has no agreement");
+    eq(firstOverview.plan.status, "Pending", "new plan starts pending");
+    eq(firstOverview.plan.paid, false, "new plan is unpaid");
+    eq(firstOverview.plan.agreementAccepted, false, "new plan has no agreement");
     eq(firstOverview.canCreateGroups, false, "group creation is gated before activation");
     ok(
       Array.isArray(firstOverview.stats ? [firstOverview.stats] : null),
       "overview returns stats",
     );
-    ok(firstOverview.membership && firstOverview.access, "overview returns membership + access");
+    ok(firstOverview.plan && firstOverview.access, "overview returns plan + access");
     pass("anonymous 401, customer 403, business 200");
 
     // -----------------------------------------------------------------------
-    section("Group creation gating and membership activation");
+    section("Group creation gating and plan activation");
     // -----------------------------------------------------------------------
 
     const groupBody = (name: string, type: string, extra: Record<string, unknown> = {}) => ({
@@ -412,27 +410,26 @@ async function main() {
     expectStatus(result, 403, "create group before activation");
     eq(result.data.code, "GROUP_CREATION_NOT_ALLOWED", "creation is blocked with the rules code");
 
-    result = await api("POST", "/business/membership/activate", {
+    result = await api("POST", "/business/plan/activate", {
       token: f.tokenA,
       body: { agreementAccepted: false },
     });
-    expectStatus(result, 400, "activate membership without agreement");
+    expectStatus(result, 400, "activate plan without agreement");
 
-    result = await api("POST", "/business/membership/activate", {
+    result = await api("POST", "/business/plan/activate", {
       token: f.tokenA,
       body: {
         planId: fixture.planId,
         agreementAccepted: true,
         accessDays: 90,
-        tier: "Platinum",
         variant: "Pro+",
       },
     });
-    expectStatus(result, 201, "activate membership with agreement");
+    expectStatus(result, 201, "activate plan with agreement");
     eq(result.data.canCreateGroups, true, "activation unlocks group creation");
-    eq(result.data.membership.paid, true, "activated membership is paid");
-    eq(result.data.membership.agreementAccepted, true, "activation records the agreement");
-    eq(result.data.membership.planId, fixture.planId, "activation attaches the plan");
+    eq(result.data.plan.paid, true, "activated plan is paid");
+    eq(result.data.plan.agreementAccepted, true, "activation records the agreement");
+    eq(result.data.plan.planId, fixture.planId, "activation attaches the plan");
 
     result = await api("POST", "/business/groups", {
       token: f.tokenA,
@@ -1021,7 +1018,7 @@ async function main() {
     expectStatus(result, 200, "business profile");
     eq(result.data.business.id, f.businessA, "profile scopes to the business");
     eq(result.data.user.email, f.emailA, "profile includes the user");
-    eq(result.data.membership.paid, true, "profile includes membership");
+    eq(result.data.plan.paid, true, "profile includes plan");
 
     result = await api("PATCH", "/business/profile", {
       token: f.tokenA,
@@ -1036,12 +1033,12 @@ async function main() {
     eq(result.data.business.name, `Smoke A Renamed ${run}`, "business name updated");
     eq(result.data.business.localArea, "Jewellery Quarter", "local area updated");
 
-    result = await api("GET", "/business/membership", { token: f.tokenA });
-    expectStatus(result, 200, "membership page");
-    eq(result.data.membership.planId, fixture.planId, "membership exposes the plan");
-    eq(result.data.quotas.groups, 10, "membership exposes the group quota");
-    eq(result.data.quotas.circles, 2, "membership exposes the circle quota");
-    ok(Array.isArray(result.data.mandatoryGroups), "membership exposes mandatory groups");
+    result = await api("GET", "/business/plan", { token: f.tokenA });
+    expectStatus(result, 200, "plan page");
+    eq(result.data.plan.planId, fixture.planId, "plan exposes the plan");
+    eq(result.data.quotas.groups, 10, "plan exposes the group quota");
+    eq(result.data.quotas.circles, 2, "plan exposes the circle quota");
+    ok(Array.isArray(result.data.mandatoryGroups), "plan exposes mandatory groups");
 
     result = await api("GET", "/business/journey", { token: f.tokenA });
     expectStatus(result, 200, "journey");
@@ -1097,7 +1094,7 @@ async function main() {
 
     result = await api("GET", "/business/groups/explore?page=0", { token: f.tokenA });
     expectStatus(result, 400, "explore rejects page 0");
-    pass("platform overview/config/profile/membership/journey/directory/location pages pass");
+    pass("platform overview/config/profile/plan/journey/directory/location pages pass");
   } finally {
     await cleanup();
   }

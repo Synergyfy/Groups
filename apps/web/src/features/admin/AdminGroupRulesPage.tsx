@@ -1,7 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ArrowDown,
-  CheckCircle2,
   Coins,
   Crown,
   Gauge,
@@ -17,8 +16,8 @@ import Card, { CardBody, CardTitle } from "../../components/ui/Card";
 import SectionHeader from "../../components/ui/SectionHeader";
 import StatCard from "../../components/ui/StatCard";
 import Toast from "../../components/ui/Toast";
-import type { GroupCreationRules, PlanVariant, Tier } from "../../domain/types";
-import { PLAN_VARIANTS, TIERS_ORDERED } from "../../domain/types";
+import type { GroupCreationRules, PlanVariant } from "../../domain/types";
+import { PLAN_VARIANTS, planAccessLabel } from "../../domain/types";
 import { useAppStore } from "../../store/context";
 import { useAdminData } from "../../admin/AdminDataProvider";
 
@@ -28,27 +27,39 @@ const TARGET_FIELD_CLASS =
 function copyTargets(
   source: GroupCreationRules["recruitmentTargets"]
 ): GroupCreationRules["recruitmentTargets"] {
-  return {
-    Bronze: { ...source.Bronze },
-    Silver: { ...source.Silver },
-    Gold: { ...source.Gold },
-    Platinum: { ...source.Platinum },
-  };
+  return Object.fromEntries(
+    Object.entries(source).map(([planName, targets]) => [
+      planName,
+      { ...targets },
+    ]),
+  );
 }
 
 /**
- * Administrator control over how businesses create groups: which memberships
- * may create (by default only Platinum Pro+), the inverse-scaled recruitment
- * threshold per membership, the paid entry access model, and the platform
- * group everyone else is placed into.
+ * Administrator control over how businesses create groups: which plans
+ * may create (by default only Platinum Pro+), the recruitment threshold per
+ * plan, the paid entry access model, and the platform group everyone else is
+ * placed into.
  */
 export default function AdminGroupRulesPage() {
   const { state, dispatch } = useAppStore();
   const { data } = useAdminData();
   const rules = state.adminConfig.groupCreationRules;
-  const plans = data?.membershipPlans ?? [];
+  const plans = data?.plans ?? [];
 
-  const [allowedTiers, setAllowedTiers] = useState<Tier[]>([...rules.allowedTiers]);
+  const planNames = useMemo(
+    () => [
+      ...new Set([
+        ...plans.map((plan) => plan.name),
+        ...Object.keys(rules.recruitmentTargets),
+      ]),
+    ],
+    [plans, rules.recruitmentTargets],
+  );
+
+  const [allowedPlans, setAllowedPlans] = useState<string[]>([
+    ...(rules.allowedPlans ?? []),
+  ]);
   const [allowedVariants, setAllowedVariants] = useState<PlanVariant[]>([
     ...rules.allowedVariants,
   ]);
@@ -59,13 +70,15 @@ export default function AdminGroupRulesPage() {
   );
   const [platformGroupId, setPlatformGroupId] = useState(rules.platformGroupId ?? "");
   const [requirePaidAccess, setRequirePaidAccess] = useState(rules.requirePaidAccess);
-  const [entryAccessDays, setEntryAccessDays] = useState<90 | 180>(rules.entryAccessDays);
+  const entryAccessDays = rules.entryAccessDays;
   const [entryAccessFee, setEntryAccessFee] = useState(rules.entryAccessFee);
   const [feedback, setFeedback] = useState<string | null>(null);
 
-  const toggleTier = (tier: Tier) => {
-    setAllowedTiers((prev) =>
-      prev.includes(tier) ? prev.filter((entry) => entry !== tier) : [...prev, tier]
+  const togglePlan = (planName: string) => {
+    setAllowedPlans((prev) =>
+      prev.includes(planName)
+        ? prev.filter((entry) => entry !== planName)
+        : [...prev, planName]
     );
   };
   const toggleVariant = (variant: PlanVariant) => {
@@ -73,17 +86,23 @@ export default function AdminGroupRulesPage() {
       prev.includes(variant) ? prev.filter((entry) => entry !== variant) : [...prev, variant]
     );
   };
-  const setTarget = (tier: Tier, variant: PlanVariant, value: number) => {
+  const setTarget = (planName: string, variant: PlanVariant, value: number) => {
     const clamped = Math.max(1, Math.min(50, value));
-    setTargets((prev) => ({ ...prev, [tier]: { ...prev[tier], [variant]: clamped } }));
+    setTargets((prev) => ({
+      ...prev,
+      [planName]: {
+        ...(prev[planName] ?? { Standard: 0, Pro: 0, "Pro+": 0 }),
+        [variant]: clamped,
+      },
+    }));
   };
 
   const eligiblePlans = plans.filter(
-    (plan) => allowedTiers.includes(plan.tier) && allowedVariants.includes(plan.variant)
+    (plan) => allowedPlans.includes(plan.name) && allowedVariants.includes(plan.variant)
   );
   const eligibleLabel =
     eligiblePlans.length === 0
-      ? "No membership"
+      ? "No plan"
       : eligiblePlans.map((plan) => plan.name).join(", ");
 
   const save = () => {
@@ -91,7 +110,7 @@ export default function AdminGroupRulesPage() {
       type: "admin/update-config",
       patch: {
         groupCreationRules: {
-          allowedTiers,
+          allowedPlans,
           allowedVariants,
           recruitmentTargets: copyTargets(targets),
           activationEnabled,
@@ -104,7 +123,7 @@ export default function AdminGroupRulesPage() {
       },
     });
     setFeedback(
-      `Group creation rules saved — ${eligibleLabel} may create groups; every other membership joins the platform group.`
+      `Group creation rules saved — ${eligibleLabel} may create groups; every other plan joins the platform group.`
     );
   };
 
@@ -112,8 +131,8 @@ export default function AdminGroupRulesPage() {
     <div className="flex flex-col gap-6">
       <SectionHeader
         title="Group Creation Rules"
-        subtitle="Decide which memberships may create a group (by default only Platinum Pro+), set the recruitment threshold each membership must reach before its groups activate, and configure the paid access fee required for dashboard entry."
-        tip="Recruitment requirements scale inversely with the membership level: Bronze needs the most recruits, Platinum the fewest."
+        subtitle="Decide which plans may create a group (by default only Platinum Pro+), set the recruitment threshold each plan must reach before its groups activate, and configure the paid access fee required for dashboard entry."
+        tip="Recruitment requirements scale inversely with the plan level: Bronze needs the most recruits, Platinum the fewest."
         actions={
           <Button variant="primary" size="sm" onClick={save}>
             <Save className="size-4" /> Save Group Rules
@@ -131,14 +150,18 @@ export default function AdminGroupRulesPage() {
         />
         <StatCard
           label="Recruitment spread"
-          value={`${targets.Bronze.Standard} → ${targets.Platinum["Pro+"]}`}
-          hint="Bronze Standard down to Platinum Pro+"
+          value={`${targets[planNames[0] ?? ""]?.Standard ?? 0} → ${
+            targets[planNames[planNames.length - 1] ?? ""]?.["Pro+"] ?? 0
+          }`}
+          hint={`${planNames[0] ?? "First plan"} Standard down to ${
+            planNames[planNames.length - 1] ?? "last plan"
+          } Pro+`}
           accent="info"
         />
         <StatCard
-          label="Entry access model"
-          value={`${entryAccessDays} days`}
-          hint={`£${entryAccessFee} access fee before dashboard entry`}
+          label="Plan access length"
+          value="By plan"
+          hint="Standard 90 · Pro 180 · Pro+ 365 days"
           accent="success"
         />
         <StatCard
@@ -157,21 +180,21 @@ export default function AdminGroupRulesPage() {
             <div>
               <CardTitle>Who can create a group</CardTitle>
               <p className="text-xs text-slate-400">
-                Only the selected memberships may run the Create Group wizard. Every other
-                membership joins the platform group set below instead.
+                Only the selected plans may run the Create Group wizard. Every other
+                plan joins the platform group set below instead.
               </p>
             </div>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
             <div className="flex flex-col gap-2">
-              <label className="text-xs font-semibold text-white">Membership tiers</label>
+              <label className="text-xs font-semibold text-white">Plans</label>
               <div className="grid grid-cols-2 gap-2">
-                {TIERS_ORDERED.map((tier) => {
-                  const checked = allowedTiers.includes(tier);
+                {planNames.map((planName) => {
+                  const checked = allowedPlans.includes(planName);
                   return (
                     <label
-                      key={tier}
+                      key={planName}
                       className={`flex cursor-pointer items-center gap-2.5 rounded-lg border p-2.5 text-xs transition-colors ${
                         checked
                           ? "border-gold-500/40 bg-gold-500/10 text-white"
@@ -181,10 +204,10 @@ export default function AdminGroupRulesPage() {
                       <input
                         type="checkbox"
                         checked={checked}
-                        onChange={() => toggleTier(tier)}
+                        onChange={() => togglePlan(planName)}
                         className="size-4 accent-gold-500"
                       />
-                      <span className="font-semibold">{tier}</span>
+                      <span className="font-semibold">{planName}</span>
                     </label>
                   );
                 })}
@@ -234,7 +257,7 @@ export default function AdminGroupRulesPage() {
                 />
                 <span className="text-xs text-slate-300">
                   <span className="font-semibold text-white">
-                    Place other memberships into a platform group
+                    Place other plans into a platform group
                   </span>
                   <span className="mt-0.5 block text-[11px] text-slate-400">
                     Members without creation rights are added to the group below on dashboard
@@ -270,11 +293,10 @@ export default function AdminGroupRulesPage() {
           <div className="flex items-center gap-2 border-b border-white/10 pb-3">
             <ArrowDown className="size-5 text-gold-400" />
             <div>
-              <CardTitle>Recruitment requirements per membership</CardTitle>
+              <CardTitle>Recruitment requirements per plan</CardTitle>
               <p className="text-xs text-slate-400">
-                Requirements scale inversely with the membership level — Bronze recruits the most,
-                Platinum the fewest. Groups remain non-functional until they reach the number set
-                here.
+                Requirements are set per plan and variant. Groups remain non-functional until
+                they reach the number set here.
               </p>
             </div>
           </div>
@@ -284,7 +306,7 @@ export default function AdminGroupRulesPage() {
               <thead>
                 <tr>
                   <th className="border-b border-white/10 pb-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                    Tier ↓ / Level →
+                    Plan ↓ / Level →
                   </th>
                   {PLAN_VARIANTS.map((variant) => (
                     <th
@@ -297,12 +319,12 @@ export default function AdminGroupRulesPage() {
                 </tr>
               </thead>
               <tbody>
-                {TIERS_ORDERED.map((tier) => (
-                  <tr key={tier}>
+                {planNames.map((planName) => (
+                  <tr key={planName}>
                     <td className="border-b border-white/5 py-2 pr-3 text-xs font-semibold text-white">
                       <span className="flex items-center gap-1.5">
                         <Crown className="size-3.5 text-gold-400" />
-                        {tier}
+                        {planName}
                       </span>
                     </td>
                     {PLAN_VARIANTS.map((variant) => (
@@ -311,10 +333,10 @@ export default function AdminGroupRulesPage() {
                           type="number"
                           min={1}
                           max={50}
-                          aria-label={`${tier} ${variant} recruits needed`}
-                          value={targets[tier][variant]}
+                          aria-label={`${planName} ${variant} recruits needed`}
+                          value={targets[planName]?.[variant] ?? 0}
                           onChange={(event) =>
-                            setTarget(tier, variant, Number(event.target.value))
+                            setTarget(planName, variant, Number(event.target.value))
                           }
                           className={TARGET_FIELD_CLASS}
                         />
@@ -329,11 +351,14 @@ export default function AdminGroupRulesPage() {
           <div className="flex items-start gap-2 rounded-xl border border-gold-500/30 bg-gold-500/[0.08] p-3">
             <Users className="mt-0.5 size-4 shrink-0 text-gold-400" />
             <p className="text-[11px] leading-relaxed text-slate-300">
-              Example: a Bronze Standard business must recruit{" "}
-              <strong>{targets.Bronze.Standard} members</strong> before its groups switch on,
-              while a Platinum Pro+ business only needs{" "}
-              <strong>{targets.Platinum["Pro+"]} members</strong>. Head start groups in the
-              dashboard are measured against exactly these numbers.
+              Example: a {planNames[0] ?? "first plan"} Standard business must recruit{" "}
+              <strong>{targets[planNames[0] ?? ""]?.Standard ?? 0} members</strong> before its
+              groups switch on, while a {planNames[planNames.length - 1] ?? "last plan"} Pro+
+              business needs{" "}
+              <strong>
+                {targets[planNames[planNames.length - 1] ?? ""]?.["Pro+"] ?? 0} members
+              </strong>
+              . Head start groups in the dashboard are measured against exactly these numbers.
             </p>
           </div>
         </CardBody>
@@ -385,31 +410,23 @@ export default function AdminGroupRulesPage() {
               Businesses pay this fee and accept the access agreement on first entry.
             </p>
 
-            <div className="grid grid-cols-2 gap-2">
-              {([90, 180] as const).map((days) => (
-                <button
-                  key={days}
-                  type="button"
-                  onClick={() => setEntryAccessDays(days)}
-                  className={`flex items-center justify-between rounded-lg border p-3 text-left transition-colors ${
-                    entryAccessDays === days
-                      ? "border-gold-500/50 bg-gold-500/10 text-white"
-                      : "border-white/10 bg-ink-950/60 text-slate-300 hover:bg-white/5"
-                  }`}
+            <div className="grid grid-cols-3 gap-2">
+              {PLAN_VARIANTS.map((variant) => (
+                <div
+                  key={variant}
+                  className="flex flex-col gap-0.5 rounded-lg border border-white/10 bg-ink-950/60 p-3 text-left"
                 >
-                  <span className="text-xs font-semibold">{days}-day access</span>
-                  {entryAccessDays === days ? (
-                    <CheckCircle2 className="size-3.5 text-gold-400" />
-                  ) : (
-                    <span className="size-3.5 rounded-full border border-white/20" />
-                  )}
-                </button>
+                  <span className="text-xs font-semibold text-white">{variant}</span>
+                  <span className="text-[11px] text-slate-400">
+                    {planAccessLabel(variant)} access
+                  </span>
+                </div>
               ))}
             </div>
 
             <label className="flex flex-col gap-1.5 rounded-lg border border-white/10 bg-ink-950/60 p-3">
               <span className="text-[11px] text-slate-400">
-                Access fee for {entryAccessDays} days (£)
+                Access fee (£)
               </span>
               <input
                 type="number"
@@ -447,17 +464,17 @@ export default function AdminGroupRulesPage() {
         <div>
           <p className="text-xs font-semibold text-white">How the rules combine</p>
           <p className="mt-1 text-[11px] leading-relaxed text-slate-300">
-            <Badge variant="gold">Step 1</Badge> Pay the £{entryAccessFee} {entryAccessDays}-day
-            access fee and accept the agreement to enter.{" "}
+            <Badge variant="gold">Step 1</Badge> Pay the £{entryAccessFee} access fee
+            and accept the agreement to enter.{" "}
             <Badge variant="gold">Step 2</Badge>{" "}
             {eligiblePlans.length === 0
-              ? "No membership may create groups"
+              ? "No plan may create groups"
               : `${eligibleLabel} ${eligiblePlans.length === 1 ? "runs" : "run"} the Create Group wizard`}
-            ; every other membership is placed into{" "}
+            ; every other plan is placed into{" "}
             {state.groups.find((group) => group.id === platformGroupId)?.name ?? "the platform group"}
             . <Badge variant="gold">Step 3</Badge>{" "}
             {activationEnabled
-              ? "Each group then recruits to its membership threshold before it becomes functional."
+              ? "Each group then recruits to its plan threshold before it becomes functional."
               : "Groups are functional immediately."}
           </p>
         </div>

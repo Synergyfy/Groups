@@ -8,6 +8,7 @@ import { ConsumerModule } from "./consumer/consumer.module.js";
 import { GroupsModule } from "./groups/groups.module.js";
 import { HealthModule } from "./health/health.module.js";
 import { McomModule } from "./mcom/mcom.module.js";
+import { PaymentsModule } from "./payments/payments.module.js";
 import { PrismaModule } from "./prisma/prisma.module.js";
 
 @Module({
@@ -27,6 +28,7 @@ import { PrismaModule } from "./prisma/prisma.module.js";
     AdminModule,
     BusinessModule,
     ConsumerModule,
+    PaymentsModule,
   ],
 })
 export class AppModule {}

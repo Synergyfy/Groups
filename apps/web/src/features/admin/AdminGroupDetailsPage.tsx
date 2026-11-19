@@ -63,6 +63,7 @@ export default function AdminGroupDetailsPage() {
   const group = useGroup(groupId);
   const state = useAppState();
   const activity = useAdminGroupActivity(groupId);
+  const { data: adminData } = useAdminData();
   const [tab, setTab] = useState<TabId>("overview");
   const loading = false;
 
@@ -77,7 +78,16 @@ export default function AdminGroupDetailsPage() {
 
   const rule = state.adminConfig.automaticGrouping;
   const programme = state.programmes.find((entry) => entry.id === group?.programmeId);
-
+  const requiredPlanLabel =
+    group?.requiredPlanIds && group.requiredPlanIds.length > 0
+      ? group.requiredPlanIds
+          .map(
+            (planId) =>
+              adminData?.plans.find((plan) => plan.id === planId)?.name ??
+              "Unknown plan",
+          )
+          .join(", ")
+      : "All plans";
   if (!group) {
     return (
       <AdminGroupMissingState
@@ -189,6 +199,7 @@ export default function AdminGroupDetailsPage() {
                     <InfoRow label="Stage" value={group.stage ?? "—"} />
                     <InfoRow label="Programme" value={programme?.name ?? "No programme"} />
                     <InfoRow label="Pricing" value={group.pricing ?? "free"} capitalize />
+                    <InfoRow label="Required plans" value={requiredPlanLabel} />
                     {group.contribution && <InfoRow label="Contribution" value={`£${group.contribution}`} />}
                     <InfoRow label="Visibility" value={group.visibility ?? "directory"} capitalize />
                     <InfoRow label="Interaction" value={group.interactionLevel ?? "message"} capitalize />
@@ -455,8 +466,20 @@ function GroupIdentity({ group }: { group: Group }) {
 
 function GroupSettingsPanel({ group }: { group: Group }) {
   const { dispatch } = useAppStore();
+  const { data: adminData } = useAdminData();
   const navigate = useNavigate();
   const [feedback, setFeedback] = useState<string | null>(null);
+
+  const requiredPlanLabel =
+    group.requiredPlanIds && group.requiredPlanIds.length > 0
+      ? group.requiredPlanIds
+          .map(
+            (planId) =>
+              adminData?.plans.find((plan) => plan.id === planId)?.name ??
+              "Unknown plan",
+          )
+          .join(", ")
+      : "All plans";
 
   const act = (label: string, fn: () => void) => {
     fn();
@@ -488,6 +511,7 @@ function GroupSettingsPanel({ group }: { group: Group }) {
             <InfoRow label="Status" value={group.status} />
             <InfoRow label="Required size" value={group.requiredSize ? String(group.requiredSize) : "Not set"} />
             <InfoRow label="Pricing" value={group.pricing ?? "free"} capitalize />
+            <InfoRow label="Required plans" value={requiredPlanLabel} />
             <InfoRow label="Contribution" value={group.contribution ? `£${group.contribution}` : "—"} />
           </dl>
         </CardBody>

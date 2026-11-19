@@ -58,9 +58,9 @@ const SIGN_OFF_RULES = [
   },
   {
     id: "rule-4",
-    title: "4. Membership entitlements and temporary-access rules",
+    title: "4. Plan entitlements and temporary-access rules",
     ruleText:
-      "Membership entitlements and temporary-access rules are clearly defined.",
+      "Plan entitlements and temporary-access rules are clearly defined.",
     status: "Verified",
     evidence:
       "Bronze, Silver, Gold and Platinum entitlements are mapped alongside configurable 7-day and 14-day temporary access periods in AdminAccessRulesPage.tsx.",
@@ -156,7 +156,7 @@ export default function AdminSettingsReportsPage() {
     <div className="flex flex-col gap-6">
       <SectionHeader
         title="Settings and Reports"
-        subtitle="Configure group defaults, invitation messages, access settings and notifications. Report on registrations, memberships, groups, invitations and participation."
+        subtitle="Configure group defaults, invitation messages, access settings and notifications. Report on registrations, plans, groups, invitations and participation."
         tip="Includes the official 5-rule Final Completeness Check required before development sign-off."
         actions={
           activeTab === "settings" ? (
@@ -332,8 +332,8 @@ export default function AdminSettingsReportsPage() {
               accent="gold"
             />
             <StatCard
-              label="Total memberships"
-              value={stats?.totalMemberships ?? 0}
+              label="Plan subscribers"
+              value={stats?.totalPlanSubscribers ?? 0}
               hint="Active plan subscribers"
               accent="success"
             />

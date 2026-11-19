@@ -665,7 +665,7 @@ export class AdminOperationsService {
           by: ["status"],
           _count: { _all: true },
         }),
-        this.prisma.membershipPlan.aggregate({
+        this.prisma.plan.aggregate({
           _sum: { subscriberCount: true },
         }),
         this.prisma.adminConfig.findUnique({ where: { id: "default" } }),
@@ -702,7 +702,7 @@ export class AdminOperationsService {
     return {
       stats: {
         registeredEntities: businessCount + accountCount,
-        totalMemberships: plans._sum.subscriberCount ?? 0,
+        totalPlanSubscribers: plans._sum.subscriberCount ?? 0,
         invitationsSent: totalInvitations,
         invitationConversion:
           totalInvitations === 0
@@ -749,7 +749,7 @@ export class AdminOperationsService {
         },
         {
           id: "rule-4",
-          title: "Membership entitlements and temporary-access rules",
+          title: "Plan entitlements and temporary-access rules",
           status: verified(
             Boolean(accessRules.temporaryAccess) &&
               Boolean(accessRules.quotas),

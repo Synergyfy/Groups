@@ -1,10 +1,12 @@
 import type {
   AdminConfig,
-  BusinessMembership,
+  BusinessPlan,
   Group,
   GroupMember,
   Invitation,
+  Plan,
 } from "../generated/prisma/client.js";
+import { fromMinorPence } from "../common/money.js";
 import {
   DEFAULT_ACCESS_RULES,
   DEFAULT_AUTOMATIC_GROUPING,
@@ -31,7 +33,7 @@ import type {
   JoinPlanView,
   MandatoryCircleRule,
   MandatoryGroupRule,
-  MembershipAccessView,
+  PlanAccessView,
   PartnerPermissions,
   PlanVariant,
   Tier,
@@ -67,21 +69,65 @@ export function normalizeVariant(value: string | null | undefined): PlanVariant 
   return "Standard";
 }
 
-export function toMembershipAccess(
-  membership: BusinessMembership,
-): MembershipAccessView {
+/**
+ * Access length included with each plan variant: Standard 90 days, Pro 180
+ * days and Pro+ one year.
+ */
+export function planAccessDays(variant: PlanVariant): 90 | 180 | 365 {
+  if (variant === "Pro+") return 365;
+  if (variant === "Pro") return 180;
+  return 90;
+}
+
+export interface PlanIdentity {
+  planId?: string | null;
+  planName?: string | null;
+  variant?: string | null;
+  /** True once the member has actually purchased/activated a plan. */
+  active: boolean;
+}
+
+/**
+ * Checks whether a member satisfies a group's plan eligibility. An empty
+ * `requiredPlanIds` list means the group is open to every plan.
+ */
+export function matchesRequiredPlans(
+  requiredPlanIds: string[],
+  plans: Pick<Plan, "id" | "name" | "variant">[],
+  member: PlanIdentity | null,
+): boolean {
+  if (requiredPlanIds.length === 0) return true;
+  if (!member || !member.active) return false;
+  if (member.planId && requiredPlanIds.includes(member.planId)) return true;
+
+  const rawName = member.planName?.trim();
+  if (!rawName || rawName.toLowerCase() === "free") return false;
+  const planName = rawName.toLowerCase();
+  const variant = normalizeVariant(member.variant);
+  return plans
+    .filter((plan) => requiredPlanIds.includes(plan.id))
+    .some(
+      (plan) =>
+        plan.name.trim().toLowerCase() === planName &&
+        normalizeVariant(plan.variant) === variant,
+    );
+}
+
+export function toPlanAccess(
+  plan: BusinessPlan,
+): PlanAccessView {
   return {
-    ownerId: membership.businessId,
-    tier: normalizeTier(membership.tier),
-    variant: normalizeVariant(membership.variant),
-    planName: membership.planName,
-    status: membership.status,
-    paid: membership.paid,
-    accessDays: membership.accessDays,
-    accessFee: membership.accessFee,
-    agreementAccepted: membership.agreementAccepted,
-    agreedAt: membership.agreedAt?.toISOString(),
-    accessExpiresAt: membership.accessExpiresAt?.toISOString(),
+    ownerId: plan.businessId,
+    variant: normalizeVariant(plan.variant),
+    planName: plan.planName,
+    status: plan.status,
+    paid: plan.paid,
+    accessDays: plan.accessDays,
+    accessFee: fromMinorPence(plan.accessFeeMinor),
+    accessFeeMinor: plan.accessFeeMinor,
+    agreementAccepted: plan.agreementAccepted,
+    agreedAt: plan.agreedAt?.toISOString(),
+    accessExpiresAt: plan.accessExpiresAt?.toISOString(),
   };
 }
 
@@ -122,7 +168,10 @@ export function toBusinessConfig(row: AdminConfig | null): BusinessConfig {
       allowCustom: payment.allowCustom !== false,
     },
     groupCreationRules: {
-      allowedTiers: normalizeTiers(creation.allowedTiers),
+      allowedPlans: normalizePlanNames(
+        creation.allowedPlans ??
+          (creation as unknown as { allowedTiers?: unknown }).allowedTiers,
+      ),
       allowedVariants: normalizeVariants(creation.allowedVariants),
       restrictToPlatformGroup: creation.restrictToPlatformGroup !== false,
       platformGroupId: creation.platformGroupId ?? null,
@@ -163,12 +212,13 @@ function normalizeThreshold(value: unknown): GroupThreshold {
   return 12;
 }
 
-function normalizeTiers(value: unknown): Tier[] {
+function normalizePlanNames(value: unknown): string[] {
   if (!Array.isArray(value)) return ["Platinum"];
-  const tiers = value
-    .map((entry) => normalizeTier(String(entry)))
-    .filter((tier, index, all) => all.indexOf(tier) === index);
-  return tiers.length > 0 ? tiers : ["Platinum"];
+  const names = value
+    .map((entry) => String(entry).trim())
+    .filter((name) => name.length > 0)
+    .filter((name, index, all) => all.indexOf(name) === index);
+  return names.length > 0 ? names : ["Platinum"];
 }
 
 function normalizeVariants(value: unknown): PlanVariant[] {
@@ -196,16 +246,23 @@ function normalizeGroupTypes(value: unknown): GroupTypeConfig[] {
 
 function normalizeRecruitmentTargets(
   value: unknown,
-): Record<Tier, Record<PlanVariant, number>> {
+): Record<string, Record<PlanVariant, number>> {
   const source = jsonObject(value);
-  const result = {} as Record<Tier, Record<PlanVariant, number>>;
-  for (const tier of TIERS) {
-    const fallback = DEFAULT_GROUP_CREATION_RULES.recruitmentTargets[tier];
-    const tierSource = jsonObject(source[tier]);
-    result[tier] = {} as Record<PlanVariant, number>;
+  const names = new Set([
+    ...Object.keys(DEFAULT_GROUP_CREATION_RULES.recruitmentTargets),
+    ...Object.keys(source),
+  ]);
+  const result: Record<string, Record<PlanVariant, number>> = {};
+  for (const name of names) {
+    const fallback =
+      DEFAULT_GROUP_CREATION_RULES.recruitmentTargets[
+        name as keyof typeof DEFAULT_GROUP_CREATION_RULES.recruitmentTargets
+      ] ?? DEFAULT_GROUP_CREATION_RULES.recruitmentTargets.Bronze;
+    const nameSource = jsonObject(source[name]);
+    result[name] = {} as Record<PlanVariant, number>;
     for (const variant of VARIANTS) {
-      const numeric = Number(tierSource[variant] ?? fallback[variant]);
-      result[tier][variant] = Number.isFinite(numeric)
+      const numeric = Number(nameSource[variant] ?? fallback[variant]);
+      result[name][variant] = Number.isFinite(numeric)
         ? Math.max(0, numeric)
         : fallback[variant];
     }
@@ -279,22 +336,22 @@ function numberOrNull(value: unknown): number | null {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
-export interface MembershipQuotas {
+export interface PlanQuotas {
   groups: number;
   circles: number;
 }
 
 /**
- * Quotas that come from the platform access rules when the membership is not
- * attached to a published plan. Paid memberships use the paid caps; pending
- * (unpaid) memberships use the free caps.
+ * Quotas that come from the platform access rules when the plan is not
+ * attached to a published plan. Paid plans use the paid caps; pending
+ * (unpaid) plans use the free caps.
  */
 export function accessQuotas(
   config: BusinessConfig,
-  membership: BusinessMembership,
-): MembershipQuotas {
+  plan: BusinessPlan,
+): PlanQuotas {
   const quotas = jsonObject(config.accessRules.quotas);
-  const paid = membership.paid;
+  const paid = plan.paid;
   const groups = numberOrNull(
     paid ? quotas.paidMaxGroups : quotas.freeMaxGroups,
   );
@@ -308,40 +365,40 @@ export function accessQuotas(
 }
 
 export function canCreateGroups(
-  membership: BusinessMembership,
+  plan: BusinessPlan,
   rules: GroupCreationRules,
 ): boolean {
-  if (!membership.agreementAccepted) return false;
-  if (rules.requirePaidAccess && !membership.paid) return false;
+  if (!plan.agreementAccepted) return false;
+  if (rules.requirePaidAccess && !plan.paid) return false;
   return (
-    rules.allowedTiers.includes(normalizeTier(membership.tier)) &&
-    rules.allowedVariants.includes(normalizeVariant(membership.variant))
+    rules.allowedPlans.some((name) => name === plan.planName) &&
+    rules.allowedVariants.includes(normalizeVariant(plan.variant))
   );
 }
 
 export function creationRightsLabel(rules: GroupCreationRules): string {
-  const combos = rules.allowedTiers.flatMap((tier) =>
-    rules.allowedVariants.map((variant) => `${tier} ${variant}`),
+  const combos = rules.allowedPlans.flatMap((planName) =>
+    rules.allowedVariants.map((variant) => `${planName} ${variant}`),
   );
-  if (combos.length === 0) return "No membership can create groups";
+  if (combos.length === 0) return "No plan can create groups";
   if (combos.length > 4) {
     return `${combos.slice(0, 4).join(", ")} and ${combos.length - 4} more`;
   }
   return `${combos.join(", ")}${
-    combos.length === 1 ? " membership" : " memberships"
+    combos.length === 1 ? " plan" : " plans"
   } only`;
 }
 
 export function activationFor(
   group: GroupWithMembers,
-  tier: Tier,
+  planName: string,
   variant: PlanVariant,
   rules: GroupCreationRules,
 ): GroupActivationView {
   const current = group.members?.length ?? group.memberCount;
+  const fallback = Object.values(rules.recruitmentTargets)[0]?.Standard ?? 0;
   const target =
-    rules.recruitmentTargets[tier]?.[variant] ??
-    rules.recruitmentTargets.Bronze.Standard;
+    rules.recruitmentTargets[planName]?.[variant] ?? fallback;
   const gated =
     rules.activationEnabled &&
     group.source === "user-created" &&
@@ -356,7 +413,7 @@ export function activationFor(
     percent: Math.min(Math.round((current / Math.max(target, 1)) * 100), 100),
     active,
     gated,
-    tier,
+    planName,
     variant,
   };
 }
@@ -367,6 +424,7 @@ export function joinPlanFor(
   pendingRequest: Invitation | null,
   pendingInvite: Invitation | null,
   businessId: string,
+  planEligible = true,
 ): JoinPlanView {
   if (group.ownerId === businessId) {
     return {
@@ -393,6 +451,15 @@ export function joinPlanFor(
       hint: "Administrators turned off joining for this group type.",
       disabled: true,
       reason: "type-disabled",
+    };
+  }
+  if (!planEligible) {
+    return {
+      action: "none",
+      label: "Plan plan required",
+      hint: "This group is only open to members on selected plan plans.",
+      disabled: true,
+      reason: "plan-required",
     };
   }
   if (pendingRequest) {
@@ -505,16 +572,19 @@ export function automaticProgressFor(
   };
 }
 
-export function membershipTierForOwner(
-  businessTier: string | null | undefined,
+export function planForOwner(
+  fallbackPlanName: string | null | undefined,
   isCurrentBusiness: boolean,
-  currentMembership: BusinessMembership,
-): { tier: Tier; variant: PlanVariant } {
+  currentPlan: BusinessPlan,
+): { planName: string; variant: PlanVariant } {
   if (isCurrentBusiness) {
     return {
-      tier: normalizeTier(currentMembership.tier),
-      variant: normalizeVariant(currentMembership.variant),
+      planName: currentPlan.planName,
+      variant: normalizeVariant(currentPlan.variant),
     };
   }
-  return { tier: normalizeTier(businessTier), variant: "Standard" };
+  return {
+    planName: fallbackPlanName?.trim() || "Free",
+    variant: "Standard",
+  };
 }

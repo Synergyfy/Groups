@@ -1,10 +1,15 @@
 import {
   BadRequestException,
+  ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
 import type { SessionUser } from "../auth/auth.types.js";
+import { matchesRequiredPlans } from "../business/business.rules.js";
 import { PrismaService } from "../prisma/prisma.service.js";
+import { contributionPeriodKey } from "../payments/payments.utils.js";
+import { fromMinorPence } from "../common/money.js";
 
 @Injectable()
 export class ConsumerService {
@@ -119,9 +124,37 @@ export class ConsumerService {
     });
     if (!account) throw new NotFoundException("Consumer account not found");
 
+    await this.assertPlanEligibility(group, account);
+
     const existing = await this.prisma.groupMember.findUnique({
       where: { groupId_memberId: { groupId: id, memberId: user.id } },
     });
+
+    if (group.pricing === "paid" && existing?.contributionStatus !== "paid") {
+      const periodKey = contributionPeriodKey(group.contributionFrequency);
+      const paid = await this.prisma.payment.findFirst({
+        where: {
+          purpose: "GROUP_CONTRIBUTION",
+          groupId: id,
+          memberId: user.id,
+          periodKey,
+          status: "PAID",
+          deletedAt: null,
+        },
+      });
+      if (!paid) {
+        throw new ConflictException({
+          code: "PAYMENT_REQUIRED",
+          message: `This group requires a £${fromMinorPence(group.contributionMinor)} contribution.`,
+          groupId: id,
+          amountMinor: (group.contributionMinor ?? 0).toString(),
+          amount: fromMinorPence(group.contributionMinor),
+          frequency: group.contributionFrequency ?? "once",
+          periodKey,
+        });
+      }
+    }
+
     await this.prisma.groupMember.upsert({
       where: { groupId_memberId: { groupId: id, memberId: user.id } },
       update: { lastActiveAt: new Date() },
@@ -182,6 +215,48 @@ export class ConsumerService {
     });
     if (!invitation) throw new NotFoundException("Invitation not found");
 
+    if (accept && invitation.groupId) {
+      const group = await this.prisma.group.findUnique({
+        where: { id: invitation.groupId },
+      });
+      if (group?.pricing === "paid") {
+        const existing = await this.prisma.groupMember.findUnique({
+          where: {
+            groupId_memberId: {
+              groupId: invitation.groupId,
+              memberId: user.id,
+            },
+          },
+        });
+        if (existing?.contributionStatus !== "paid") {
+          const periodKey = contributionPeriodKey(
+            group.contributionFrequency,
+          );
+          const paid = await this.prisma.payment.findFirst({
+            where: {
+              purpose: "GROUP_CONTRIBUTION",
+              groupId: group.id,
+              memberId: user.id,
+              periodKey,
+              status: "PAID",
+              deletedAt: null,
+            },
+          });
+          if (!paid) {
+            throw new ConflictException({
+              code: "PAYMENT_REQUIRED",
+              message: `This group requires a £${fromMinorPence(group.contributionMinor)} contribution.`,
+              groupId: group.id,
+              amountMinor: (group.contributionMinor ?? 0).toString(),
+              amount: fromMinorPence(group.contributionMinor),
+              frequency: group.contributionFrequency ?? "once",
+              periodKey,
+            });
+          }
+        }
+      }
+    }
+
     const updated = await this.prisma.invitation.update({
       where: { id },
       data: {
@@ -212,6 +287,10 @@ export class ConsumerService {
     memberCount: number;
     status: string;
     accessType: string;
+    requiredPlanIds: string[];
+    pricing: string;
+    contributionMinor: number | null;
+    contributionFrequency: string | null;
     createdAt: Date;
   }) {
     return {
@@ -228,7 +307,44 @@ export class ConsumerService {
       memberCount: group.memberCount,
       status: group.status,
       accessType: group.accessType,
+      pricing: group.pricing,
+      contribution:
+        group.contributionMinor != null
+          ? fromMinorPence(group.contributionMinor)
+          : null,
+      contributionMinor: group.contributionMinor,
+      contributionFrequency: group.contributionFrequency,
+      requiredPlanIds: group.requiredPlanIds,
       createdAt: group.createdAt.toISOString(),
     };
+  }
+
+  private async assertPlanEligibility(
+    group: { requiredPlanIds: string[] },
+    account: {
+      membershipTier: string | null;
+      membershipLevel: string | null;
+      membershipPlanName: string | null;
+    },
+  ): Promise<void> {
+    if (group.requiredPlanIds.length === 0) return;
+
+    const plans = await this.prisma.plan.findMany({
+      where: { id: { in: group.requiredPlanIds } },
+      select: { id: true, name: true, variant: true },
+    });
+    const planName = account.membershipTier ?? account.membershipLevel;
+    const eligible = matchesRequiredPlans(group.requiredPlanIds, plans, {
+      planName,
+      variant: account.membershipPlanName,
+      active: Boolean(planName && planName.trim().toLowerCase() !== "free"),
+    });
+    if (!eligible) {
+      throw new ForbiddenException({
+        code: "PLAN_REQUIRED",
+        message:
+          "This group is only open to members on selected membership plans.",
+      });
+    }
   }
 }

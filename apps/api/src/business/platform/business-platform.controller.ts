@@ -11,7 +11,7 @@ import { CurrentUser } from "../../auth/current-user.decorator.js";
 import { BusinessOnly } from "../business-only.decorator.js";
 import { BusinessContextService } from "../business-context.service.js";
 import {
-  ActivateMembershipDto,
+  ActivatePlanDto,
   BusinessCampaignsQueryDto,
   BusinessDirectoryQueryDto,
   BusinessRewardsQueryDto,
@@ -53,17 +53,17 @@ export class BusinessAccountController {
     return this.platform.getConfig(await this.context.resolve(user));
   }
 
-  @Get("membership")
-  async membership(@CurrentUser() user: SessionUser) {
-    return this.platform.getMembership(await this.context.resolve(user));
+  @Get("plan")
+  async plan(@CurrentUser() user: SessionUser) {
+    return this.platform.getPlan(await this.context.resolve(user));
   }
 
-  @Post("membership/activate")
-  async activateMembership(
-    @Body() dto: ActivateMembershipDto,
+  @Post("plan/activate")
+  async activatePlan(
+    @Body() dto: ActivatePlanDto,
     @CurrentUser() user: SessionUser,
   ) {
-    return this.platform.activateMembership(
+    return this.platform.activatePlan(
       await this.context.resolve(user),
       dto,
     );

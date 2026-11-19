@@ -248,12 +248,11 @@ export class AddCircleMemberDto {
 // Membership access
 // ---------------------------------------------------------------------------
 
-export class ActivateMembershipDto {
+export class ActivatePlanDto {
   @IsOptional() @IsString() @MaxLength(120) planId?: string;
-  @IsOptional() @IsIn(TIERS) tier?: string;
   @IsOptional() @IsIn(VARIANTS) variant?: string;
   @IsOptional() @IsString() @MaxLength(160) planName?: string;
-  @IsOptional() @IsInt() @IsIn([90, 180]) accessDays?: number;
+  @IsOptional() @IsInt() @IsIn([90, 180, 365]) accessDays?: number;
   @IsOptional() @IsNumber() @Min(0) accessFee?: number;
   @IsBoolean() agreementAccepted!: boolean;
 }

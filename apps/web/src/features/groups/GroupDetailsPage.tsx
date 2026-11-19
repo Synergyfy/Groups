@@ -23,6 +23,10 @@ import Toast from "../../components/ui/Toast";
 import { useAppState, useGroup, useGroupActivity, useGroupInvitations, selectGroupActivation } from "../../store/selectors";
 import { useAppStore } from "../../store/context";
 import { errorMessage } from "../../app/api";
+import { ApiError } from "../../app/api";
+import PaymentDialog, {
+  type PaymentTarget,
+} from "../payments/PaymentDialog";
 import {
   businessApi,
   useOptionalBusinessData,
@@ -66,6 +70,8 @@ export default function GroupDetailsPage() {
   const [memberDetailId, setMemberDetailId] = useState<string | null>(null);
   const [detail, setDetail] = useState<GroupDetail | null>(null);
   const [members, setMembers] = useState<BusinessMember[] | null>(null);
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [paymentTarget, setPaymentTarget] = useState<PaymentTarget | null>(null);
 
   useEffect(() => {
     if (!business || !groupId) return;
@@ -241,7 +247,10 @@ export default function GroupDetailsPage() {
     return { disabled: false, label: "Request to join", hint: ACCESS_LABELS[group.accessType] };
   };
 
-  const apiPlan = business ? (group as BusinessGroup).joinPlan : undefined;
+  const apiPlan = business
+    ? ((detail?.group as BusinessGroup | undefined)?.joinPlan ??
+      (group as BusinessGroup).joinPlan)
+    : undefined;
   const plan = apiPlan
     ? { disabled: apiPlan.disabled, label: apiPlan.label, hint: apiPlan.hint }
     : joinPlan();
@@ -257,6 +266,43 @@ export default function GroupDetailsPage() {
             : `Join request sent to ${group.name}`
         );
       } catch (cause) {
+        if (cause instanceof ApiError) {
+          const body = cause.body as
+            | {
+                code?: string;
+                amount?: number;
+                amountMinor?: string;
+                frequency?: string;
+                groupId?: string;
+                message?: string;
+              }
+            | null;
+          if (body?.code === "PAYMENT_REQUIRED") {
+            const amountPounds =
+              body.amountMinor !== undefined
+                ? Number(body.amountMinor) / 100
+                : Number(body.amount ?? group.contribution ?? 0);
+            setPaymentTarget({
+              kind: "CONTRIBUTION",
+              groupId: body.groupId ?? group.id,
+              groupName: group.name,
+              amountPounds,
+              frequency: body.frequency ?? group.contributionFrequency ?? "once",
+              onPaid: async () => {
+                await business.refresh();
+                const [nextDetail, nextMembers] = await Promise.all([
+                  businessApi.group(group.id),
+                  businessApi.groupMembers(group.id),
+                ]);
+                setDetail(nextDetail);
+                setMembers(nextMembers.members);
+                setFeedback(`Contribution paid — you joined ${group.name}`);
+              },
+            });
+            setPaymentOpen(true);
+            return;
+          }
+        }
         setFeedback(errorMessage(cause));
       }
       return;
@@ -279,6 +325,36 @@ export default function GroupDetailsPage() {
       ? "You are a member — open Activity to participate."
       : plan.hint;
 
+  const myMembership = members?.find((member) => member.id === actorId);
+  const contributionDue =
+    isMember &&
+    !isOwner &&
+    group.pricing === "paid" &&
+    Boolean(myMembership) &&
+    myMembership?.contributionStatus !== "paid";
+
+  const openContributionPayment = () => {
+    if (!business) return;
+    setPaymentTarget({
+      kind: "CONTRIBUTION",
+      groupId: group.id,
+      groupName: group.name,
+      amountPounds: group.contribution ?? 0,
+      frequency: group.contributionFrequency ?? "once",
+      onPaid: async () => {
+        await business.refresh();
+        const [nextDetail, nextMembers] = await Promise.all([
+          businessApi.group(group.id),
+          businessApi.groupMembers(group.id),
+        ]);
+        setDetail(nextDetail);
+        setMembers(nextMembers.members);
+        setFeedback("Contribution paid.");
+      },
+    });
+    setPaymentOpen(true);
+  };
+
   return (
     <div className="flex flex-col gap-4">
       <GroupTabsHeader
@@ -295,7 +371,7 @@ export default function GroupDetailsPage() {
             </p>
             <p className="mt-1 text-[11px] leading-relaxed text-slate-300">
               Administrators keep this group non-functional until it reaches the recruitment
-              threshold for a {activation.tier} {activation.variant} membership. Recruit{" "}
+              threshold for a {activation.planName} {activation.variant} plan. Recruit{" "}
               {activation.remaining} more member{activation.remaining === 1 ? "" : "s"} and it
               switches on automatically.
             </p>
@@ -334,6 +410,11 @@ export default function GroupDetailsPage() {
           <LinkButton to={`${base}/settings`} size="sm">
             <Settings className="size-4" /> Manage Group
           </LinkButton>
+        )}
+        {contributionDue && (
+          <Button size="sm" onClick={openContributionPayment}>
+            <CircleDollarSign className="size-4" /> Pay contribution
+          </Button>
         )}
         {isMember && !isOwner && (
           <LinkButton to={`${base}/activity`} size="sm">
@@ -656,6 +737,11 @@ export default function GroupDetailsPage() {
 
       {feedback && <Toast message={feedback} onDismiss={() => setFeedback(null)} />}
       <MemberDetailModal member={memberDetail} onClose={() => setMemberDetailId(null)} />
+      <PaymentDialog
+        open={paymentOpen}
+        onClose={() => setPaymentOpen(false)}
+        target={paymentTarget}
+      />
     </div>
   );
 }

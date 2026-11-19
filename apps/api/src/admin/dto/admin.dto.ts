@@ -11,7 +11,9 @@ import {
   IsString,
   MaxLength,
   Min,
+  ValidateNested,
 } from "class-validator";
+import { Type } from "class-transformer";
 
 const GROUP_STATUSES = [
   "Active",
@@ -101,6 +103,10 @@ export class CreateGroupAdminDto {
   @IsOptional() @IsInt() @Min(0) requiredSize?: number;
   @IsOptional() @IsString() stage?: string;
   @IsOptional() @IsIn(["free", "paid"]) pricing?: string;
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  requiredPlanIds?: string[];
   @IsOptional() @IsNumber() @Min(0) contribution?: number;
   @IsOptional() @IsString() contributionFrequency?: string;
   @IsOptional() @IsString() interactionLevel?: string;
@@ -128,6 +134,10 @@ export class UpdateGroupAdminDto {
   @IsOptional() @IsInt() @Min(0) requiredSize?: number;
   @IsOptional() @IsString() stage?: string;
   @IsOptional() @IsIn(["free", "paid"]) pricing?: string;
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  requiredPlanIds?: string[];
   @IsOptional() @IsNumber() @Min(0) contribution?: number;
   @IsOptional() @IsString() contributionFrequency?: string;
   @IsOptional() @IsString() interactionLevel?: string;
@@ -320,29 +330,33 @@ export class UpdateRelationshipDto {
 }
 
 // ---------------------------------------------------------------------------
-// Memberships
+// Plans
 // ---------------------------------------------------------------------------
 
-export class CreateMembershipPlanDto {
-  @IsIn(["Bronze", "Silver", "Gold", "Platinum"]) tier!: string;
-  @IsIn(["Standard", "Pro", "Pro+"]) variant!: string;
-  @IsString() name!: string;
-  @IsOptional() @IsNumber() @Min(0) priceMonthly?: number;
-  @IsOptional() @IsIn(["Monthly", "Annual"]) billingFrequency?: string;
+export class PlanVariantConfigDto {
+  @IsNumber() @Min(0) priceMonthly!: number;
   @IsOptional() @IsIn(["Active", "Draft", "Closed"]) status?: string;
-  @IsOptional() @IsInt() @Min(0) groupQuota?: number;
-  @IsOptional() @IsInt() @Min(0) circleQuota?: number;
+  @IsInt() @Min(0) groupQuota!: number;
+  @IsInt() @Min(0) circleQuota!: number;
   @IsOptional() @IsNumber() @Min(0) revenueSharePercent?: number;
   @IsOptional() @IsArray() @IsString({ each: true }) features?: string[];
-  @IsOptional() @IsInt() @Min(0) subscriberCount?: number;
 }
 
-export class UpdateMembershipPlanDto {
-  @IsOptional() @IsIn(["Bronze", "Silver", "Gold", "Platinum"]) tier?: string;
+/**
+ * A plan is configured as one unit: Standard, Pro and Pro+ must always be
+ * supplied together so every published plan offers the full variant set.
+ */
+export class CreatePlanDto {
+  @IsString() @MaxLength(120) name!: string;
+  @ValidateNested() @Type(() => PlanVariantConfigDto) standard!: PlanVariantConfigDto;
+  @ValidateNested() @Type(() => PlanVariantConfigDto) pro!: PlanVariantConfigDto;
+  @ValidateNested() @Type(() => PlanVariantConfigDto) proPlus!: PlanVariantConfigDto;
+}
+
+export class UpdatePlanDto {
+  @IsOptional() @IsString() @MaxLength(120) name?: string;
   @IsOptional() @IsIn(["Standard", "Pro", "Pro+"]) variant?: string;
-  @IsOptional() @IsString() name?: string;
   @IsOptional() @IsNumber() @Min(0) priceMonthly?: number;
-  @IsOptional() @IsIn(["Monthly", "Annual"]) billingFrequency?: string;
   @IsOptional() @IsIn(["Active", "Draft", "Closed"]) status?: string;
   @IsOptional() @IsInt() @Min(0) groupQuota?: number;
   @IsOptional() @IsInt() @Min(0) circleQuota?: number;

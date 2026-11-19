@@ -12,6 +12,7 @@ export default defineConfig(({ mode }) => {
   const apiTarget = env.API_TARGET || `http://localhost:${apiPort}`;
 
   return {
+    envDir: workspaceRoot,
     plugins: [react(), tailwindcss()],
     server: {
       port: webPort,
