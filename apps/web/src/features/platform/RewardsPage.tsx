@@ -80,9 +80,9 @@ export default function RewardsPage() {
           accent="success"
         />
         <StatCard
-          label="Current tier"
-          value={stats?.currentTier ?? current?.tier ?? "—"}
-          hint="Set by the membership programme"
+          label="Current plan"
+          value={stats?.currentPlan ?? current?.tier ?? "—"}
+          hint="Your active subscription plan"
           accent="gold"
         />
       </div>

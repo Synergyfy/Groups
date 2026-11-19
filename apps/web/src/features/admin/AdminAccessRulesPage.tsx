@@ -45,11 +45,15 @@ export default function AdminAccessRulesPage() {
   // Group Creation Rules screen — this page summarises them.
   const creationRules = state.adminConfig.groupCreationRules;
   const rightsLabel = selectCreationRightsLabel(state);
-  const eligiblePlanCount = (data?.membershipPlans ?? []).filter(
+  const eligiblePlanCount = (data?.plans ?? []).filter(
     (plan) =>
-      creationRules.allowedTiers.includes(plan.tier) &&
+      creationRules.allowedPlans.includes(plan.name) &&
       creationRules.allowedVariants.includes(plan.variant)
   ).length;
+  const recruitmentPlanNames = Object.keys(creationRules.recruitmentTargets);
+  const firstPlanName = recruitmentPlanNames[0] ?? "first plan";
+  const lastPlanName =
+    recruitmentPlanNames[recruitmentPlanNames.length - 1] ?? "last plan";
 
   // Temporary access settings state (Henry's 7-day or 14-day requirement)
   const [tempAccessDuration, setTempAccessDuration] = useState<"none" | "7" | "14" | "30">(
@@ -250,14 +254,14 @@ export default function AdminAccessRulesPage() {
               <CardTitle>Who Can Create Groups</CardTitle>
             </div>
             <p className="text-[11px] text-slate-400">
-              Creation rights are membership-based and enforced by the Group Creation Rules
+              Creation rights are plan-based and enforced by the Group Creation Rules
               screen.
             </p>
             <div className="flex flex-col gap-2">
               <div className="rounded-lg border border-gold-500/40 bg-gold-500/10 p-2.5 text-xs text-white">
                 <span className="font-semibold">{rightsLabel}</span>
                 <p className="mt-0.5 text-[10px] text-slate-400">
-                  {eligiblePlanCount} of {data?.membershipPlans.length ?? 0} published plans may run the
+                  {eligiblePlanCount} of {data?.plans.length ?? 0} published plans may run the
                   Create Group wizard.
                 </p>
               </div>
@@ -267,9 +271,10 @@ export default function AdminAccessRulesPage() {
                   {creationRules.restrictToPlatformGroup
                     ? "Joins the admin-set platform group on dashboard entry."
                     : "Can browse and join groups but cannot create one."}{" "}
-                  Recruitment thresholds: Bronze ~
-                  {creationRules.recruitmentTargets.Bronze.Standard} members, Platinum ~
-                  {creationRules.recruitmentTargets.Platinum["Pro+"]}.
+                  Recruitment thresholds: {firstPlanName} ~
+                  {creationRules.recruitmentTargets[firstPlanName]?.Standard ?? 0} members,{" "}
+                  {lastPlanName} ~
+                  {creationRules.recruitmentTargets[lastPlanName]?.["Pro+"] ?? 0}.
                 </p>
               </div>
               <LinkButton to="/admin/config/group-rules" variant="outline" size="sm">

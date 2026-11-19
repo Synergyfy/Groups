@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowRight,
@@ -18,6 +18,10 @@ import {
   type UserEligibilityProfile,
 } from "../groups/groupEligibility";
 import { readParticipantSession } from "../../app/authSession";
+import { ApiError } from "../../app/api";
+import PaymentDialog, {
+  type PaymentTarget,
+} from "../payments/PaymentDialog";
 
 export default function ConsumerDashboardPage() {
   useEffect(() => {
@@ -25,7 +29,7 @@ export default function ConsumerDashboardPage() {
   }, []);
 
   const session = readParticipantSession();
-  const { groups, invitations, join } = useConsumerData();
+  const { groups, invitations, join, refresh } = useConsumerData();
 
   const consumerId = session?.role === "consumer" ? (session.accountId || session.email || "") : "";
   const consumerName = session?.role === "consumer" ? session.name : "John Doe";
@@ -33,6 +37,8 @@ export default function ConsumerDashboardPage() {
   const city = session?.city || inferCityFromPostcode(postcode) || "Birmingham";
 
   const circles: GroupCircle[] = [];
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [paymentTarget, setPaymentTarget] = useState<PaymentTarget | null>(null);
 
   const userProfile: UserEligibilityProfile = useMemo(() => {
     return {
@@ -58,8 +64,40 @@ export default function ConsumerDashboardPage() {
       .slice(0, 3);
   }, [groups, invitations, userProfile]);
 
-  const handleQuickJoin = (groupId: string) => {
-    void join(groupId);
+  const handleQuickJoin = async (groupId: string) => {
+    try {
+      await join(groupId);
+    } catch (cause) {
+      const group = groups.find((entry) => entry.id === groupId);
+      if (cause instanceof ApiError) {
+        const body = cause.body as
+          | {
+              code?: string;
+              amount?: number;
+              amountMinor?: string;
+              frequency?: string;
+              groupId?: string;
+            }
+          | null;
+        if (body?.code === "PAYMENT_REQUIRED" && group) {
+          setPaymentTarget({
+            kind: "CONTRIBUTION",
+            groupId: body.groupId ?? groupId,
+            groupName: group.name,
+            amountPounds:
+              body.amountMinor !== undefined
+                ? Number(body.amountMinor) / 100
+                : Number(body.amount ?? group.contribution ?? 0),
+            frequency:
+              body.frequency ?? group.contributionFrequency ?? "once",
+            onPaid: async () => {
+              await refresh();
+            },
+          });
+          setPaymentOpen(true);
+        }
+      }
+    }
   };
 
   return (
@@ -360,6 +398,12 @@ export default function ConsumerDashboardPage() {
           </div>
         </aside>
       </div>
+
+      <PaymentDialog
+        open={paymentOpen}
+        onClose={() => setPaymentOpen(false)}
+        target={paymentTarget}
+      />
     </div>
   );
 }

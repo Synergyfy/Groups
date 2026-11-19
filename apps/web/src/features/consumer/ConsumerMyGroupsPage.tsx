@@ -19,7 +19,12 @@ import {
 import Badge from "../../components/ui/Badge";
 import { useConsumerData } from "../../consumer/ConsumerDataProvider";
 import { readParticipantSession } from "../../app/authSession";
+import { errorMessage } from "../../app/api";
 import type { Group } from "../../domain/types";
+import PaymentDialog, {
+  type PaymentTarget,
+} from "../payments/PaymentDialog";
+import { paymentRequiredDetails } from "../payments/paymentsApi";
 
 export default function ConsumerMyGroupsPage() {
   useEffect(() => {
@@ -36,6 +41,8 @@ export default function ConsumerMyGroupsPage() {
   const [filterType, setFilterType] = useState<"all" | "local" | "invites">("all");
   const [selectedGroupMembersModal, setSelectedGroupMembersModal] = useState<Group | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [paymentTarget, setPaymentTarget] = useState<PaymentTarget | null>(null);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -83,9 +90,35 @@ export default function ConsumerMyGroupsPage() {
     }
   };
 
-  const handleAcceptInvite = (invitationId: string) => {
-    void respond(invitationId, true);
-    showToast("Invitation accepted! Group joined.");
+  const handleAcceptInvite = async (invitationId: string) => {
+    try {
+      await respond(invitationId, true);
+      showToast("Invitation accepted! Group joined.");
+    } catch (cause) {
+      const required = paymentRequiredDetails(cause);
+      if (required) {
+        const invitation = invitations.find(
+          (entry) => entry.id === invitationId,
+        );
+        const group = groups.find(
+          (entry) => entry.id === (required.groupId ?? invitation?.groupId),
+        );
+        setPaymentTarget({
+          kind: "CONTRIBUTION",
+          groupId: required.groupId,
+          groupName: group?.name ?? "Group invitation",
+          amountPounds: required.amountPounds,
+          frequency: required.frequency,
+          onPaid: async () => {
+            await respond(invitationId, true);
+            showToast("Contribution paid — invitation accepted.");
+          },
+        });
+        setPaymentOpen(true);
+        return;
+      }
+      showToast(errorMessage(cause));
+    }
   };
 
   return (
@@ -473,6 +506,12 @@ export default function ConsumerMyGroupsPage() {
           </div>
         </div>
       )}
+
+      <PaymentDialog
+        open={paymentOpen}
+        onClose={() => setPaymentOpen(false)}
+        target={paymentTarget}
+      />
     </div>
   );
 }

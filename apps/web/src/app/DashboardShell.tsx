@@ -31,7 +31,10 @@ export default function DashboardShell({ sectionLabel, nav, bottomNav }: Dashboa
   const location = useLocation();
   // The admin experience deliberately has no guided journey or page tour —
   // guidance there is delivered inline as tooltips and field descriptions.
-  const showJourney = !location.pathname.startsWith("/admin");
+  // The plan gate is a single-task flow and has no dashboard tour either.
+  const showJourney =
+    !location.pathname.startsWith("/admin") &&
+    !location.pathname.startsWith("/business/plan");
 
   return (
     <div className="flex min-h-screen flex-col overflow-x-clip">

@@ -22,6 +22,8 @@ import type { BusinessContext } from "../business.types.js";
 import { mapCircle as mapBusinessCircle } from "../business.mappers.js";
 import type { BusinessInvitationQueryDto } from "../dto/business.dto.js";
 import { pageParams, pageResult } from "../business.utils.js";
+import { contributionPeriodKey } from "../../payments/payments.utils.js";
+import { fromMinorPence } from "../../common/money.js";
 
 interface InvitationWithTarget {
   invitation: Invitation;
@@ -115,6 +117,36 @@ export class BusinessInvitationsService {
     }
 
     const memberId = this.memberIdFor(ctx, invitation);
+    if (
+      accept &&
+      invitation.kind === "invite" &&
+      target.group?.pricing === "paid"
+    ) {
+      const periodKey = contributionPeriodKey(
+        target.group.contributionFrequency,
+      );
+      const paid = await this.prisma.payment.findFirst({
+        where: {
+          purpose: "GROUP_CONTRIBUTION",
+          groupId: target.group.id,
+          memberId,
+          periodKey,
+          status: "PAID",
+          deletedAt: null,
+        },
+      });
+      if (!paid) {
+        throw new ConflictException({
+          code: "PAYMENT_REQUIRED",
+          message: `This group requires a £${fromMinorPence(target.group.contributionMinor)} contribution.`,
+          groupId: target.group.id,
+          amountMinor: (target.group.contributionMinor ?? 0).toString(),
+          amount: fromMinorPence(target.group.contributionMinor),
+          frequency: target.group.contributionFrequency ?? "once",
+          periodKey,
+        });
+      }
+    }
     if (accept) {
       if (invitation.kind === "request") {
         if (!target.group) {

@@ -21,7 +21,7 @@ import type {
   InteractionLevel,
   Invitation,
   InvitationStatus,
-  MembershipAccess,
+  PlanAccess,
   NetworkContact,
   PartnerRecord,
   ParticipantRole,
@@ -29,7 +29,6 @@ import type {
   PlatformAccount,
   ProgrammeRecord,
   RelationshipRecord,
-  Tier,
 } from "../domain/types";
 export const STORE_VERSION = 2;
 
@@ -48,7 +47,7 @@ export interface AppState {
   activeCircleId: string;
   adminConfig: AdminConfig;
   /** The signed-in business's paid access and access agreement. */
-  membership: MembershipAccess;
+  plan: PlanAccess;
   networkContacts: NetworkContact[];
   accounts: PlatformAccount[];
   partners: PartnerRecord[];
@@ -82,7 +81,7 @@ export interface BusinessHydratePayload {
   circleActivities: ActivityEvent[];
   activeCircleId?: string;
   adminConfig: AdminConfig;
-  membership: MembershipAccess;
+  plan: PlanAccess;
 }
 
 export interface NewGroupInput {
@@ -98,6 +97,7 @@ export interface NewGroupInput {
   visibility?: GroupVisibility;
   interactionLevel?: InteractionLevel;
   pricing?: GroupPricingMode;
+  requiredPlanIds?: string[];
   contribution?: number;
   contributionFrequency?: ContributionFrequency;
 }
@@ -141,12 +141,12 @@ export type AppAction =
     }
   | { type: "account/register"; account: PlatformAccount }
   | {
-      type: "membership/activate";
-      tier: Tier;
+      type: "plan/activate";
       variant: PlanVariant;
       planName: string;
       accessDays: number;
       accessFee: number;
+      accessFeeMinor?: number;
     }
   | { type: "admin/update-config"; patch: AdminConfigPatch }
   | { type: "admin/group-update"; groupId: string; patch: Partial<Group>; actor: Actor }
@@ -258,16 +258,16 @@ export function newPlatformAccount(input: NewAccountInput): PlatformAccount {
  * The signed-in business starts with no paid access and no accepted
  * agreement — both are required before the dashboard can be entered.
  */
-function defaultMembershipAccess(): MembershipAccess {
+function defaultPlanAccess(): PlanAccess {
   return {
     ownerId: "",
-    tier: "Bronze",
     variant: "Standard",
     planName: "",
     status: "Pending",
     paid: false,
     accessDays: 0,
     accessFee: 0,
+    accessFeeMinor: 0,
     agreementAccepted: false,
   };
 }
@@ -283,14 +283,14 @@ export function createInitialAppState(): AppState {
     activeCircleId: "",
     networkContacts: [],
     accounts: [],
-    membership: defaultMembershipAccess(),
+    plan: defaultPlanAccess(),
     adminConfig: {
       automaticGrouping: { enabled: false, threshold: 6, method: "", scope: "", allowCombine: false },
       groupTypes: [],
       stageLabels: [],
       paymentRules: { allowPaid: false, minAmount: 0, maxAmount: 0, presets: [], allowCustom: false },
       groupCreationRules: {
-        allowedTiers: [],
+        allowedPlans: [],
         allowedVariants: [],
         restrictToPlatformGroup: false,
         platformGroupId: null,
@@ -403,21 +403,21 @@ function registerAccount(
  * Pays the access fee and accepts the access agreement in one step — the
  * combination required before dashboard entry and mandatory group activation.
  */
-function activateMembership(
+function activatePlan(
   state: AppState,
-  action: Extract<AppAction, { type: "membership/activate" }>
+  action: Extract<AppAction, { type: "plan/activate" }>
 ): AppState {
   return {
     ...state,
-    membership: {
-      ...state.membership,
-      tier: action.tier,
+    plan: {
+      ...state.plan,
       variant: action.variant,
       planName: action.planName,
       status: "Active",
       paid: true,
       accessDays: action.accessDays,
       accessFee: action.accessFee,
+      accessFeeMinor: action.accessFeeMinor ?? Math.round(action.accessFee * 100),
       agreementAccepted: true,
       agreedAt: nowIso(),
     },
@@ -563,6 +563,7 @@ function createGroup(state: AppState, action: Extract<AppAction, { type: "group/
     ...(action.input.requiredSize ? { requiredSize: action.input.requiredSize } : {}),
     ...(action.input.stage ? { stage: action.input.stage } : {}),
     pricing: action.input.pricing ?? "free",
+    requiredPlanIds: action.input.requiredPlanIds ?? [],
     ...(action.input.contribution ? { contribution: action.input.contribution } : {}),
     ...(action.input.pricing === "paid" && action.input.contributionFrequency
       ? { contributionFrequency: action.input.contributionFrequency }
@@ -730,16 +731,16 @@ function updateAdminConfig(state: AppState, patch: AdminConfigPatch): AppState {
         const targets = patch.groupCreationRules?.recruitmentTargets ?? current.recruitmentTargets;
         return {
           ...next,
-          allowedTiers: [...(patch.groupCreationRules?.allowedTiers ?? current.allowedTiers)],
+          allowedPlans: [...(patch.groupCreationRules?.allowedPlans ?? current.allowedPlans)],
           allowedVariants: [
             ...(patch.groupCreationRules?.allowedVariants ?? current.allowedVariants),
           ],
-          recruitmentTargets: {
-            Bronze: { ...targets.Bronze },
-            Silver: { ...targets.Silver },
-            Gold: { ...targets.Gold },
-            Platinum: { ...targets.Platinum },
-          },
+          recruitmentTargets: Object.fromEntries(
+            Object.entries(targets).map(([planName, variantTargets]) => [
+              planName,
+              { ...variantTargets },
+            ]),
+          ),
         };
       })(),
       circleTypes: patch.circleTypes
@@ -887,8 +888,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return state;
     case "account/register":
       return registerAccount(state, action);
-    case "membership/activate":
-      return activateMembership(state, action);
+    case "plan/activate":
+      return activatePlan(state, action);
     case "admin/update-config": {
       const next = updateAdminConfig(state, action.patch);
       return next;
@@ -1134,7 +1135,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         activeCircleId:
           payload.activeCircleId ?? state.activeCircleId ?? payload.circles[0]?.id ?? "",
         adminConfig: payload.adminConfig,
-        membership: payload.membership,
+        plan: payload.plan,
         businessProfile: payload.profile,
         businessStats: payload.stats,
       };

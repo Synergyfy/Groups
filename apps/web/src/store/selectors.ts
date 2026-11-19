@@ -12,7 +12,7 @@ import type {
   GroupCircle,
   Invitation,
   MandatoryGroupPricing,
-  MembershipAccess,
+  PlanAccess,
   NetworkContact,
   PartnerRecord,
   PlanVariant,
@@ -20,7 +20,6 @@ import type {
   ProgrammeRecord,
   RelationshipRecord,
   AuditLogEntry,
-  Tier,
   UserGroupType,
 } from "../domain/types";
 import {
@@ -272,57 +271,57 @@ export function selectNetworkStats(state: AppState): NetworkStats {
 }
 
 // ---------------------------------------------------------------------------
-// Membership-based group creation rules
+// Plan-based group creation rules
 // ---------------------------------------------------------------------------
 
 /** The signed-in business's paid access record. */
-export function selectMembership(state: AppState): MembershipAccess {
-  return state.membership;
+export function selectPlan(state: AppState): PlanAccess {
+  return state.plan;
 }
 
-/** True when the membership (tier + variant) may create its own groups. */
+/** True when the plan may create its own groups. */
 export function selectCanCreateGroups(state: AppState): boolean {
   const rules = state.adminConfig.groupCreationRules;
-  const membership = state.membership;
-  if (!membership.agreementAccepted) return false;
-  if (rules.requirePaidAccess && !membership.paid) return false;
+  const plan = state.plan;
+  if (!plan.agreementAccepted) return false;
+  if (rules.requirePaidAccess && !plan.paid) return false;
   return (
-    rules.allowedTiers.includes(membership.tier) &&
-    rules.allowedVariants.includes(membership.variant)
+    rules.allowedPlans.includes(plan.planName) &&
+    rules.allowedVariants.includes(plan.variant)
   );
 }
 
 /**
  * A one-line summary of who may create groups, e.g.
- * "Platinum Pro+ memberships only".
+ * "Platinum Pro+ plans only".
  */
 export function selectCreationRightsLabel(state: AppState): string {
   const rules = state.adminConfig.groupCreationRules;
-  const combos = rules.allowedTiers.flatMap((tier) =>
-    rules.allowedVariants.map((variant) => `${tier} ${variant}`)
+  const combos = rules.allowedPlans.flatMap((planName) =>
+    rules.allowedVariants.map((variant) => `${planName} ${variant}`)
   );
-  if (combos.length === 0) return "No membership can create groups";
+  if (combos.length === 0) return "No plan can create groups";
   if (combos.length > 4) {
     return `${combos.slice(0, 4).join(", ")} and ${combos.length - 4} more`;
   }
-  return `${combos.join(", ")}${combos.length === 1 ? " membership" : " memberships"} only`;
+  return `${combos.join(", ")}${combos.length === 1 ? " plan" : " plans"} only`;
 }
 
-function membershipOfOwner(
+function planOfOwner(
   state: AppState,
   ownerId: string
-): { tier: Tier; variant: PlanVariant } {
-  const membership = state.membership;
-  if (ownerId === membership.ownerId) {
-    return { tier: membership.tier, variant: membership.variant };
+): { planName: string; variant: PlanVariant } {
+  const plan = state.plan;
+  if (ownerId === plan.ownerId) {
+    return { planName: plan.planName, variant: plan.variant };
   }
   const business = state.businesses.find((entry) => entry.id === ownerId);
-  const tier: Tier = !business || business.tier === "Free" ? "Bronze" : business.tier;
-  return { tier, variant: "Standard" };
+  const planName = !business || business.tier === "Free" ? "Free" : business.tier;
+  return { planName, variant: "Standard" };
 }
 
 export interface GroupActivation {
-  /** Members the administrator requires for this owner's membership. */
+  /** Members the administrator requires for this owner's plan. */
   target: number;
   current: number;
   remaining: number;
@@ -331,13 +330,13 @@ export interface GroupActivation {
   active: boolean;
   /** Whether the threshold applies at all (system groups use split rules). */
   gated: boolean;
-  tier: Tier;
+  planName: string;
   variant: PlanVariant;
 }
 
 /**
  * The activation threshold for a group: the administrator-set recruitment
- * requirement for the owner's membership. User-created groups stay
+ * requirement for the owner's plan. User-created groups stay
  * non-functional until they reach it; automatic groups are excluded because
  * they follow the automatic-split threshold instead.
  */
@@ -347,8 +346,11 @@ export function selectGroupActivation(state: AppState, group: Group): GroupActiv
   }
   const rules = state.adminConfig.groupCreationRules;
   const current = group.memberCount ?? group.memberIds.length;
-  const { tier, variant } = membershipOfOwner(state, group.ownerId);
-  const target = rules.recruitmentTargets[tier][variant];
+  const { planName, variant } = planOfOwner(state, group.ownerId);
+  const target =
+    rules.recruitmentTargets[planName]?.[variant] ??
+    Object.values(rules.recruitmentTargets)[0]?.Standard ??
+    0;
   const gated =
     rules.activationEnabled &&
     group.source === "user-created" &&
@@ -362,7 +364,7 @@ export function selectGroupActivation(state: AppState, group: Group): GroupActiv
     percent: Math.min(Math.round((current / Math.max(target, 1)) * 100), 100),
     active,
     gated,
-    tier,
+    planName,
     variant,
   };
 }
@@ -429,8 +431,8 @@ export function useMandatoryGroupStatuses(actorId: string): MandatoryGroupStatus
   return useMemo(() => selectMandatoryGroupStatuses(state, actorId), [state, actorId]);
 }
 
-export function useMembership(): MembershipAccess {
-  return useAppState().membership;
+export function usePlan(): PlanAccess {
+  return useAppState().plan;
 }
 
 export function useCanCreateGroups(): boolean {

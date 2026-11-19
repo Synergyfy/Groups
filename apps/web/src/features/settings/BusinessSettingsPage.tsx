@@ -15,13 +15,14 @@ import LinkButton from "../../components/ui/LinkButton";
 import SectionHeader from "../../components/ui/SectionHeader";
 import Toast from "../../components/ui/Toast";
 import { errorMessage } from "../../app/api";
+import { accessDaysLabel } from "../../domain/types";
 import { businessApi, useBusinessData } from "../../business/BusinessDataProvider";
 
 const FIELD_CLASS =
   "h-11 rounded-lg border border-white/10 bg-ink-800 px-3 text-sm text-slate-200 placeholder:text-slate-500 focus:border-gold-500/50 focus:outline-none";
 
 export default function BusinessSettingsPage() {
-  const { profile, membership, locations, refresh } = useBusinessData();
+  const { profile, plan, locations, refresh } = useBusinessData();
 
   const [name, setName] = useState(profile?.business.name ?? "");
   const [contactName, setContactName] = useState(
@@ -217,41 +218,43 @@ export default function BusinessSettingsPage() {
                 <Badge variant={access?.agreementAccepted ? "success" : "warning"}>
                   {access?.agreementAccepted ? "Agreement accepted" : "Agreement pending"}
                 </Badge>
-                <Badge variant="gold">{membership?.membership.tier ?? "—"}</Badge>
+                <Badge variant="gold">{plan?.plan.planName || "—"}</Badge>
               </div>
               <dl className="flex flex-col gap-1.5 text-[11px]">
-                <Row label="Plan" value={membership?.membership.planName ?? "—"} />
+                <Row label="Plan" value={plan?.plan.planName || "—"} />
                 <Row
                   label="Variant"
-                  value={membership?.membership.variant ?? "—"}
+                  value={plan?.plan.variant ?? "—"}
                   capitalize
                 />
                 <Row
                   label="Access period"
-                  value={`${membership?.membership.accessDays ?? access?.accessDays ?? 0} days`}
+                  value={accessDaysLabel(
+                    plan?.plan.accessDays ?? access?.accessDays ?? 0,
+                  )}
                 />
                 <Row
                   label="Access fee"
-                  value={`£${membership?.membership.accessFee ?? access?.accessFee ?? 0}`}
+                  value={`£${plan?.plan.accessFee ?? access?.accessFee ?? 0}`}
                 />
                 <Row
                   label="Expires"
                   value={
-                    membership?.membership.accessExpiresAt?.slice(0, 10) ?? "Not active"
+                    plan?.plan.accessExpiresAt?.slice(0, 10) ?? "Not active"
                   }
                 />
                 <Row
                   label="Group quota"
-                  value={String(membership?.quotas.groups ?? "—")}
+                  value={String(plan?.quotas.groups ?? "—")}
                 />
                 <Row
                   label="Circle quota"
-                  value={String(membership?.quotas.circles ?? "—")}
+                  value={String(plan?.quotas.circles ?? "—")}
                 />
               </dl>
               <p className="rounded-xl border border-white/10 bg-ink-950/60 px-3 py-2 text-[11px] leading-relaxed text-slate-500">
                 Paid access is activated through the access agreement before the dashboard opens.
-                Group and circle quotas come from your current membership.
+                Group and circle quotas come from your current plan.
               </p>
             </CardBody>
           </Card>

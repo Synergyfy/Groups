@@ -9,7 +9,7 @@ import type {
   GroupCircle,
   Invitation,
   LocationHierarchy,
-  MembershipPlan,
+  Plan,
   PartnerRecord,
   PlatformAccount,
   ProgrammeRecord,
@@ -104,7 +104,7 @@ export interface AdminGroupReport {
 export interface AdminSettingsReport {
   stats: {
     registeredEntities: number;
-    totalMemberships: number;
+    totalPlanSubscribers: number;
     invitationsSent: number;
     invitationConversion: number;
   };
@@ -350,26 +350,26 @@ export const adminApi = {
       method: "DELETE",
     }),
 
-  plans: () => apiRequest<MembershipPlan[]>("/admin/memberships/plans"),
+  plans: () => apiRequest<Plan[]>("/admin/plans"),
   planStats: () =>
     apiRequest<{
       totalPlans: number;
       activePlans: number;
       totalSubscribers: number;
       monthlyRecurringRunRate: number;
-    }>("/admin/memberships/stats"),
+    }>("/admin/plans/stats"),
   createPlan: (body: Record<string, unknown>) =>
-    apiRequest<MembershipPlan>("/admin/memberships/plans", {
+    apiRequest<Plan[]>("/admin/plans", {
       method: "POST",
       body: JSON.stringify(body),
     }),
   updatePlan: (id: string, patch: Record<string, unknown>) =>
-    apiRequest<MembershipPlan>(`/admin/memberships/plans/${id}`, {
+    apiRequest<Plan>(`/admin/plans/${id}`, {
       method: "PATCH",
       body: JSON.stringify(patch),
     }),
   deletePlan: (id: string) =>
-    apiRequest<{ ok: boolean }>(`/admin/memberships/plans/${id}`, {
+    apiRequest<{ ok: boolean }>(`/admin/plans/${id}`, {
       method: "DELETE",
     }),
 

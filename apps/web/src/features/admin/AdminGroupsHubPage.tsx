@@ -35,7 +35,7 @@ import StatCard from "../../components/ui/StatCard";
 import Table, { type TableColumn } from "../../components/ui/Table";
 import Toast from "../../components/ui/Toast";
 import Modal from "../../components/ui/Modal";
-import type { Group, GroupStatus, GroupType, Invitation } from "../../domain/types";
+import type { Group, GroupStatus, GroupType, Invitation, PlanVariant } from "../../domain/types";
 import { useAppState } from "../../store/selectors";
 import { useAppStore } from "../../store/context";
 import { useAdminData } from "../../admin/AdminDataProvider";
@@ -554,12 +554,62 @@ function PlatformGroupsTab({
     "National (UK-wide)",
     ...(data?.locations.cities.map((city) => city.name) ?? []),
   ];
+  const availablePlans = (data?.plans ?? []).filter(
+    (plan) => plan.status === "Active",
+  );
   const [createOpen, setCreateOpen] = useState(false);
+  const [planName, setPlanName] = useState("");
+  const [planVariant, setPlanVariant] = useState<PlanVariant | "*">("Standard");
   const [form, setForm] = useState({
     name: "", purpose: "", type: "Marketing" as string, location: "National (UK-wide)",
     sector: "All sectors", joinMethod: "open" as "open" | "request" | "invitation",
+    planIds: [] as string[],
     memberLimit: "", startDate: "", endDate: "", status: "draft" as "active" | "draft",
   });
+
+  const planNames = [...new Set(availablePlans.map((plan) => plan.name))];
+  const selectedPlanName = planNames.includes(planName)
+    ? planName
+    : (planNames[0] ?? "");
+  const planVariants = [
+    ...new Set(
+      availablePlans
+        .filter((plan) => plan.name === selectedPlanName)
+        .map((plan) => plan.variant),
+    ),
+  ];
+  const selectedVariant: PlanVariant | "*" =
+    planVariant === "*" || planVariants.includes(planVariant)
+      ? planVariant
+      : (planVariants[0] ?? "Standard");
+
+  const changePlanName = (name: string) => {
+    setPlanName(name);
+    setPlanVariant(
+      availablePlans.find((plan) => plan.name === name)?.variant ?? "Standard",
+    );
+  };
+
+  const addPlanSelection = () => {
+    if (!selectedPlanName) return;
+    const matching = availablePlans.filter((plan) =>
+      plan.name === selectedPlanName &&
+      (selectedVariant === "*" || plan.variant === selectedVariant),
+    );
+    setForm((current) => ({
+      ...current,
+      planIds: [
+        ...new Set([...current.planIds, ...matching.map((plan) => plan.id)]),
+      ],
+    }));
+  };
+
+  const removePlan = (planId: string) => {
+    setForm((current) => ({
+      ...current,
+      planIds: current.planIds.filter((id) => id !== planId),
+    }));
+  };
 
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
@@ -575,13 +625,14 @@ function PlatformGroupsTab({
         visibility: "directory",
         interactionLevel: "message",
         pricing: "free",
+        requiredPlanIds: form.planIds,
         status: form.status === "draft" ? "Pending Review" : "Active",
         requiredSize: form.memberLimit ? Number(form.memberLimit) : undefined,
       },
     });
     setFeedback(`Platform group "${form.name}" created!`);
     setCreateOpen(false);
-    setForm({ name: "", purpose: "", type: "Marketing", location: "National (UK-wide)", sector: "All sectors", joinMethod: "open", memberLimit: "", startDate: "", endDate: "", status: "draft" });
+    setForm({ name: "", purpose: "", type: "Marketing", location: "National (UK-wide)", sector: "All sectors", joinMethod: "open", planIds: [], memberLimit: "", startDate: "", endDate: "", status: "draft" });
   };
 
   return (
@@ -628,6 +679,17 @@ function PlatformGroupsTab({
                     <Badge variant="gold">{g.type}</Badge>
                     {g.location?.city && <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-slate-400"><MapPin className="size-2.5" />{g.location.city}</span>}
                     <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-slate-400"><Users className="size-2.5" />{memberCountOf(g)} members</span>
+                    {g.requiredPlanIds && g.requiredPlanIds.length > 0 && (
+                      <span
+                        title={g.requiredPlanIds
+                          .map((planId) => (data?.plans ?? []).find((plan) => plan.id === planId)?.name ?? "Unknown plan")
+                          .join(", ")}
+                        className="inline-flex items-center gap-1 rounded-full border border-gold-500/20 bg-gold-500/10 px-2 py-0.5 text-[10px] text-gold-300"
+                      >
+                        <Star className="size-2.5" />
+                        {g.requiredPlanIds.length} plan{g.requiredPlanIds.length === 1 ? "" : "s"} required
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-1.5 border-t border-white/5 pt-2">
                     <Link to={`/admin/groups/${g.id}`} className="flex-1 rounded-md border border-white/10 bg-white/5 py-1 text-center text-[10px] text-slate-300 hover:bg-white/10 transition-colors">Edit / View</Link>
@@ -706,6 +768,84 @@ function PlatformGroupsTab({
                     {JOIN_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label} — {m.desc}</option>)}
                   </select>
                 </label>
+                <div className="rounded-lg border border-white/10 bg-ink-900/40 p-3 sm:col-span-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-slate-300">Plans</span>
+                    <button
+                      type="button"
+                      onClick={() => setForm((current) => ({ ...current, planIds: [] }))}
+                      className={`rounded px-2 py-0.5 text-[10px] transition-colors ${form.planIds.length === 0 ? "bg-gold-500/15 text-gold-300" : "text-slate-400 hover:text-white"}`}
+                    >
+                      All plans
+                    </button>
+                  </div>
+                  <p className="mt-1 text-[10px] text-slate-500">
+                    Only people on the selected plans can join this group. Leave empty to allow every member, regardless of plan.
+                  </p>
+
+                  {availablePlans.length > 0 ? (
+                    <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end">
+                      <label className="flex min-w-0 flex-1 flex-col gap-1">
+                        <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">Plan</span>
+                        <select
+                          value={selectedPlanName}
+                          onChange={(e) => changePlanName(e.target.value)}
+                          className="h-8 rounded-md border border-white/10 bg-ink-800 px-2 text-xs text-slate-200 focus:border-gold-500/50 focus:outline-none"
+                        >
+                          {planNames.map((name) => (
+                            <option key={name} value={name}>{name}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="flex min-w-0 flex-1 flex-col gap-1">
+                        <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">Variant</span>
+                        <select
+                          value={selectedVariant}
+                          onChange={(e) => setPlanVariant(e.target.value as PlanVariant | "*")}
+                          className="h-8 rounded-md border border-white/10 bg-ink-800 px-2 text-xs text-slate-200 focus:border-gold-500/50 focus:outline-none"
+                        >
+                          <option value="*">All variants</option>
+                          {planVariants.map((variant) => (
+                            <option key={variant} value={variant}>{variant}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={addPlanSelection}
+                        className="h-8 shrink-0 rounded-md border border-gold-500/30 bg-gold-500/10 px-3 text-[11px] font-medium text-gold-300 transition-colors hover:bg-gold-500/20"
+                      >
+                        Add plan
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-[10px] text-slate-500">No active plans configured yet.</p>
+                  )}
+
+                  {form.planIds.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {form.planIds.map((planId) => {
+                        const plan = availablePlans.find((entry) => entry.id === planId);
+                        return (
+                          <span
+                            key={planId}
+                            className="inline-flex items-center gap-1 rounded-full border border-gold-500/30 bg-gold-500/10 py-0.5 pl-2 pr-1 text-[10px] text-gold-200"
+                          >
+                            {plan?.name ?? "Unknown plan"}
+                            <button
+                              type="button"
+                              aria-label={`Remove ${plan?.name ?? "plan"}`}
+                              onClick={() => removePlan(planId)}
+                              className="flex size-4 items-center justify-center rounded-full text-gold-300 hover:bg-gold-500/20 hover:text-white"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 

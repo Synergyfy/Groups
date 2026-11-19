@@ -35,5 +35,6 @@ import { BusinessPlatformService } from "./platform/business-platform.service.js
     BusinessCirclesService,
     BusinessPlatformService,
   ],
+  exports: [BusinessContextService, BusinessGroupsService, BusinessPlatformService],
 })
 export class BusinessModule {}

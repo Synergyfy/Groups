@@ -286,7 +286,7 @@ export const BUSINESS_STEPS: JourneyStep[] = [
     cta: { label: "Open account settings", to: "/business/settings" },
     detect: (ctx) =>
       Boolean(
-        ctx.state.membership.paid && ctx.state.membership.agreementAccepted
+        ctx.state.plan.paid && ctx.state.plan.agreementAccepted
       ),
   },
 ];
