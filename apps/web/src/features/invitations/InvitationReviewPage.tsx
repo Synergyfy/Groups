@@ -30,6 +30,10 @@ import {
   businessApi,
   useOptionalBusinessData,
 } from "../../business/BusinessDataProvider";
+import PaymentDialog, {
+  type PaymentTarget,
+} from "../payments/PaymentDialog";
+import { paymentRequiredDetails } from "../payments/paymentsApi";
 
 const ACCESS_LABELS: Record<string, string> = {
   open: "Open — anyone can join",
@@ -86,6 +90,8 @@ export default function InvitationReviewPage() {
   const [confirmed, setConfirmed] = useState(false);
   const [joined, setJoined] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [paymentTarget, setPaymentTarget] = useState<PaymentTarget | null>(null);
 
   const respond = async (accept: boolean) => {
     if (scope === "business" && business) {
@@ -98,6 +104,23 @@ export default function InvitationReviewPage() {
           navigate(invitationsPath);
         }
       } catch (cause) {
+        const required = paymentRequiredDetails(cause);
+        if (required && accept) {
+          setPaymentTarget({
+            kind: "CONTRIBUTION",
+            groupId: required.groupId,
+            groupName: group?.name ?? "Group",
+            amountPounds: required.amountPounds,
+            frequency: required.frequency,
+            onPaid: async () => {
+              await businessApi.respondInvitation(invitation!.id, true);
+              await business.refresh();
+              setJoined(true);
+            },
+          });
+          setPaymentOpen(true);
+          return;
+        }
         setFeedback(errorMessage(cause));
       }
       return;
@@ -445,6 +468,11 @@ export default function InvitationReviewPage() {
         </CardBody>
       </Card>
       {feedback && <Toast message={feedback} onDismiss={() => setFeedback(null)} />}
+      <PaymentDialog
+        open={paymentOpen}
+        onClose={() => setPaymentOpen(false)}
+        target={paymentTarget}
+      />
     </div>
   );
 }

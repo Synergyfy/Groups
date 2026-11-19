@@ -14,6 +14,11 @@ export interface ConsumerGroupResponse {
   memberCount: number;
   status: string;
   accessType: string;
+  pricing?: string;
+  contribution?: number | null;
+  contributionMinor?: number | null;
+  contributionFrequency?: string | null;
+  requiredPlanIds?: string[];
   createdAt: string;
   membership?: {
     memberId: string;

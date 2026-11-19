@@ -13,7 +13,7 @@ import ChsLogo from "../components/ui/ChsLogo";
 const BENEFITS = [
   "Central Hub Solution manages identity verification, billing and privacy compliance",
   "One secure account across every Central Hub service",
-  "Business accounts choose a membership plan after Central Hub onboarding",
+  "Business accounts choose a plan after Central Hub onboarding",
 ];
 
 export default function GetStartedPage() {

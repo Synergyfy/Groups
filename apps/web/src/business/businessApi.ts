@@ -7,14 +7,13 @@ import type {
   GroupActivity,
   GroupCircle,
   Invitation,
-  MembershipAccess,
-  MembershipPlan,
+  PlanAccess,
+  Plan,
   NetworkContact,
   NetworkList,
   PlanVariant,
   ProgrammeRecord,
   RelationshipRecord,
-  Tier,
 } from "../domain/types";
 
 export interface RewardDealView {
@@ -43,7 +42,7 @@ export interface GroupActivationView {
   percent: number;
   active: boolean;
   gated: boolean;
-  tier: Tier;
+  planName: string;
   variant: PlanVariant;
 }
 
@@ -77,6 +76,8 @@ export interface BusinessMember {
   status: string;
   role: string;
   tier: string;
+  contributionStatus?: string;
+  contributionPaidAt?: string;
   joinedAt?: string;
   lastActiveAt?: string;
   photoUrl?: string;
@@ -116,8 +117,8 @@ export interface BusinessProfileView {
     lastName?: string | null;
     avatarUrl?: string | null;
   };
-  membership: BusinessMembershipView;
-  access: MembershipAccess;
+  plan: BusinessPlanView;
+  access: PlanAccess;
   programme: ProgrammeRecord | null;
   relationships: {
     accountManager: RelationshipRecord | null;
@@ -129,10 +130,9 @@ export interface BusinessProfileView {
   nationalCommunity: { name: string; status: "Member"; joinedAt: string };
 }
 
-export interface BusinessMembershipView {
+export interface BusinessPlanView {
   id: string;
   businessId: string;
-  tier: Tier;
   variant: string;
   planId?: string;
   planName: string;
@@ -140,6 +140,7 @@ export interface BusinessMembershipView {
   paid: boolean;
   accessDays: number;
   accessFee: number;
+  accessFeeMinor: number;
   agreementAccepted: boolean;
   agreedAt?: string;
   accessExpiresAt?: string;
@@ -176,8 +177,7 @@ export interface MandatoryGroupStatusView {
 
 export interface BusinessDashboard {
   business: BusinessRecordView;
-  membership: {
-    tier: Tier;
+  plan: {
     variant: string;
     planName: string;
     status: string;
@@ -185,6 +185,7 @@ export interface BusinessDashboard {
     agreementAccepted: boolean;
     accessDays: number;
     accessFee: number;
+    accessFeeMinor: number;
   };
   canCreateGroups: boolean;
   creationRightsLabel: string;
@@ -346,7 +347,7 @@ export interface BusinessCommunityResponse {
     localArea?: string;
   };
   groups: Group[];
-  membership: BusinessMembershipView;
+  plan: BusinessPlanView;
   stats: {
     communityGroups: number;
     membersAcross: number;
@@ -387,17 +388,17 @@ export interface BusinessCampaignsResponse extends PageResult<BusinessCampaign> 
 }
 
 export interface BusinessRewardsResponse {
-  membership: BusinessMembershipView;
-  access: MembershipAccess;
+  plan: BusinessPlanView;
+  access: PlanAccess;
   currentProgramme: ProgrammeRecord | null;
   programmes: ProgrammeRecord[];
-  plans: MembershipPlan[];
+  plans: Plan[];
   rewardDeals: PageResult<RewardDealView>;
   campaigns: CampaignRecord[];
   stats: {
     programmes: number;
     activeProgrammes: number;
-    currentTier: Tier;
+    currentPlan: string;
     rewardDeals: number;
     liveDeals: number;
     campaigns: number;
@@ -407,18 +408,18 @@ export interface BusinessRewardsResponse {
 export interface BusinessProgrammesResponse {
   items: ProgrammeRecord[];
   current: ProgrammeRecord | null;
-  membership: BusinessMembershipView;
-  stats: { total: number; active: number; currentTier: Tier };
+  plan: BusinessPlanView;
+  stats: { total: number; active: number; currentPlan: string };
 }
 
-export interface BusinessMembershipResponse {
-  membership: BusinessMembershipView;
-  access: MembershipAccess;
+export interface BusinessPlanResponse {
+  plan: BusinessPlanView;
+  access: PlanAccess;
   canCreateGroups: boolean;
   creationRightsLabel: string;
   rules: AdminConfig["groupCreationRules"];
   paymentRules: AdminConfig["paymentRules"];
-  plans: MembershipPlan[];
+  plans: Plan[];
   quotas: { groups: number; circles: number };
   mandatoryGroups: AdminConfig["mandatoryGroups"];
   mandatoryCircles: AdminConfig["mandatoryCircles"];
@@ -437,8 +438,8 @@ export interface BusinessJourneyResponse {
 
 export interface BusinessOverviewResponse {
   business: BusinessRecordView;
-  membership: BusinessMembershipView;
-  access: MembershipAccess;
+  plan: BusinessPlanView;
+  access: PlanAccess;
   canCreateGroups: boolean;
   creationRightsLabel: string;
   stats: GroupStatsView & {
@@ -721,14 +722,14 @@ export const businessApi = {
       body: JSON.stringify(body),
     }),
   config: () => apiRequest<BusinessConfig>("/business/config"),
-  membership: () =>
-    apiRequest<BusinessMembershipResponse>("/business/membership"),
-  activateMembership: (body: Record<string, unknown>) =>
+  plan: () =>
+    apiRequest<BusinessPlanResponse>("/business/plan"),
+  activatePlan: (body: Record<string, unknown>) =>
     apiRequest<{
-      membership: BusinessMembershipView;
-      access: MembershipAccess;
+      plan: BusinessPlanView;
+      access: PlanAccess;
       canCreateGroups: boolean;
-    }>("/business/membership/activate", {
+    }>("/business/plan/activate", {
       method: "POST",
       body: JSON.stringify(body),
     }),

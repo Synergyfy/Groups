@@ -8,7 +8,7 @@ import type {
   GroupCircle,
   GroupMember,
   Invitation,
-  MembershipPlan,
+  Plan,
   Partner,
   PlatformAccount,
   Programme,
@@ -16,6 +16,7 @@ import type {
   ReportSchedule,
   RewardDeal,
 } from "../generated/prisma/client.js";
+import { fromMinorPence } from "../common/money.js";
 
 export const iso = (value: Date | null | undefined): string | undefined =>
   value ? value.toISOString() : undefined;
@@ -61,7 +62,9 @@ export function mapGroup(group: GroupWithMembers) {
     visibility: group.directoryVisibility ?? "directory",
     interactionLevel: group.interactionLevel ?? undefined,
     pricing: group.pricing,
-    contribution: group.contribution ?? undefined,
+    requiredPlanIds: group.requiredPlanIds,
+    contribution: group.contributionMinor != null ? fromMinorPence(group.contributionMinor) : undefined,
+    contributionMinor: group.contributionMinor ?? undefined,
     contributionFrequency: group.contributionFrequency ?? undefined,
     createdAt: day(group.createdAt),
     campaignIds: group.campaignIds,
@@ -159,7 +162,8 @@ export function mapPartner(partner: Partner) {
     status: partner.status,
     joinedAt: day(partner.joinedAt),
     programmeId: partner.programmeId ?? undefined,
-    feeMonthly: partner.feeMonthly,
+    feeMonthly: fromMinorPence(partner.feeMonthlyMinor),
+    feeMonthlyMinor: partner.feeMonthlyMinor,
     permissions: jsonObject(partner.permissions),
     notes: partner.notes ?? undefined,
   };
@@ -172,7 +176,8 @@ export function mapProgramme(programme: Programme) {
     tier: programme.tier,
     status: programme.status,
     description: programme.description,
-    monthlyFee: programme.monthlyFee,
+    monthlyFee: fromMinorPence(programme.monthlyFeeMinor),
+    monthlyFeeMinor: programme.monthlyFeeMinor,
     benefits: programme.benefits,
     groupCount: programme.groupCount,
   };
@@ -185,7 +190,8 @@ export function mapCampaign(campaign: Campaign) {
     platform: campaign.platform,
     status: campaign.status,
     groupIds: campaign.groupIds,
-    budget: campaign.budget ?? undefined,
+    budget: campaign.budgetMinor != null ? fromMinorPence(campaign.budgetMinor) : undefined,
+    budgetMinor: campaign.budgetMinor ?? undefined,
     startDate: day(campaign.startDate),
     endDate: day(campaign.endDate),
   };
@@ -203,14 +209,13 @@ export function mapRelationship(relationship: Relationship) {
   };
 }
 
-export function mapMembershipPlan(plan: MembershipPlan) {
+export function mapPlan(plan: Plan) {
   return {
     id: plan.id,
-    tier: plan.tier,
     variant: plan.variant,
     name: plan.name,
-    priceMonthly: plan.priceMonthly,
-    billingFrequency: plan.billingFrequency,
+    priceMonthly: fromMinorPence(plan.priceMinor),
+    priceMinor: plan.priceMinor,
     status: plan.status,
     groupQuota: plan.groupQuota,
     circleQuota: plan.circleQuota,

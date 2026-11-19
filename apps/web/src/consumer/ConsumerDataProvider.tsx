@@ -31,6 +31,12 @@ function groupFromApi(group: ConsumerGroupResponse, memberIds: string[] = []): G
     location: { city: group.city ?? undefined, localArea: group.localArea ?? undefined },
     status: (group.status as GroupStatus) || "Active",
     accessType: (group.accessType as GroupAccessType) || "open",
+    pricing: (group.pricing as "free" | "paid" | undefined) ?? "free",
+    contribution: group.contribution ?? undefined,
+    contributionMinor: group.contributionMinor ?? undefined,
+    contributionFrequency:
+      (group.contributionFrequency as Group["contributionFrequency"]) ??
+      undefined,
     createdAt: group.createdAt,
     isMember: Boolean(group.membership),
     role: group.membership?.role === "owner" ? "owner" : group.membership ? "member" : "none",
@@ -94,15 +100,15 @@ export function ConsumerDataProvider({ children }: { children: ReactNode }) {
             ...createEmptyConfig(),
             auditLog: [],
           },
-          membership: {
+          plan: {
             ownerId: dashboard.profile.id,
-            tier: "Bronze",
             variant: "Standard",
             planName: "",
             status: "Active",
             paid: false,
             accessDays: 0,
             accessFee: 0,
+            accessFeeMinor: 0,
             agreementAccepted: true,
           },
         },
@@ -155,7 +161,7 @@ function createEmptyConfig() {
     stageLabels: [],
     paymentRules: { allowPaid: false, minAmount: 0, maxAmount: 0, presets: [], allowCustom: false },
     groupCreationRules: {
-      allowedTiers: [],
+      allowedPlans: [],
       allowedVariants: [],
       restrictToPlatformGroup: false,
       platformGroupId: null,

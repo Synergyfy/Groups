@@ -1,6 +1,7 @@
 import {
   CircleDot,
   Compass,
+  Crown,
   Gift,
   Globe,
   MapPin,
@@ -8,13 +9,13 @@ import {
   Settings,
   Users,
 } from "lucide-react";
+import { Navigate, useLocation } from "react-router-dom";
 import DashboardShell from "./DashboardShell";
 import type { NavSection } from "./Sidebar";
 import type { BottomNavItem } from "./BottomNav";
-import MembershipAgreementPage from "../features/membership/MembershipAgreementPage";
 import { useAppState } from "../store/selectors";
 
-// Business data (profile, membership, groups, invitations, …) is hydrated by
+// Business data (profile, plan, groups, invitations, …) is hydrated by
 // <BusinessDataProvider> before this layout renders.
 
 const BUSINESS_NAV: NavSection[] = [
@@ -63,9 +64,29 @@ const BUSINESS_NAV: NavSection[] = [
       },
       { to: "/business/rewards", label: "Rewards", icon: <Gift className="size-4" />, end: true },
       {
+        to: "/business/plan",
+        label: "Plan",
+        icon: <Crown className="size-4" />,
+        end: true,
+      },
+      {
         to: "/business/settings",
         label: "Account Settings",
         icon: <Settings className="size-4" />,
+        end: true,
+      },
+    ],
+  },
+];
+
+const PLAN_ONLY_NAV: NavSection[] = [
+  {
+    title: "Plan",
+    items: [
+      {
+        to: "/business/plan",
+        label: "Choose a plan",
+        icon: <Crown className="size-4" />,
         end: true,
       },
     ],
@@ -79,21 +100,27 @@ const BUSINESS_BOTTOM_NAV: BottomNavItem[] = [
 ];
 
 export default function BusinessLayout() {
-  const { adminConfig, membership } = useAppState();
+  const { adminConfig, plan } = useAppState();
+  const location = useLocation();
   const rules = adminConfig.groupCreationRules;
   // Paid access + accepted agreement are required before dashboard entry.
   const entered =
-    membership.agreementAccepted && (!rules.requirePaidAccess || membership.paid);
+    plan.agreementAccepted && (!rules.requirePaidAccess || plan.paid);
+  const planPath = "/business/plan";
+  const onPlanPage =
+    location.pathname === planPath ||
+    location.pathname.startsWith(`${planPath}/`);
 
-  if (!entered) {
-    return <MembershipAgreementPage />;
+  // Without a plan, the plan page is the only place a business can go.
+  if (!entered && !onPlanPage) {
+    return <Navigate to={planPath} replace />;
   }
 
   return (
     <DashboardShell
-      sectionLabel="Business Dashboard"
-      nav={BUSINESS_NAV}
-      bottomNav={BUSINESS_BOTTOM_NAV}
+      sectionLabel={entered ? "Business Dashboard" : "Plan"}
+      nav={entered ? BUSINESS_NAV : PLAN_ONLY_NAV}
+      bottomNav={entered ? BUSINESS_BOTTOM_NAV : undefined}
     />
   );
 }

@@ -199,9 +199,9 @@ export default function AdminOverviewPage() {
               icon={<KeyRound className="size-4 text-gold-400" />}
             />
             <ModuleCard
-              title="Memberships"
-              to="/admin/memberships"
-              description="Bronze to Platinum tiers, Standard/Pro/Pro+ plans & renewals."
+              title="Plans"
+              to="/admin/plans"
+              description="Named plans with Standard/Pro/Pro+ variants & renewals."
               icon={<Crown className="size-4 text-gold-400" />}
             />
             <ModuleCard

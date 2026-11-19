@@ -26,6 +26,8 @@ import {
 } from "../../admin/admin.mappers.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { BusinessContextService } from "../business-context.service.js";
+import { contributionPeriodKey } from "../../payments/payments.utils.js";
+import { fromMinorPence, toMinorPence } from "../../common/money.js";
 import {
   accessQuotas,
   activationFor,
@@ -34,8 +36,8 @@ import {
   creationRightsLabel,
   groupStatsFor,
   joinPlanFor,
-  membershipTierForOwner,
-  normalizeTier,
+  matchesRequiredPlans,
+  planForOwner,
   normalizeVariant,
 } from "../business.rules.js";
 import { isUuid } from "../business.utils.js";
@@ -44,7 +46,6 @@ import type {
   GroupActivationView,
   JoinPlanView,
   PlanVariant,
-  Tier,
 } from "../business.types.js";
 import type {
   BusinessGroupQueryDto,
@@ -76,6 +77,7 @@ export interface DecoratedGroup {
   visibility: string;
   interactionLevel?: string;
   pricing: string;
+  requiredPlanIds: string[];
   contribution?: number;
   contributionFrequency?: string;
   createdAt?: string;
@@ -144,12 +146,12 @@ export class BusinessGroupsService {
   }
 
   async getMineSections(ctx: BusinessContext) {
-    const membershipId = ctx.business.id;
+    const businessId = ctx.business.id;
     const myGroups = await this.prisma.group.findMany({
       where: {
         OR: [
-          { ownerId: membershipId },
-          { members: { some: { memberId: membershipId } } },
+          { ownerId: businessId },
+          { members: { some: { memberId: businessId } } },
         ],
       },
       include: { members: true },
@@ -157,7 +159,7 @@ export class BusinessGroupsService {
     });
 
     const ownedIds = myGroups
-      .filter((group) => group.ownerId === membershipId)
+      .filter((group) => group.ownerId === businessId)
       .map((group) => group.id);
 
     const [
@@ -177,7 +179,7 @@ export class BusinessGroupsService {
           kind: "invite",
           status: "pending",
           OR: [
-            { inviteeId: membershipId },
+            { inviteeId: businessId },
             { inviteeEmail: ctx.business.email.trim().toLowerCase() },
           ],
         },
@@ -190,7 +192,7 @@ export class BusinessGroupsService {
         },
       }),
       this.prisma.group.findMany({
-        where: { ownerId: membershipId, headStart: true },
+        where: { ownerId: businessId, headStart: true },
         include: { members: true },
         orderBy: { createdAt: "asc" },
       }),
@@ -198,18 +200,18 @@ export class BusinessGroupsService {
         where: {
           source: "automatic",
           type: "Network",
-          members: { some: { memberId: membershipId } },
+          members: { some: { memberId: businessId } },
         },
         include: { members: true },
       }),
     ]);
 
-    const ownerTiers = await this.ownerTierMap(myGroups, ctx);
+    const ownerPlans = await this.ownerPlanMap(myGroups, ctx);
     const groups = myGroups.map((group) =>
-      this.decorateGroup(group, ctx, ownerTiers.get(group.ownerId ?? "")),
+      this.decorateGroup(group, ctx, ownerPlans.get(group.ownerId ?? "")),
     );
     const headStart = headStartGroups.map((group) =>
-      this.decorateGroup(group, ctx, ownerTiers.get(group.ownerId ?? "")),
+      this.decorateGroup(group, ctx, ownerPlans.get(group.ownerId ?? "")),
     );
     const automatic = groups.filter(
       (group) => group.source === "automatic" && group.isMember,
@@ -235,7 +237,7 @@ export class BusinessGroupsService {
       myGroups,
       pendingInvites,
       openRequests,
-      membershipId,
+      businessId,
     );
     const progressBase = automaticProgressFor(
       automaticGroup,
@@ -244,18 +246,18 @@ export class BusinessGroupsService {
 
     return {
       business: mapBusiness(ctx.business),
-      membership: {
-        tier: ctx.membership.tier,
-        variant: ctx.membership.variant,
-        planName: ctx.membership.planName,
-        status: ctx.membership.status,
-        paid: ctx.membership.paid,
-        agreementAccepted: ctx.membership.agreementAccepted,
-        accessDays: ctx.membership.accessDays,
-        accessFee: ctx.membership.accessFee,
+      plan: {
+        variant: ctx.plan.variant,
+        planName: ctx.plan.planName,
+        status: ctx.plan.status,
+        paid: ctx.plan.paid,
+        agreementAccepted: ctx.plan.agreementAccepted,
+        accessDays: ctx.plan.accessDays,
+        accessFee: fromMinorPence(ctx.plan.accessFeeMinor),
+        accessFeeMinor: ctx.plan.accessFeeMinor,
       },
       canCreateGroups: canCreateGroups(
-        ctx.membership,
+        ctx.plan,
         ctx.config.groupCreationRules,
       ),
       creationRightsLabel: creationRightsLabel(
@@ -268,7 +270,7 @@ export class BusinessGroupsService {
           ? this.decorateGroup(
               automaticGroup,
               ctx,
-              ownerTiers.get(automaticGroup.ownerId ?? ""),
+              ownerPlans.get(automaticGroup.ownerId ?? ""),
             )
           : null,
       },
@@ -278,7 +280,7 @@ export class BusinessGroupsService {
         ? this.decorateGroup(
             platformGroup,
             ctx,
-            ownerTiers.get(platformGroup.ownerId ?? ""),
+            ownerPlans.get(platformGroup.ownerId ?? ""),
           )
         : null,
       automatic,
@@ -306,7 +308,7 @@ export class BusinessGroupsService {
 
     return {
       business: sections.business,
-      membership: sections.membership,
+      plan: sections.plan,
       section,
       items: allowed[section as keyof typeof allowed],
       counts: {
@@ -368,7 +370,8 @@ export class BusinessGroupsService {
     const typeByType = new Map(
       ctx.config.groupTypes.map((entry) => [entry.type, entry]),
     );
-    const ownerTiers = await this.ownerTierMap(paged, ctx);
+    const ownerPlans = await this.ownerPlanMap(paged, ctx);
+    const planEligibility = await this.planEligibilityMap(paged, ctx);
 
     return {
       items: paged.map((group) => {
@@ -385,7 +388,7 @@ export class BusinessGroupsService {
         const decorated = this.decorateGroup(
           group,
           ctx,
-          ownerTiers.get(group.ownerId ?? ""),
+          ownerPlans.get(group.ownerId ?? ""),
         );
         return {
           ...decorated,
@@ -395,6 +398,7 @@ export class BusinessGroupsService {
             request,
             invite,
             ctx.business.id,
+            planEligibility.get(group.id) ?? true,
           ),
         };
       }),
@@ -423,7 +427,7 @@ export class BusinessGroupsService {
       }),
     ]);
 
-    const ownerTiers = await this.ownerTierMap(
+    const ownerPlans = await this.ownerPlanMap(
       automaticGroups,
       ctx,
     );
@@ -437,7 +441,7 @@ export class BusinessGroupsService {
         ? this.decorateGroup(
             automaticGroup,
             ctx,
-            ownerTiers.get(automaticGroup.ownerId ?? ""),
+            ownerPlans.get(automaticGroup.ownerId ?? ""),
           )
         : null,
       progress: {
@@ -446,7 +450,7 @@ export class BusinessGroupsService {
           ? this.decorateGroup(
               automaticGroup,
               ctx,
-              ownerTiers.get(automaticGroup.ownerId ?? ""),
+              ownerPlans.get(automaticGroup.ownerId ?? ""),
             )
           : null,
       },
@@ -461,7 +465,7 @@ export class BusinessGroupsService {
         nextThresholdAt: ctx.config.automaticGrouping.threshold,
       },
       groups: automaticGroups.map((group) =>
-        this.decorateGroup(group, ctx, ownerTiers.get(group.ownerId ?? "")),
+        this.decorateGroup(group, ctx, ownerPlans.get(group.ownerId ?? "")),
       ),
     };
   }
@@ -518,10 +522,11 @@ export class BusinessGroupsService {
     const typeConfig = ctx.config.groupTypes.find(
       (entry) => entry.type === group.type,
     );
-    const ownerTier = (await this.ownerTierMap([group], ctx)).get(
+    const ownerPlan = (await this.ownerPlanMap([group], ctx)).get(
       group.ownerId ?? "",
     );
-    const decorated = this.decorateGroup(group, ctx, ownerTier);
+    const decorated = this.decorateGroup(group, ctx, ownerPlan);
+    const planEligibility = await this.planEligibilityMap([group], ctx);
     const byId = new Map(relationships.map((entry) => [entry.id, entry]));
     const relationshipFor = (relationshipId: string | null) => {
       if (!relationshipId) return null;
@@ -538,6 +543,7 @@ export class BusinessGroupsService {
           pendingRequest,
           pendingInvite,
           ctx.business.id,
+          planEligibility.get(group.id) ?? true,
         ),
       },
       owner: owner ? mapBusiness(owner) : null,
@@ -572,12 +578,12 @@ export class BusinessGroupsService {
     const group = await this.findGroup(groupId);
     this.assertCanView(group, ctx.business.id);
 
-    const ownerTier = (await this.ownerTierMap([group], ctx)).get(
+    const ownerPlan = (await this.ownerPlanMap([group], ctx)).get(
       group.ownerId ?? "",
     );
     const members = group.members ?? [];
     return {
-      group: this.decorateGroup(group, ctx, ownerTier),
+      group: this.decorateGroup(group, ctx, ownerPlan),
       members: members.map(mapGroupMember),
       stats: {
         total: members.length,
@@ -620,11 +626,11 @@ export class BusinessGroupsService {
   }
 
   async create(ctx: BusinessContext, dto: CreateBusinessGroupDto) {
-    if (!canCreateGroups(ctx.membership, ctx.config.groupCreationRules)) {
+    if (!canCreateGroups(ctx.plan, ctx.config.groupCreationRules)) {
       throw new ForbiddenException({
         code: "GROUP_CREATION_NOT_ALLOWED",
         message:
-          "Your membership does not allow creating groups. Complete the paid access agreement or contact an administrator.",
+          "Your plan does not allow creating groups. Complete the paid access agreement or contact an administrator.",
       });
     }
 
@@ -671,7 +677,7 @@ export class BusinessGroupsService {
     if (owned.length >= quota) {
       throw new ForbiddenException({
         code: "GROUP_QUOTA_REACHED",
-        message: `Your membership allows ${quota} groups.`,
+        message: `Your plan allows ${quota} groups.`,
       });
     }
 
@@ -698,7 +704,10 @@ export class BusinessGroupsService {
           directoryVisibility: dto.visibility ?? "directory",
           interactionLevel: dto.interactionLevel ?? "message",
           pricing,
-          contribution: pricing === "paid" ? dto.contribution : null,
+          contributionMinor:
+            pricing === "paid" && dto.contribution !== undefined
+              ? toMinorPence(dto.contribution)
+              : null,
           contributionFrequency:
             pricing === "paid"
               ? (dto.contributionFrequency ?? "once")
@@ -722,7 +731,7 @@ export class BusinessGroupsService {
           location: ctx.business.city,
           status: "active",
           role: "owner",
-          tier: ctx.membership.tier,
+          tier: ctx.business.tier,
         },
       });
 
@@ -766,7 +775,10 @@ export class BusinessGroupsService {
       this.assertPaymentRules(
         ctx,
         "paid",
-        dto.contribution ?? group.contribution ?? undefined,
+        dto.contribution ??
+          (group.contributionMinor != null
+            ? fromMinorPence(group.contributionMinor)
+            : undefined),
       );
     }
     if (
@@ -793,7 +805,9 @@ export class BusinessGroupsService {
       data.interactionLevel = dto.interactionLevel;
     }
     if (dto.pricing !== undefined) data.pricing = dto.pricing;
-    if (dto.contribution !== undefined) data.contribution = dto.contribution;
+    if (dto.contribution !== undefined) {
+      data.contributionMinor = toMinorPence(dto.contribution);
+    }
     if (dto.contributionFrequency !== undefined) {
       data.contributionFrequency = dto.contributionFrequency;
     }
@@ -862,6 +876,33 @@ export class BusinessGroupsService {
       throw new ForbiddenException("This group is invitation-only");
     }
 
+    await this.assertPlanEligibility(group, ctx);
+
+    if (group.accessType === "open" && group.pricing === "paid") {
+      const periodKey = contributionPeriodKey(group.contributionFrequency);
+      const paid = await this.prisma.payment.findFirst({
+        where: {
+          purpose: "GROUP_CONTRIBUTION",
+          groupId,
+          memberId: ctx.business.id,
+          periodKey,
+          status: "PAID",
+          deletedAt: null,
+        },
+      });
+      if (!paid) {
+        throw new ConflictException({
+          code: "PAYMENT_REQUIRED",
+          message: `This group requires a £${fromMinorPence(group.contributionMinor)} contribution.`,
+          groupId,
+          amountMinor: (group.contributionMinor ?? 0).toString(),
+          amount: fromMinorPence(group.contributionMinor),
+          frequency: group.contributionFrequency ?? "once",
+          periodKey,
+        });
+      }
+    }
+
     if (group.accessType === "open") {
       const updated = await this.prisma.$transaction(async (tx) => {
         await tx.groupMember.create({
@@ -874,7 +915,7 @@ export class BusinessGroupsService {
             location: ctx.business.city,
             status: "active",
             role: "peripheral",
-            tier: ctx.membership.tier,
+            tier: ctx.business.tier,
           },
         });
         const result = await tx.group.update({
@@ -903,12 +944,12 @@ export class BusinessGroupsService {
         });
         return result;
       });
-      const ownerTier = (await this.ownerTierMap([updated], ctx)).get(
+      const ownerPlan = (await this.ownerPlanMap([updated], ctx)).get(
         updated.ownerId ?? "",
       );
       return {
         status: "joined" as const,
-        group: this.decorateGroup(updated, ctx, ownerTier),
+        group: this.decorateGroup(updated, ctx, ownerPlan),
       };
     }
 
@@ -1183,7 +1224,7 @@ export class BusinessGroupsService {
   private decorateGroup(
     group: GroupWithMembers,
     ctx: BusinessContext,
-    ownerTier?: { tier: string; variant: string },
+    ownerPlan?: { planName: string; variant: string },
   ): DecoratedGroup {
     const base = mapGroup(group);
     const isOwner = base.ownerId === ctx.business.id;
@@ -1191,15 +1232,15 @@ export class BusinessGroupsService {
       group.members?.some(
         (member) => member.memberId === ctx.business.id,
       ) ?? false;
-    const membership = ownerTier
+    const plan = ownerPlan
       ? {
-          tier: ownerTier.tier as Tier,
-          variant: ownerTier.variant as PlanVariant,
+          planName: ownerPlan.planName,
+          variant: ownerPlan.variant as PlanVariant,
         }
-      : membershipTierForOwner(
+      : planForOwner(
           ctx.business.tier,
           true,
-          ctx.membership,
+          ctx.plan,
         );
 
     return {
@@ -1209,17 +1250,70 @@ export class BusinessGroupsService {
       role: isOwner ? "owner" : isMember ? "member" : "none",
       activation: activationFor(
         group,
-        membership.tier,
-        membership.variant,
+        plan.planName,
+        plan.variant,
         ctx.config.groupCreationRules,
       ),
     };
   }
 
-  private async ownerTierMap(
+  private async planEligibilityMap(
+    groups: Pick<Group, "id" | "requiredPlanIds">[],
+    ctx: BusinessContext,
+  ): Promise<Map<string, boolean>> {
+    const planIds = [
+      ...new Set(groups.flatMap((group) => group.requiredPlanIds)),
+    ];
+    if (planIds.length === 0) return new Map();
+
+    const plans = await this.prisma.plan.findMany({
+      where: { id: { in: planIds } },
+      select: { id: true, name: true, variant: true },
+    });
+    const member = {
+      planId: ctx.plan.planId,
+      planName: ctx.plan.planName,
+      variant: ctx.plan.variant,
+      active: ctx.plan.paid || ctx.plan.status === "Active",
+    };
+
+    return new Map(
+      groups.map((group) => [
+        group.id,
+        matchesRequiredPlans(group.requiredPlanIds, plans, member),
+      ]),
+    );
+  }
+
+  private async assertPlanEligibility(
+    group: Pick<Group, "requiredPlanIds">,
+    ctx: BusinessContext,
+  ): Promise<void> {
+    if (group.requiredPlanIds.length === 0) return;
+
+    const plans = await this.prisma.plan.findMany({
+      where: { id: { in: group.requiredPlanIds } },
+      select: { id: true, name: true, variant: true },
+    });
+    const eligible = matchesRequiredPlans(group.requiredPlanIds, plans, {
+      planId: ctx.plan.planId,
+      planName: ctx.plan.planName,
+      variant: ctx.plan.variant,
+      active: ctx.plan.paid || ctx.plan.status === "Active",
+    });
+    if (!eligible) {
+      throw new ForbiddenException({
+        code: "PLAN_REQUIRED",
+        message:
+          "This group is only open to members on selected plans. Upgrade your plan to join.",
+      });
+    }
+  }
+
+  private async ownerPlanMap(
     groups: Pick<Group, "ownerId">[],
     ctx: BusinessContext,
-  ): Promise<Map<string, { tier: string; variant: string }>> {
+  ): Promise<Map<string, { planName: string; variant: string }>> {
     const ids = [
       ...new Set(
         groups
@@ -1228,27 +1322,27 @@ export class BusinessGroupsService {
       ),
     ];
     if (ids.length === 0) return new Map();
-    const [owners, memberships] = await Promise.all([
+    const [owners, plans] = await Promise.all([
       this.prisma.business.findMany({
         where: { id: { in: ids } },
         select: { id: true, tier: true },
       }),
-      this.prisma.businessMembership.findMany({
+      this.prisma.businessPlan.findMany({
         where: { businessId: { in: ids } },
-        select: { businessId: true, tier: true, variant: true },
+        select: { businessId: true, planName: true, variant: true },
       }),
     ]);
-    const membershipByBusiness = new Map(
-      memberships.map((membership) => [membership.businessId, membership]),
+    const planByBusiness = new Map(
+      plans.map((plan) => [plan.businessId, plan]),
     );
     return new Map(
       owners.map((owner) => {
-        const membership = membershipByBusiness.get(owner.id);
+        const plan = planByBusiness.get(owner.id);
         return [
           owner.id,
           {
-            tier: normalizeTier(membership?.tier ?? owner.tier),
-            variant: normalizeVariant(membership?.variant),
+            planName: plan?.planName?.trim() || owner.tier,
+            variant: normalizeVariant(plan?.variant),
           },
         ];
       }),
@@ -1315,18 +1409,18 @@ export class BusinessGroupsService {
   }
 
   private async groupQuota(ctx: BusinessContext): Promise<number> {
-    const plan = ctx.membership.planId
-      ? await this.prisma.membershipPlan.findUnique({
-          where: { id: ctx.membership.planId },
+    const plan = ctx.plan.planId
+      ? await this.prisma.plan.findUnique({
+          where: { id: ctx.plan.planId },
         })
-      : await this.prisma.membershipPlan.findFirst({
+      : await this.prisma.plan.findFirst({
           where: {
-            tier: ctx.membership.tier,
-            variant: ctx.membership.variant,
+            name: ctx.plan.planName,
+            variant: ctx.plan.variant,
             status: "Active",
           },
         });
     if (plan && plan.groupQuota > 0) return plan.groupQuota;
-    return accessQuotas(ctx.config, ctx.membership).groups;
+    return accessQuotas(ctx.config, ctx.plan).groups;
   }
 }

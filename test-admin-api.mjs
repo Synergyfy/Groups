@@ -378,34 +378,49 @@ async function testGroups() {
 async function testMembershipsAndRewards() {
   // A Bronze Standard plan may already exist in a working environment. Reuse
   // it (and restore its subscriber count afterwards) instead of failing the
-  // whole smoke run on the unique tier/variant constraint.
-  const existingPlans = await ok("GET", "/admin/memberships/plans");
+  // whole smoke run on the unique name/variant constraint.
+  const existingPlans = await ok("GET", "/admin/plans");
   let plan = (existingPlans ?? []).find(
-    (entry) => entry.tier === "Bronze" && entry.variant === "Standard",
+    (entry) => entry.name === "Bronze" && entry.variant === "Standard",
   );
   let originalSubscriberCount = null;
 
   if (plan) {
     originalSubscriberCount = plan.subscriberCount ?? 0;
   } else {
-    plan = await ok(
+    const createdPlans = await ok(
       "POST",
-      "/admin/memberships/plans",
+      "/admin/plans",
       {
-        tier: "Bronze",
-        variant: "Standard",
-        name: `Smoke Plan ${suffix}`,
-        priceMonthly: 19,
-        subscriberCount: 3,
+        name: `Smoke Bronze ${suffix}`,
+        standard: {
+          priceMonthly: 19,
+          groupQuota: 2,
+          circleQuota: 1,
+          features: ["Smoke fixture"],
+        },
+        pro: {
+          priceMonthly: 29,
+          groupQuota: 3,
+          circleQuota: 2,
+          features: ["Smoke fixture"],
+        },
+        proPlus: {
+          priceMonthly: 39,
+          groupQuota: 4,
+          circleQuota: 3,
+          features: ["Smoke fixture"],
+        },
       },
-      "POST /admin/memberships/plans",
+      "POST /admin/plans",
     );
-    created.planId = plan.id;
+    created.planIds = (createdPlans ?? []).map((entry) => entry.id);
+    plan = (createdPlans ?? []).find((entry) => entry.variant === "Standard");
   }
 
-  const stats = await ok("GET", "/admin/memberships/stats");
+  const stats = await ok("GET", "/admin/plans/stats");
   check("plan stats present", typeof stats?.totalPlans === "number");
-  await ok("PATCH", `/admin/memberships/plans/${plan.id}`, {
+  await ok("PATCH", `/admin/plans/${plan.id}`, {
     subscriberCount: 4,
   });
   if (originalSubscriberCount !== null) {
@@ -521,7 +536,6 @@ async function cleanup() {
     ["businesses", created.businessId],
     ["programmes", created.programmeId],
     ["campaigns", created.campaignId],
-    ["memberships/plans", created.planId],
     ["rewards-deals", created.rewardId],
   ];
   for (const [resource, id] of entries) {
@@ -536,8 +550,11 @@ async function cleanup() {
   if (created.areaId) {
     await request("DELETE", `/admin/locations/areas/${created.areaId}`);
   }
+  for (const id of created.planIds ?? []) {
+    await request("DELETE", `/admin/plans/${id}`);
+  }
   if (created.planRestore) {
-    await request("PATCH", `/admin/memberships/plans/${created.planRestore.id}`, {
+    await request("PATCH", `/admin/plans/${created.planRestore.id}`, {
       subscriberCount: created.planRestore.subscriberCount,
     });
   }

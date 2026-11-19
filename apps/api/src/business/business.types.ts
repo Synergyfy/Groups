@@ -1,6 +1,6 @@
 import type {
   Business,
-  BusinessMembership,
+  BusinessPlan,
   User,
 } from "../generated/prisma/client.js";
 
@@ -33,11 +33,11 @@ export interface GroupPaymentRules {
 }
 
 export interface GroupCreationRules {
-  allowedTiers: Tier[];
+  allowedPlans: string[];
   allowedVariants: PlanVariant[];
   restrictToPlatformGroup: boolean;
   platformGroupId: string | null;
-  recruitmentTargets: Record<Tier, Record<PlanVariant, number>>;
+  recruitmentTargets: Record<string, Record<PlanVariant, number>>;
   activationEnabled: boolean;
   requirePaidAccess: boolean;
   entryAccessDays: 90 | 180;
@@ -103,15 +103,15 @@ export interface BusinessConfig {
   platformSettings: Record<string, unknown>;
 }
 
-export interface MembershipAccessView {
+export interface PlanAccessView {
   ownerId: string;
-  tier: Tier;
   variant: PlanVariant;
   planName: string;
   status: string;
   paid: boolean;
   accessDays: number;
   accessFee: number;
+  accessFeeMinor: number;
   agreementAccepted: boolean;
   agreedAt?: string;
   accessExpiresAt?: string;
@@ -120,7 +120,7 @@ export interface MembershipAccessView {
 export interface BusinessContext {
   user: User;
   business: Business;
-  membership: BusinessMembership;
+  plan: BusinessPlan;
   config: BusinessConfig;
 }
 
@@ -131,7 +131,7 @@ export interface GroupActivationView {
   percent: number;
   active: boolean;
   gated: boolean;
-  tier: Tier;
+  planName: string;
   variant: PlanVariant;
 }
 
@@ -144,6 +144,7 @@ export interface JoinPlanView {
     | "owner"
     | "member"
     | "type-disabled"
+    | "plan-required"
     | "request-pending"
     | "invitation-waiting"
     | "invitation-only"

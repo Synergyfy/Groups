@@ -8,7 +8,8 @@ import type { Business, User } from "../generated/prisma/client.js";
 import { jsonObject } from "../admin/admin.mappers.js";
 import type { SessionUser } from "../auth/auth.types.js";
 import { PrismaService } from "../prisma/prisma.service.js";
-import { toBusinessConfig, normalizeTier, normalizeVariant } from "./business.rules.js";
+import { toMinorPence } from "../common/money.js";
+import { toBusinessConfig, normalizeTier, normalizeVariant, planAccessDays } from "./business.rules.js";
 import type { BusinessContext, BusinessConfig } from "./business.types.js";
 
 function firstNonEmpty(...values: unknown[]): string | null {
@@ -35,13 +36,13 @@ export class BusinessContextService {
 
     const config = await this.getConfig();
     const business = await this.findOrCreateBusiness(user);
-    const membership = await this.findOrCreateMembership(
+    const plan = await this.findOrCreatePlan(
       user,
       business,
       config,
     );
 
-    return { user, business, membership, config };
+    return { user, business, plan, config };
   }
 
   async getConfig(): Promise<BusinessConfig> {
@@ -137,35 +138,40 @@ export class BusinessContextService {
     return business;
   }
 
-  private async findOrCreateMembership(
+  private async findOrCreatePlan(
     user: User,
     business: Business,
     config: BusinessConfig,
   ) {
-    const existing = await this.prisma.businessMembership.findUnique({
+    const existing = await this.prisma.businessPlan.findUnique({
       where: { businessId: business.id },
     });
     if (existing) return existing;
 
-    const tier = normalizeTier(user.membershipTier ?? business.tier);
+    const planName =
+      (user.membershipTier ?? business.tier).trim() || "Free";
     const variant = normalizeVariant(user.membershipPlanName);
     const active = user.membershipStatus?.toLowerCase() === "active";
     const status = active ? "Active" : "Pending";
-    const accessDays = config.groupCreationRules.entryAccessDays;
-    const accessFee = config.groupCreationRules.entryAccessFee;
+    const accessDays = planAccessDays(variant);
+    const matchingPlan = await this.prisma.plan.findFirst({
+      where: { name: planName, variant, status: "Active" },
+      select: { priceMinor: true },
+    });
+    const accessFeeMinor =
+      matchingPlan?.priceMinor ??
+      toMinorPence(config.groupCreationRules.entryAccessFee);
 
     try {
-      return await this.prisma.businessMembership.create({
+      return await this.prisma.businessPlan.create({
         data: {
           businessId: business.id,
-          tier,
           variant,
-          planName:
-            user.membershipPlanName ?? `${tier} ${variant} membership`,
+          planName,
           status,
           paid: active,
           accessDays,
-          accessFee,
+          accessFeeMinor,
           agreementAccepted: false,
           accessExpiresAt: active
             ? new Date(Date.now() + accessDays * 24 * 60 * 60 * 1000)
@@ -174,7 +180,7 @@ export class BusinessContextService {
       });
     } catch (error) {
       // concurrent first request created it already
-      const raced = await this.prisma.businessMembership.findUnique({
+      const raced = await this.prisma.businessPlan.findUnique({
         where: { businessId: business.id },
       });
       if (raced) return raced;

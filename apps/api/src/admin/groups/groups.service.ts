@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -7,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import type { SessionUser } from "../../auth/auth.types.js";
 import { Prisma } from "../../generated/prisma/client.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
+import { fromMinorPence, toMinorPence } from "../../common/money.js";
 import { AdminAuditService } from "../../admin/admin-audit.service.js";
 import {
   mapBusiness,
@@ -211,6 +213,7 @@ export class AdminGroupsService {
   async create(dto: CreateGroupAdminDto, actor?: SessionUser) {
     const baseSlug = slugify(dto.slug ?? dto.name);
     const slug = await this.uniqueSlug(baseSlug);
+    const requiredPlanIds = await this.resolveRequiredPlanIds(dto.requiredPlanIds);
 
     const group = await this.prisma.group.create({
       data: {
@@ -230,7 +233,11 @@ export class AdminGroupsService {
         requiredSize: dto.requiredSize,
         stage: dto.stage,
         pricing: dto.pricing ?? "free",
-        contribution: dto.contribution,
+        requiredPlanIds,
+        contributionMinor:
+          dto.contribution !== undefined
+            ? toMinorPence(dto.contribution)
+            : undefined,
         contributionFrequency: dto.contributionFrequency,
         interactionLevel: dto.interactionLevel,
         programmeId: dto.programmeId,
@@ -262,6 +269,7 @@ export class AdminGroupsService {
 
   async update(id: string, dto: UpdateGroupAdminDto, actor?: SessionUser) {
     await this.ensureGroup(id);
+    const requiredPlanIds = await this.resolveRequiredPlanIds(dto.requiredPlanIds);
 
     const group = await this.prisma.group.update({
       where: { id },
@@ -282,7 +290,11 @@ export class AdminGroupsService {
         requiredSize: dto.requiredSize,
         stage: dto.stage,
         pricing: dto.pricing,
-        contribution: dto.contribution,
+        requiredPlanIds,
+        contributionMinor:
+          dto.contribution !== undefined
+            ? toMinorPence(dto.contribution)
+            : undefined,
         contributionFrequency: dto.contributionFrequency,
         interactionLevel: dto.interactionLevel,
         programmeId: dto.programmeId,
@@ -593,11 +605,11 @@ export class AdminGroupsService {
       orderBy: { joinedAt: "asc" },
     });
 
-    if (group.pricing !== "paid" || !group.contribution) {
+    if (group.pricing !== "paid" || !group.contributionMinor) {
       return {
         groupId: id,
         pricing: group.pricing,
-        amount: group.contribution ?? 0,
+        amount: fromMinorPence(group.contributionMinor),
         frequency: group.contributionFrequency ?? "once",
         collected: 0,
         outstanding: 0,
@@ -611,7 +623,8 @@ export class AdminGroupsService {
       };
     }
 
-    const amount = group.contribution;
+    const amountMinor = group.contributionMinor;
+    const amount = fromMinorPence(amountMinor);
     const rows = members.map((member) => ({
       memberId: member.memberId,
       fullName: member.fullName,
@@ -620,12 +633,12 @@ export class AdminGroupsService {
       paidAt: member.contributionPaidAt?.toISOString() ?? null,
     }));
 
-    const collected = rows
-      .filter((row) => row.status === "paid")
-      .reduce((sum, row) => sum + row.amount, 0);
-    const outstanding = rows
-      .filter((row) => row.status !== "paid")
-      .reduce((sum, row) => sum + row.amount, 0);
+    const collectedMinor =
+      rows.filter((row) => row.status === "paid").length * amountMinor;
+    const outstandingMinor =
+      rows.filter((row) => row.status !== "paid").length * amountMinor;
+    const collected = fromMinorPence(collectedMinor);
+    const outstanding = fromMinorPence(outstandingMinor);
 
     return {
       groupId: id,
@@ -689,6 +702,25 @@ export class AdminGroupsService {
     const group = await this.prisma.group.findUnique({ where: { id } });
     if (!group) throw new NotFoundException(`Group ${id} not found`);
     return group;
+  }
+
+  private async resolveRequiredPlanIds(
+    requiredPlanIds: string[] | undefined,
+  ): Promise<string[] | undefined> {
+    if (requiredPlanIds === undefined) return undefined;
+
+    const unique = [...new Set(requiredPlanIds)];
+    if (unique.length === 0) return [];
+
+    const found = await this.prisma.plan.count({
+      where: { id: { in: unique } },
+    });
+    if (found !== unique.length) {
+      throw new BadRequestException(
+        "One or more selected plans do not exist.",
+      );
+    }
+    return unique;
   }
 
   private async uniqueSlug(base: string): Promise<string> {

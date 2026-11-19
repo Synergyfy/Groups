@@ -18,7 +18,7 @@ import type {
   GroupActivity,
   GroupCircle,
   Invitation,
-  MembershipAccess,
+  PlanAccess,
   NetworkContact,
 } from "../domain/types";
 import { useAppStore } from "../store/context";
@@ -34,7 +34,7 @@ import {
   type BusinessLocationResponse,
   type BusinessLocationsResponse,
   type BusinessMember,
-  type BusinessMembershipResponse,
+  type BusinessPlanResponse,
   type BusinessOverviewResponse,
   type BusinessProfileView,
   type BusinessProgrammesResponse,
@@ -58,7 +58,7 @@ interface BusinessDataValue {
   error: string | null;
   profile: BusinessProfileView | null;
   overview: BusinessOverviewResponse | null;
-  membership: BusinessMembershipResponse | null;
+  plan: BusinessPlanResponse | null;
   config: BusinessConfig | null;
   dashboard: Awaited<ReturnType<typeof businessApi.dashboard>> | null;
   explore: ExploreGroupsResponse | null;
@@ -102,6 +102,9 @@ function mergeGroups(...lists: Array<Group[] | undefined>): Group[] {
           ...(existing ?? {}),
           ...group,
           memberIds: [...group.memberIds],
+          ...(group.joinPlan ?? existing?.joinPlan
+            ? { joinPlan: group.joinPlan ?? existing?.joinPlan }
+            : {}),
         });
       }
     }
@@ -143,10 +146,10 @@ function toAdminConfig(config: BusinessConfig): AdminConfig {
   };
 }
 
-function toMembership(access: MembershipAccess): MembershipAccess {
+function toPlan(access: PlanAccess): PlanAccess {
   return {
     ...access,
-    status: access.status as MembershipAccess["status"],
+    status: access.status as PlanAccess["status"],
   };
 }
 
@@ -181,7 +184,7 @@ export function BusinessDataProvider({ children }: { children: ReactNode }) {
 
   const [profile, setProfile] = useState<BusinessProfileView | null>(null);
   const [overview, setOverview] = useState<BusinessOverviewResponse | null>(null);
-  const [membership, setMembership] = useState<BusinessMembershipResponse | null>(null);
+  const [plan, setPlan] = useState<BusinessPlanResponse | null>(null);
   const [config, setConfig] = useState<BusinessConfig | null>(null);
   const [dashboard, setDashboard] = useState<Awaited<ReturnType<typeof businessApi.dashboard>> | null>(null);
   const [explore, setExplore] = useState<ExploreGroupsResponse | null>(null);
@@ -213,7 +216,7 @@ export function BusinessDataProvider({ children }: { children: ReactNode }) {
         const [
           dashboardResult,
           configResult,
-          membershipResult,
+          planResult,
           profileResult,
           overviewResult,
           exploreResult,
@@ -233,7 +236,7 @@ export function BusinessDataProvider({ children }: { children: ReactNode }) {
         ] = await Promise.all([
           businessApi.dashboard(),
           businessApi.config(),
-          businessApi.membership(),
+          businessApi.plan(),
           businessApi.profile(),
           optional(businessApi.overview()),
           optional(businessApi.explore({ limit: 100 })),
@@ -302,7 +305,7 @@ export function BusinessDataProvider({ children }: { children: ReactNode }) {
 
         const profileView = profileResult;
         const adminConfig = toAdminConfig(configResult);
-        const access = toMembership(membershipResult.access);
+        const access = toPlan(planResult.access);
 
         const payload: BusinessHydratePayload = {
           profile: toProfile(profileView),
@@ -316,14 +319,14 @@ export function BusinessDataProvider({ children }: { children: ReactNode }) {
           circleActivities,
           activeCircleId: circlesResult?.items[0]?.id,
           adminConfig,
-          membership: access,
+          plan: access,
         };
 
         dispatch({ type: "business/hydrate", payload });
 
         setDashboard(dashboardResult);
         setConfig(configResult);
-        setMembership(membershipResult);
+        setPlan(planResult);
         setProfile(profileView);
         setOverview(overviewResult);
         setExplore(exploreResult);
@@ -382,7 +385,7 @@ export function BusinessDataProvider({ children }: { children: ReactNode }) {
       error,
       profile,
       overview,
-      membership,
+      plan,
       config,
       dashboard,
       explore,
@@ -409,7 +412,7 @@ export function BusinessDataProvider({ children }: { children: ReactNode }) {
       error,
       profile,
       overview,
-      membership,
+      plan,
       config,
       dashboard,
       explore,

@@ -467,25 +467,25 @@ export class BusinessCirclesService {
     if (quota > 0 && count >= quota) {
       throw new ForbiddenException({
         code: "CIRCLE_QUOTA_REACHED",
-        message: `Your membership allows ${quota} circles.`,
+        message: `Your plan allows ${quota} circles.`,
       });
     }
   }
 
   private async circleQuota(ctx: BusinessContext) {
-    const plan = ctx.membership.planId
-      ? await this.prisma.membershipPlan.findUnique({
-          where: { id: ctx.membership.planId },
+    const plan = ctx.plan.planId
+      ? await this.prisma.plan.findUnique({
+          where: { id: ctx.plan.planId },
         })
-      : await this.prisma.membershipPlan.findFirst({
+      : await this.prisma.plan.findFirst({
           where: {
-            tier: ctx.membership.tier,
-            variant: ctx.membership.variant,
+            name: ctx.plan.planName,
+            variant: ctx.plan.variant,
             status: "Active",
           },
         });
     if (plan && plan.circleQuota > 0) return plan.circleQuota;
-    return accessQuotas(ctx.config, ctx.membership).circles;
+    return accessQuotas(ctx.config, ctx.plan).circles;
   }
 
   private mandatoryStatuses(ctx: BusinessContext, circles: Circle[]) {

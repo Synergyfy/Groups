@@ -19,8 +19,8 @@ import type {
   GroupActivity,
   GroupCircle,
   Invitation,
-  MembershipAccess,
-  MembershipPlan,
+  PlanAccess,
+  Plan,
   PartnerRecord,
   PlatformAccount,
   ProgrammeRecord,
@@ -54,7 +54,7 @@ export interface AdminData {
   programmes: ProgrammeRecord[];
   campaigns: CampaignRecord[];
   relationships: RelationshipRecord[];
-  membershipPlans: MembershipPlan[];
+  plans: Plan[];
   rewards: RewardDeal[];
   locations: LocationHierarchy;
   content: AdminContentSection[];
@@ -106,7 +106,7 @@ const EMPTY_CONFIG: AdminConfig = {
     allowCustom: false,
   },
   groupCreationRules: {
-    allowedTiers: [],
+    allowedPlans: [],
     allowedVariants: [],
     restrictToPlatformGroup: false,
     platformGroupId: null,
@@ -142,15 +142,15 @@ const EMPTY_CONFIG: AdminConfig = {
   auditLog: [],
 };
 
-const EMPTY_MEMBERSHIP: MembershipAccess = {
+const EMPTY_PLAN: PlanAccess = {
   ownerId: "",
-  tier: "Bronze",
   variant: "Standard",
   planName: "",
   status: "Pending",
   paid: false,
   accessDays: 90,
   accessFee: 0,
+  accessFeeMinor: 0,
   agreementAccepted: false,
 };
 
@@ -271,7 +271,7 @@ async function loadAll(): Promise<AdminData> {
     programmes,
     campaigns,
     relationships,
-    membershipPlans: plans,
+    plans,
     rewards,
     locations,
     content,
@@ -342,7 +342,7 @@ export function AdminDataProvider({ children }: { children: ReactNode }) {
         circleActivities: [],
         activeCircleId: "",
         adminConfig: EMPTY_CONFIG,
-        membership: EMPTY_MEMBERSHIP,
+        plan: EMPTY_PLAN,
         networkContacts: [],
         accounts: [],
         partners: [],
@@ -364,7 +364,7 @@ export function AdminDataProvider({ children }: { children: ReactNode }) {
       circleActivities: [],
       activeCircleId: "",
       adminConfig: { ...data.adminConfig, auditLog: data.auditLog },
-      membership: EMPTY_MEMBERSHIP,
+      plan: EMPTY_PLAN,
       networkContacts: [],
       accounts: data.accounts,
       partners: data.partners,
@@ -931,6 +931,7 @@ async function handleAction(
           visibility: action.input.visibility,
           interactionLevel: action.input.interactionLevel,
           pricing: action.input.pricing,
+          requiredPlanIds: action.input.requiredPlanIds,
           city: action.input.city,
           localArea: action.input.localArea,
           requiredSize: action.input.requiredSize,

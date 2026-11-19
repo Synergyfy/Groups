@@ -27,7 +27,7 @@ export const DEFAULT_PAYMENT_RULES = {
 };
 
 export const DEFAULT_GROUP_CREATION_RULES = {
-  allowedTiers: ["Platinum"],
+  allowedPlans: ["Platinum"],
   allowedVariants: ["Pro+"],
   restrictToPlatformGroup: true,
   platformGroupId: "grp-local-partners",

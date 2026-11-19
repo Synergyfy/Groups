@@ -1,30 +1,31 @@
 import type {
   Business,
-  BusinessMembership,
+  BusinessPlan,
   Circle,
   CircleActivity,
   NetworkContact,
   NetworkList,
 } from "../generated/prisma/client.js";
 import { iso, jsonObject } from "../admin/admin.mappers.js";
+import { fromMinorPence } from "../common/money.js";
 
-export function mapBusinessMembership(
-  membership: BusinessMembership,
+export function mapBusinessPlan(
+  plan: BusinessPlan,
 ) {
   return {
-    id: membership.id,
-    businessId: membership.businessId,
-    tier: membership.tier,
-    variant: membership.variant,
-    planId: membership.planId ?? undefined,
-    planName: membership.planName,
-    status: membership.status,
-    paid: membership.paid,
-    accessDays: membership.accessDays,
-    accessFee: membership.accessFee,
-    agreementAccepted: membership.agreementAccepted,
-    agreedAt: iso(membership.agreedAt),
-    accessExpiresAt: iso(membership.accessExpiresAt),
+    id: plan.id,
+    businessId: plan.businessId,
+    variant: plan.variant,
+    planId: plan.planId ?? undefined,
+    planName: plan.planName,
+    status: plan.status,
+    paid: plan.paid,
+    accessDays: plan.accessDays,
+    accessFee: fromMinorPence(plan.accessFeeMinor),
+    accessFeeMinor: plan.accessFeeMinor,
+    agreementAccepted: plan.agreementAccepted,
+    agreedAt: iso(plan.agreedAt),
+    accessExpiresAt: iso(plan.accessExpiresAt),
   };
 }
 

@@ -62,6 +62,8 @@ model User {
   createdAt               DateTime     @default(now()) @map("created_at")
   updatedAt               DateTime     @updatedAt @map("updated_at")
 
+  payments                Payment[]
+
   @@index([role])
   @@map("users")
 }
@@ -93,7 +95,9 @@ model Group {
   directoryVisibility   String?  @map("directory_visibility")
   interactionLevel      String?  @map("interaction_level")
   pricing               String   @default("free")
-  contribution          Float?
+  /// Membership plans whose members may join this group. Empty means any plan.
+  requiredPlanIds       String[] @default([]) @map("required_plan_ids")
+  contributionMinor     Int?     @map("contribution_minor")
   contributionFrequency String?  @map("contribution_frequency")
   campaignIds           String[] @default([]) @map("campaign_ids")
   programmeId           String?  @map("programme_id")
@@ -103,6 +107,7 @@ model Group {
 
   members    GroupMember[]
   activities GroupActivity[]
+  payments   Payment[]
 
   @@index([visibility])
   @@index([type])
@@ -159,10 +164,11 @@ model Business {
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
-  membership      BusinessMembership?
+  plan             BusinessPlan?
   networkLists    NetworkList[]
   networkContacts NetworkContact[]
   circles         Circle[]
+  payments        Payment[]
 
   @@index([status])
   @@index([tier])
@@ -171,19 +177,18 @@ model Business {
   @@map("businesses")
 }
 
-/// The signed-in business's paid access record: plan, access fee and the
-/// mandatory access agreement. Mirrors MembershipAccess in the web domain.
-model BusinessMembership {
+/// The signed-in business's active plan: chosen plan, access fee and the
+/// mandatory access agreement. Mirrors PlanAccess in the web domain.
+model BusinessPlan {
   id                String    @id @default(uuid()) @db.Uuid
   businessId        String    @unique @map("business_id")
-  tier              String    @default("Bronze")
   variant           String    @default("Standard")
   planId            String?   @map("plan_id")
   planName          String    @default("") @map("plan_name")
   status            String    @default("Pending")
   paid              Boolean   @default(false)
   accessDays        Int       @default(90) @map("access_days")
-  accessFee         Float     @default(0) @map("access_fee")
+  accessFeeMinor    Int       @default(0) @map("access_fee_minor")
   agreementAccepted Boolean   @default(false) @map("agreement_accepted")
   agreedAt          DateTime? @map("agreed_at")
   accessExpiresAt   DateTime? @map("access_expires_at")
@@ -193,7 +198,7 @@ model BusinessMembership {
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([status])
-  @@map("business_memberships")
+  @@map("business_plans")
 }
 
 /// A business-owned intake list. Lists capture raw contacts from one source;
@@ -289,7 +294,7 @@ model Partner {
   status       String   @default("Active")
   joinedAt     DateTime @default(now()) @map("joined_at")
   programmeId  String?  @map("programme_id")
-  feeMonthly   Float    @default(0) @map("fee_monthly")
+  feeMonthlyMinor Int  @default(0) @map("fee_monthly_minor")
   permissions  Json
   notes        String?
   createdAt    DateTime @default(now()) @map("created_at")
@@ -307,7 +312,7 @@ model Programme {
   tier        String   @default("Free")
   status      String   @default("Active")
   description String   @default("")
-  monthlyFee  Float    @default(0) @map("monthly_fee")
+  monthlyFeeMinor Int @default(0) @map("monthly_fee_minor")
   benefits    String[] @default([])
   groupCount  Int      @default(0) @map("group_count")
   createdAt   DateTime @default(now()) @map("created_at")
@@ -322,7 +327,7 @@ model Campaign {
   platform  String    @default("FundOrDonate")
   status    String    @default("Draft")
   groupIds  String[]  @default([]) @map("group_ids")
-  budget    Float?
+  budgetMinor Int?   @map("budget_minor")
   startDate DateTime? @map("start_date")
   endDate   DateTime? @map("end_date")
   createdAt DateTime  @default(now()) @map("created_at")
@@ -347,13 +352,12 @@ model Relationship {
   @@map("relationships")
 }
 
-model MembershipPlan {
+model Plan {
   id                 String   @id
-  tier               String
-  variant            String
+  /// The plan's name. Every plan publishes Standard, Pro and Pro+ variants.
   name               String
-  priceMonthly       Float    @default(0) @map("price_monthly")
-  billingFrequency   String   @default("Monthly") @map("billing_frequency")
+  variant            String
+  priceMinor         Int      @default(0) @map("price_minor")
   status             String   @default("Active")
   groupQuota         Int      @default(0) @map("group_quota")
   circleQuota        Int      @default(0) @map("circle_quota")
@@ -363,9 +367,9 @@ model MembershipPlan {
   createdAt          DateTime @default(now()) @map("created_at")
   updatedAt          DateTime @updatedAt @map("updated_at")
 
-  @@unique([tier, variant])
+  @@unique([name, variant])
   @@index([status])
-  @@map("membership_plans")
+  @@map("plans")
 }
 
 model RewardDeal {
@@ -552,4 +556,83 @@ model ReportSchedule {
 
   @@index([createdAt])
   @@map("report_schedules")
+}
+
+// ---------------------------------------------------------------------------
+// MCOM Pay
+// ---------------------------------------------------------------------------
+
+enum PaymentPurpose {
+  PLAN_ACCESS
+  GROUP_CONTRIBUTION
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  CANCELLED
+  REFUNDED
+  PARTIALLY_REFUNDED
+  PAID_UNFULFILLED
+}
+
+enum PaymentMethod {
+  STRIPE
+  PAYPAL
+  WALLET
+}
+
+/// A local MCOM Pay intent. The amount is always resolved server-side; the
+/// browser only chooses a plan or group. `reference`/`idempotencyKey` make
+/// create requests replay-safe with Central Hub, while `mcomChargeId` and
+/// `reference` are both used to match asynchronous webhooks.
+model Payment {
+  id             String        @id @default(uuid()) @db.Uuid
+  purpose        PaymentPurpose
+  status         PaymentStatus @default(PENDING)
+  method         PaymentMethod
+  amountMinor    BigInt
+  feeMinor       BigInt?
+  netMinor       BigInt?
+  refundedMinor  BigInt        @default(0)
+  currency       String        @default("GBP")
+
+  reference      String        @unique
+  idempotencyKey String        @unique
+  dedupeKey      String?       @unique
+  mcomChargeId   String?       @unique
+  provider       String?
+  providerRef    String?
+
+  businessId     String?
+  userId         String?       @db.Uuid
+  groupId        String?       @db.Uuid
+  memberId       String?
+  planId         String?
+  periodKey      String?
+
+  planSnapshot   Json?
+  groupSnapshot  Json?
+  metadata       Json?
+
+  failureCode    String?
+  failureMessage String?
+  paidAt         DateTime?
+  deletedAt      DateTime?
+
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  business Business? @relation(fields: [businessId], references: [id], onDelete: SetNull)
+  user     User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  group    Group?    @relation(fields: [groupId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([purpose, status])
+  @@index([businessId])
+  @@index([userId])
+  @@index([groupId, memberId, periodKey])
+  @@index([createdAt])
+  @@map("payments")
 }

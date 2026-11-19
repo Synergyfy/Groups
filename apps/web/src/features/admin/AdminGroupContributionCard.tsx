@@ -64,7 +64,7 @@ function mapContributionRows(
       status,
       paidDate: row.paidAt ? row.paidAt.slice(0, 10) : undefined,
       dueDate: "—",
-      paymentMethod: status === "paid" ? "Recorded" : "Awaiting payment",
+      paymentMethod: status === "paid" ? "MCOM Pay / recorded" : "Awaiting payment",
     };
   });
 }
@@ -121,7 +121,7 @@ export default function AdminGroupContributionCard({
                 ...item,
                 status: "paid",
                 paidDate: new Date().toISOString().slice(0, 10),
-                paymentMethod: "Recorded",
+                paymentMethod: "MCOM Pay / recorded",
               }
             : item,
         ),
@@ -364,9 +364,10 @@ export default function AdminGroupContributionCard({
 
             <div className="rounded-lg border border-white/5 bg-ink-950/60 p-2.5">
               <span className="text-[11px] text-slate-400 block mb-1">Collection Channel</span>
-              <p className="font-semibold text-white">Admin-recorded</p>
+              <p className="font-semibold text-white">MCOM Pay + admin override</p>
               <p className="text-[10px] text-slate-500 mt-0.5">
-                Contribution status is recorded by an administrator. No payment gateway is connected.
+                Members can pay contributions through MCOM Pay (Stripe, PayPal or
+                MCOM Wallet). Administrators can still record offline payments.
               </p>
             </div>
           </div>

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { SessionUser } from "../../auth/auth.types.js";
 import { Prisma } from "../../generated/prisma/client.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
+import { toMinorPence } from "../../common/money.js";
 import { AdminAuditService } from "../../admin/admin-audit.service.js";
 import { FREE_PARTNER_PERMISSIONS } from "../../admin/admin-defaults.js";
 import {
@@ -212,7 +213,7 @@ export class AdminDirectoryService {
         status: dto.status ?? "Pending",
         joinedAt: dto.joinedAt ? new Date(dto.joinedAt) : new Date(),
         programmeId: dto.programmeId,
-        feeMonthly: dto.feeMonthly ?? 0,
+        feeMonthlyMinor: toMinorPence(dto.feeMonthly),
         permissions: (dto.permissions ??
           FREE_PARTNER_PERMISSIONS) as Prisma.InputJsonValue,
         notes: dto.notes,
@@ -241,7 +242,10 @@ export class AdminDirectoryService {
         status: dto.status,
         joinedAt: dto.joinedAt ? new Date(dto.joinedAt) : undefined,
         programmeId: dto.programmeId,
-        feeMonthly: dto.feeMonthly,
+        feeMonthlyMinor:
+          dto.feeMonthly !== undefined
+            ? toMinorPence(dto.feeMonthly)
+            : undefined,
         permissions: dto.permissions as Prisma.InputJsonValue | undefined,
         notes: dto.notes,
       },
@@ -283,7 +287,7 @@ export class AdminDirectoryService {
 
   async listProgrammes() {
     const programmes = await this.prisma.programme.findMany({
-      orderBy: { monthlyFee: "desc" },
+      orderBy: { monthlyFeeMinor: "desc" },
     });
     return programmes.map(mapProgramme);
   }
@@ -296,7 +300,7 @@ export class AdminDirectoryService {
         tier: dto.tier ?? "Free",
         status: dto.status ?? "Active",
         description: dto.description ?? "",
-        monthlyFee: dto.monthlyFee ?? 0,
+        monthlyFeeMinor: toMinorPence(dto.monthlyFee),
         benefits: dto.benefits ?? [],
         groupCount: dto.groupCount ?? 0,
       },
@@ -324,7 +328,10 @@ export class AdminDirectoryService {
         tier: dto.tier,
         status: dto.status,
         description: dto.description,
-        monthlyFee: dto.monthlyFee,
+        monthlyFeeMinor:
+          dto.monthlyFee !== undefined
+            ? toMinorPence(dto.monthlyFee)
+            : undefined,
         benefits: dto.benefits,
         groupCount: dto.groupCount,
       },
@@ -398,7 +405,8 @@ export class AdminDirectoryService {
         platform: dto.platform ?? "FundOrDonate",
         status: dto.status ?? "Draft",
         groupIds: dto.groupIds ?? [],
-        budget: dto.budget,
+        budgetMinor:
+          dto.budget !== undefined ? toMinorPence(dto.budget) : undefined,
         startDate: dto.startDate ? new Date(dto.startDate) : undefined,
         endDate: dto.endDate ? new Date(dto.endDate) : undefined,
       },
@@ -426,7 +434,8 @@ export class AdminDirectoryService {
         platform: dto.platform,
         status: dto.status,
         groupIds: dto.groupIds,
-        budget: dto.budget,
+        budgetMinor:
+          dto.budget !== undefined ? toMinorPence(dto.budget) : undefined,
         startDate: dto.startDate ? new Date(dto.startDate) : undefined,
         endDate: dto.endDate ? new Date(dto.endDate) : undefined,
       },

@@ -1,34 +1,38 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
 import type { Business } from "../../generated/prisma/client.js";
 import { Prisma } from "../../generated/prisma/client.js";
+import { ConfigService } from "@nestjs/config";
+import { toMinorPence } from "../../common/money.js";
 import {
   mapBusiness,
   mapCampaign,
   mapGroup,
-  mapMembershipPlan,
+  mapPlan,
   mapProgramme,
   mapRelationship,
   mapRewardDeal,
 } from "../../admin/admin.mappers.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { BusinessContextService } from "../business-context.service.js";
+import { activatePlanTx } from "../plan-activation.js";
 import { BusinessGroupsService } from "../groups/business-groups.service.js";
 import {
+  accessQuotas,
   canCreateGroups,
   creationRightsLabel,
-  normalizeTier,
   normalizeVariant,
-  toMembershipAccess,
+  planAccessDays,
+  toPlanAccess,
 } from "../business.rules.js";
-import { mapBusinessMembership, mapBusinessDirectoryEntry } from "../business.mappers.js";
-import { accessQuotas } from "../business.rules.js";
+import { mapBusinessPlan, mapBusinessDirectoryEntry } from "../business.mappers.js";
 import type { BusinessContext } from "../business.types.js";
 import type {
-  ActivateMembershipDto,
+  ActivatePlanDto,
   BusinessCampaignsQueryDto,
   BusinessDirectoryQueryDto,
   BusinessRewardsQueryDto,
@@ -45,6 +49,7 @@ export class BusinessPlatformService {
     private readonly prisma: PrismaService,
     private readonly context: BusinessContextService,
     private readonly groups: BusinessGroupsService,
+    private readonly config: ConfigService,
   ) {}
 
   async getOverview(ctx: BusinessContext) {
@@ -59,7 +64,7 @@ export class BusinessPlatformService {
           where: { businessId: ctx.business.id },
           select: { id: true, type: true, memberIds: true },
         }),
-        this.prisma.programme.findMany({ orderBy: { monthlyFee: "desc" } }),
+        this.prisma.programme.findMany({ orderBy: { monthlyFeeMinor: "desc" } }),
         this.relationshipsFor(ctx.business),
       ]);
 
@@ -70,10 +75,10 @@ export class BusinessPlatformService {
 
     return {
       business: mapBusiness(ctx.business),
-      membership: mapBusinessMembership(ctx.membership),
-      access: toMembershipAccess(ctx.membership),
+      plan: mapBusinessPlan(ctx.plan),
+      access: toPlanAccess(ctx.plan),
       canCreateGroups: canCreateGroups(
-        ctx.membership,
+        ctx.plan,
         ctx.config.groupCreationRules,
       ),
       creationRightsLabel: creationRightsLabel(
@@ -121,8 +126,8 @@ export class BusinessPlatformService {
         lastName: ctx.user.lastName,
         avatarUrl: ctx.user.avatarUrl,
       },
-      membership: mapBusinessMembership(ctx.membership),
-      access: toMembershipAccess(ctx.membership),
+      plan: mapBusinessPlan(ctx.plan),
+      access: toPlanAccess(ctx.plan),
       programme: programme ? mapProgramme(programme) : null,
       relationships,
       location: {
@@ -234,10 +239,10 @@ export class BusinessPlatformService {
       partnerDefaults: ctx.config.partnerDefaults,
       accessRules: ctx.config.accessRules,
       platformSettings: ctx.config.platformSettings,
-      membership: mapBusinessMembership(ctx.membership),
-      access: toMembershipAccess(ctx.membership),
+      plan: mapBusinessPlan(ctx.plan),
+      access: toPlanAccess(ctx.plan),
       canCreateGroups: canCreateGroups(
-        ctx.membership,
+        ctx.plan,
         ctx.config.groupCreationRules,
       ),
       creationRightsLabel: creationRightsLabel(
@@ -246,21 +251,21 @@ export class BusinessPlatformService {
     };
   }
 
-  async getMembership(ctx: BusinessContext) {
+  async getPlan(ctx: BusinessContext) {
     const [plans, groupQuota, circleQuota] = await Promise.all([
-      this.prisma.membershipPlan.findMany({
+      this.prisma.plan.findMany({
         where: { status: "Active" },
-        orderBy: [{ tier: "asc" }, { variant: "asc" }],
+        orderBy: [{ name: "asc" }, { variant: "asc" }],
       }),
       this.groupQuota(ctx),
       this.circleQuota(ctx),
     ]);
 
     return {
-      membership: mapBusinessMembership(ctx.membership),
-      access: toMembershipAccess(ctx.membership),
+      plan: mapBusinessPlan(ctx.plan),
+      access: toPlanAccess(ctx.plan),
       canCreateGroups: canCreateGroups(
-        ctx.membership,
+        ctx.plan,
         ctx.config.groupCreationRules,
       ),
       creationRightsLabel: creationRightsLabel(
@@ -268,30 +273,30 @@ export class BusinessPlatformService {
       ),
       rules: ctx.config.groupCreationRules,
       paymentRules: ctx.config.paymentRules,
-      plans: plans.map(mapMembershipPlan),
+      plans: plans.map(mapPlan),
       quotas: { groups: groupQuota, circles: circleQuota },
       mandatoryGroups: ctx.config.mandatoryGroups,
       mandatoryCircles: ctx.config.mandatoryCircles,
     };
   }
 
-  async activateMembership(
+  async activatePlan(
     ctx: BusinessContext,
-    dto: ActivateMembershipDto,
+    dto: ActivatePlanDto,
   ) {
     if (!dto.agreementAccepted) {
       throw new BadRequestException(
-        "The membership access agreement must be accepted before activation.",
+        "The plan access agreement must be accepted before activation.",
       );
     }
 
     const plan = dto.planId
-      ? await this.prisma.membershipPlan.findUnique({
+      ? await this.prisma.plan.findUnique({
           where: { id: dto.planId },
         })
       : null;
     if (dto.planId && !plan) {
-      throw new NotFoundException(`Membership plan ${dto.planId} not found`);
+      throw new NotFoundException(`Plan ${dto.planId} not found`);
     }
     if (plan && plan.status !== "Active") {
       throw new BadRequestException(
@@ -300,65 +305,61 @@ export class BusinessPlatformService {
     }
 
     const rules = ctx.config.groupCreationRules;
-    const accessDays =
-      dto.accessDays === 90 || dto.accessDays === 180
+    const requestedVariant = plan?.variant ?? dto.variant;
+    const accessDays = requestedVariant
+      ? planAccessDays(normalizeVariant(requestedVariant))
+      : dto.accessDays === 90 || dto.accessDays === 180 || dto.accessDays === 365
         ? dto.accessDays
         : rules.entryAccessDays;
-    const tier = plan
-      ? normalizeTier(plan.tier)
-      : normalizeTier(dto.tier ?? ctx.membership.tier);
     const variant = plan
       ? normalizeVariant(plan.variant)
-      : normalizeVariant(dto.variant ?? ctx.membership.variant);
+      : normalizeVariant(dto.variant ?? ctx.plan.variant);
     const planName =
-      plan?.name ??
-      dto.planName ??
-      `${tier} ${variant} membership`;
+      plan?.name ?? dto.planName ?? ctx.plan.planName ?? "Plan";
     const now = new Date();
     const expiresAt = new Date(
       now.getTime() + accessDays * 24 * 60 * 60 * 1000,
     );
 
-    const membership = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.businessMembership.update({
-        where: { businessId: ctx.business.id },
-        data: {
-          tier,
-          variant,
-          planId: plan?.id ?? dto.planId ?? null,
-          planName,
-          status: "Active",
-          paid: true,
-          accessDays,
-          accessFee: rules.entryAccessFee,
-          agreementAccepted: true,
-          agreedAt: now,
-          accessExpiresAt: expiresAt,
-        },
+    const accessFeeMinor =
+      plan?.priceMinor ??
+      toMinorPence(dto.accessFee ?? rules.entryAccessFee);
+    const paymentsEnabled =
+      this.config.get<string>("MCOM_PAY_ENABLED", "true").toLowerCase() !==
+      "false";
+    if (
+      paymentsEnabled &&
+      rules.requirePaidAccess &&
+      accessFeeMinor > 0
+    ) {
+      throw new ConflictException({
+        code: "PAYMENT_REQUIRED",
+        message:
+          "The plan access fee must be paid through MCOM Pay before the plan can be activated.",
       });
-      await tx.business.update({
-        where: { id: ctx.business.id },
-        data: { tier },
-      });
-      await tx.auditLog.create({
-        data: {
-          action: "business-updated",
-          actorId: ctx.user.id,
-          actorName: ctx.business.name,
-          targetType: "business",
-          targetId: ctx.business.id,
-          targetName: ctx.business.name,
-          detail: `Membership activated (${planName}, ${accessDays}-day access)`,
-        },
-      });
-      return updated;
-    });
+    }
+
+    const activated = await this.prisma.$transaction((tx) =>
+      activatePlanTx(tx, {
+        businessId: ctx.business.id,
+        userId: ctx.user.id,
+        actorName: ctx.business.name,
+        planId: plan?.id ?? dto.planId ?? null,
+        planName,
+        variant,
+        accessDays,
+        accessFeeMinor,
+        agreementAccepted: true,
+        agreedAt: now,
+        accessExpiresAt: expiresAt,
+      }),
+    );
 
     return {
-      membership: mapBusinessMembership(membership),
-      access: toMembershipAccess(membership),
+      plan: mapBusinessPlan(activated),
+      access: toPlanAccess(activated),
       canCreateGroups: canCreateGroups(
-        membership,
+        activated,
         ctx.config.groupCreationRules,
       ),
     };
@@ -482,7 +483,7 @@ export class BusinessPlatformService {
 
   async getProgrammes(ctx: BusinessContext) {
     const programmes = await this.prisma.programme.findMany({
-      orderBy: { monthlyFee: "desc" },
+      orderBy: { monthlyFeeMinor: "desc" },
     });
     const current = ctx.business.programmeId
       ? programmes.find((entry) => entry.id === ctx.business.programmeId)
@@ -491,11 +492,11 @@ export class BusinessPlatformService {
     return {
       items: programmes.map(mapProgramme),
       current: current ? mapProgramme(current) : null,
-      membership: mapBusinessMembership(ctx.membership),
+      plan: mapBusinessPlan(ctx.plan),
       stats: {
         total: programmes.length,
         active: programmes.filter((entry) => entry.status === "Active").length,
-        currentTier: ctx.membership.tier,
+        currentPlan: ctx.plan.planName,
       },
     };
   }
@@ -598,10 +599,10 @@ export class BusinessPlatformService {
 
     const [programmes, plans, totalDeals, deals, campaigns] =
       await Promise.all([
-        this.prisma.programme.findMany({ orderBy: { monthlyFee: "desc" } }),
-        this.prisma.membershipPlan.findMany({
+        this.prisma.programme.findMany({ orderBy: { monthlyFeeMinor: "desc" } }),
+        this.prisma.plan.findMany({
           where: { status: "Active" },
-          orderBy: [{ tier: "asc" }, { variant: "asc" }],
+          orderBy: [{ name: "asc" }, { variant: "asc" }],
         }),
         this.prisma.rewardDeal.count({ where }),
         this.prisma.rewardDeal.findMany({
@@ -621,13 +622,13 @@ export class BusinessPlatformService {
       : undefined;
 
     return {
-      membership: mapBusinessMembership(ctx.membership),
-      access: toMembershipAccess(ctx.membership),
+      plan: mapBusinessPlan(ctx.plan),
+      access: toPlanAccess(ctx.plan),
       currentProgramme: currentProgramme
         ? mapProgramme(currentProgramme)
         : null,
       programmes: programmes.map(mapProgramme),
-      plans: plans.map(mapMembershipPlan),
+      plans: plans.map(mapPlan),
       rewardDeals: pageResult(deals.map(mapRewardDeal), totalDeals, params),
       campaigns: campaigns.map(mapCampaign),
       stats: {
@@ -635,7 +636,7 @@ export class BusinessPlatformService {
         activeProgrammes: programmes.filter(
           (entry) => entry.status === "Active",
         ).length,
-        currentTier: ctx.membership.tier,
+        currentPlan: ctx.plan.planName,
         rewardDeals: totalDeals,
         liveDeals: deals.filter((deal) => deal.liveOnFrontend).length,
         campaigns: campaigns.length,
@@ -665,7 +666,7 @@ export class BusinessPlatformService {
         localArea: ctx.business.localArea,
       },
       groups: communityGroups.map((group) => mapGroup(group)),
-      membership: mapBusinessMembership(ctx.membership),
+      plan: mapBusinessPlan(ctx.plan),
       stats: {
         communityGroups: communityGroups.length,
         membersAcross: communityGroups.reduce(
@@ -865,8 +866,8 @@ export class BusinessPlatformService {
       {
         id: "access",
         title: "Activate your paid access",
-        route: "/business/membership",
-        done: ctx.membership.paid && ctx.membership.agreementAccepted,
+        route: "/business/plan",
+        done: ctx.plan.paid && ctx.plan.agreementAccepted,
       },
     ];
 
@@ -925,35 +926,35 @@ export class BusinessPlatformService {
   }
 
   private async groupQuota(ctx: BusinessContext) {
-    const plan = ctx.membership.planId
-      ? await this.prisma.membershipPlan.findUnique({
-          where: { id: ctx.membership.planId },
+    const plan = ctx.plan.planId
+      ? await this.prisma.plan.findUnique({
+          where: { id: ctx.plan.planId },
         })
-      : await this.prisma.membershipPlan.findFirst({
+      : await this.prisma.plan.findFirst({
           where: {
-            tier: ctx.membership.tier,
-            variant: ctx.membership.variant,
+            name: ctx.plan.planName,
+            variant: ctx.plan.variant,
             status: "Active",
           },
         });
     if (plan && plan.groupQuota > 0) return plan.groupQuota;
-    return accessQuotas(ctx.config, ctx.membership).groups;
+    return accessQuotas(ctx.config, ctx.plan).groups;
   }
 
   private async circleQuota(ctx: BusinessContext) {
-    const plan = ctx.membership.planId
-      ? await this.prisma.membershipPlan.findUnique({
-          where: { id: ctx.membership.planId },
+    const plan = ctx.plan.planId
+      ? await this.prisma.plan.findUnique({
+          where: { id: ctx.plan.planId },
         })
-      : await this.prisma.membershipPlan.findFirst({
+      : await this.prisma.plan.findFirst({
           where: {
-            tier: ctx.membership.tier,
-            variant: ctx.membership.variant,
+            name: ctx.plan.planName,
+            variant: ctx.plan.variant,
             status: "Active",
           },
         });
     if (plan && plan.circleQuota > 0) return plan.circleQuota;
-    return accessQuotas(ctx.config, ctx.membership).circles;
+    return accessQuotas(ctx.config, ctx.plan).circles;
   }
 
   private mandatoryCircleStatuses(

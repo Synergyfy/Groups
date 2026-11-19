@@ -13,7 +13,7 @@ import Toast from "../../components/ui/Toast";
 import type { Group, GroupAccessType } from "../../domain/types";
 import { errorMessage } from "../../app/api";
 import { useAppState, useBusinessId, useExploreGroups } from "../../store/selectors";
-import { businessApi, useBusinessData } from "../../business/BusinessDataProvider";
+import { businessApi, useBusinessData, type BusinessGroup } from "../../business/BusinessDataProvider";
 import GroupListItem from "./GroupListItem";
 
 const ACCESS_INFO: Record<GroupAccessType, { label: string; hint: string }> = {
@@ -99,10 +99,15 @@ export default function ExploreGroupsPage() {
   const membershipStates = useMemo(() => {
     const map = new Map<string, string>();
     for (const group of explore) {
+      const apiPlan = (group as BusinessGroup).joinPlan;
       let state: string;
       if (pendingRequestIds.has(group.id)) state = "pending";
       else if (pendingInviteIds.has(group.id)) state = "invited";
-      else if (group.source === "automatic") state = "blocked";
+      else if (apiPlan) {
+        if (apiPlan.disabled || apiPlan.action === "none") state = "blocked";
+        else if (apiPlan.action === "join") state = "instant";
+        else state = "approval";
+      } else if (group.source === "automatic") state = "blocked";
       else {
         const config = adminConfig.groupTypes.find((entry) => entry.type === group.type);
         if (config && (config.enabled === false || config.allowJoin === false))
@@ -139,6 +144,10 @@ export default function ExploreGroupsPage() {
   }, [explore, query, type, access, status, city, localArea, membership, membershipStates]);
 
   const joinPlan = (group: Group) => {
+    const apiPlan = (group as BusinessGroup).joinPlan;
+    if (apiPlan) {
+      return { disabled: apiPlan.disabled, label: apiPlan.label, hint: apiPlan.hint };
+    }
     if (group.source === "automatic") {
       return { disabled: true, label: "System allocated", hint: "Automatic groups are allocated by the system." };
     }

@@ -71,7 +71,7 @@ const emptyConfig = {
   stageLabels: [],
   paymentRules: { allowPaid: false, minAmount: 0, maxAmount: 0, presets: [], allowCustom: false },
   groupCreationRules: {
-    allowedTiers: [],
+    allowedPlans: [],
     allowedVariants: [],
     restrictToPlatformGroup: false,
     platformGroupId: null,
@@ -204,7 +204,7 @@ function adminStub(path: string): unknown {
   if (path.endsWith("/groups/hub")) {
     return { groups: [], invitations: [], stats: {} };
   }
-  if (path.endsWith("/memberships/stats")) {
+  if (path.endsWith("/plans/stats")) {
     return { totalPlans: 0, activePlans: 0, totalSubscribers: 0, monthlyRecurringRunRate: 0 };
   }
   if (path.endsWith("/rewards-deals/stats")) {
@@ -215,7 +215,7 @@ function adminStub(path: string): unknown {
   }
   if (path.endsWith("/settings-reports")) {
     return {
-      stats: { registeredEntities: 0, totalMemberships: 0, invitationsSent: 0, invitationConversion: 0 },
+      stats: { registeredEntities: 0, totalPlanSubscribers: 0, invitationsSent: 0, invitationConversion: 0 },
       growth: [],
       invitationBreakdown: [],
       completeness: [],
@@ -271,22 +271,21 @@ const { createInitialAppState } = await import("../src/store/reducer");
 
 const STORAGE_KEY = "247gbs.group.store.v2";
 
-type MembershipSeed = "platinum" | "bronze";
+type PlanSeed = "platinum" | "bronze";
 
 /**
  * Pre-seed the persisted store so dashboard cases render behind the paid
  * access agreement gate exactly like a business that already paid. `fresh`
  * cases clear storage instead to exercise the gate itself.
  */
-function seedStore(membership: MembershipSeed = "platinum") {
+function seedStore(planSeed: PlanSeed = "platinum") {
   const base = createInitialAppState();
   const seeded = {
     ...base,
-    membership: {
-      ...base.membership,
-      tier: membership === "bronze" ? ("Bronze" as const) : ("Platinum" as const),
-      variant: membership === "bronze" ? ("Standard" as const) : ("Pro+" as const),
-      planName: membership === "bronze" ? "Bronze Standard" : "Platinum Pro+",
+    plan: {
+      ...base.plan,
+      variant: planSeed === "bronze" ? ("Standard" as const) : ("Pro+" as const),
+      planName: planSeed === "bronze" ? "Bronze" : "Platinum",
       paid: true,
       agreementAccepted: true,
     },
@@ -350,8 +349,8 @@ interface SmokeCase {
   click?: string;
   /** Clear the persisted store instead of seeding it (access gate check). */
   fresh?: boolean;
-  /** Membership the seeded store carries for this case. */
-  membership?: MembershipSeed;
+  /** Plan the seeded store carries for this case. */
+  plan?: PlanSeed;
 }
 
 const cases: SmokeCase[] = [
@@ -616,7 +615,7 @@ const cases: SmokeCase[] = [
   {
     path: "/business/overview",
     fresh: true,
-    expect: "Paid Access Agreement",
+    expect: "Choose your plan",
     reject: "Connect with businesses and members through groups.",
   },
   {
@@ -626,18 +625,18 @@ const cases: SmokeCase[] = [
     reject: "Free group or paid group?",
   },
   // Membership-based creation rules: Bronze Standard cannot create groups
-  { path: "/business/groups", membership: "bronze", expect: "Membership locked" },
+  { path: "/business/groups", plan: "bronze", expect: "Plan locked" },
   {
     path: "/business/groups/create",
-    membership: "bronze",
-    expect: "administrators place your membership into",
+    plan: "bronze",
+    expect: "administrators place your plan into",
     reject: "Free group or paid group?",
   },
   // Head start groups seeded on dashboard entry
   { path: "/business/groups", expect: "Head start groups" },
   {
     path: "/business/groups",
-    membership: "bronze",
+    plan: "bronze",
     expect: "Non-functional until the administrator's threshold is reached.",
   },
   { path: "/business/groups/grp-headstart-b2b", expect: "04 — Group Details" },
@@ -645,7 +644,7 @@ const cases: SmokeCase[] = [
   // Admin — Group Creation Rules screen
   { path: "/admin/config/group-rules", expect: "Group Creation Rules" },
   { path: "/admin/config/group-rules", expect: "Who can create a group" },
-  { path: "/admin/config/group-rules", expect: "Recruitment requirements per membership" },
+  { path: "/admin/config/group-rules", expect: "Recruitment requirements per plan" },
     { path: "/admin/config/group-rules", expect: "Paid entry & agreement" },
   { path: "/admin/config/group-rules", expect: "Group activation" },
   { path: "/admin/config/group-rules", expect: "How the rules combine" },
@@ -660,7 +659,7 @@ for (const smokeCase of cases) {
   if (smokeCase.fresh) {
     localStorage.removeItem(STORAGE_KEY);
   } else {
-    seedStore(smokeCase.membership);
+    seedStore(smokeCase.plan);
   }
   seedAuthSession(smokeCase.path);
   const smokeRouter = createMemoryRouter(routes, { initialEntries: [smokeCase.path] });

@@ -49,9 +49,33 @@ ADMIN_PASSWORD="change-this-admin-password"
 MCOM_SOLUTIONS_URL="http://localhost:3010"
 MCOM_CLIENT_ID="mcom-group"
 MCOM_CLIENT_SECRET="..."
+MCOM_HMAC_SECRET="..."
+MCOM_WEBHOOK_SECRET="..."
+MCOM_PAY_ENABLED="true"
 MCOM_REDIRECT_URI="http://localhost:4088/auth/callback"
 MCOM_SCOPES="profile email business membership packages"
+
+WEB_PUBLIC_URL="http://localhost:4088"
+VITE_STRIPE_PUBLISHABLE_KEY="pk_test_..."
+VITE_MCOM_WALLET_TOPUP_URL="http://localhost:3010/dashboard/wallet"
 ```
+
+### MCOM Pay
+
+Plan access and paid-group contributions are collected through **MCOM Pay**
+(Stripe, PayPal or the MCOM Wallet) using the partner API on Central Hub.
+
+- `MCOM_HMAC_SECRET` and `MCOM_WEBHOOK_SECRET` come from the app's entry in
+  **MCOM Console**.
+- Register the webhook URL in the Console:
+  `http://localhost:4089/api/payments/webhook/mcom` (use a tunnel outside
+  localhost).
+- `VITE_STRIPE_PUBLISHABLE_KEY` must belong to the same Stripe account as
+  Central Hub's secret key. Card payments cannot load without it.
+- `MCOM_PAY_ENABLED=false` keeps the legacy free plan activation path for local
+  development only.
+- Plan prices, group contributions and payment amounts are stored as integer
+  pence. The admin plan form accepts pounds and the API converts to pence.
 
 Create the database if it does not exist:
 
@@ -195,7 +219,7 @@ receive `401`, non-admin sessions `403`.
 | Programmes | `GET/POST /api/admin/programmes`, `PATCH/DELETE /api/admin/programmes/:id` |
 | Campaigns | `GET/POST /api/admin/campaigns`, `PATCH/DELETE /api/admin/campaigns/:id` |
 | Relationships | `GET/POST /api/admin/relationships`, `PATCH/DELETE /api/admin/relationships/:id` |
-| Memberships | `GET/POST /api/admin/memberships/plans`, `PATCH/DELETE /api/admin/memberships/plans/:id`, `GET /api/admin/memberships/stats` |
+| Plans | `GET/POST /api/admin/plans`, `PATCH/DELETE /api/admin/plans/:id`, `GET /api/admin/plans/stats` |
 | Rewards & deals | `GET/POST /api/admin/rewards-deals`, `PATCH/DELETE /api/admin/rewards-deals/:id`, `GET /api/admin/rewards-deals/stats` |
 | Invitations | `GET /api/admin/invitations`, `GET /api/admin/invitations/counts`, `POST /api/admin/invitations/:id/approve\|decline\|cancel` |
 | Moderation | `GET /api/admin/pending-review`, `POST /api/admin/pending-review/:id/approve\|reject` |
@@ -208,7 +232,7 @@ receive `401`, non-admin sessions `403`.
 
 Admin Prisma models are created by the `admin_console` migration. Runtime data is
 created through the API; the seed command does not create sample groups,
-businesses, memberships, invitations, locations, or other demo records.
+businesses, plans, invitations, locations, or other demo records.
 
 ### Admin API smoke test
 
