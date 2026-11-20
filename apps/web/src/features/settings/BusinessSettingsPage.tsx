@@ -69,6 +69,8 @@ export default function BusinessSettingsPage() {
 
   const access = profile?.access;
   const relationships = profile?.relationships;
+  const centralSource =
+    access?.accessSource !== undefined && access.accessSource !== "local";
 
   return (
     <div className="flex flex-col gap-4">
@@ -215,9 +217,19 @@ export default function BusinessSettingsPage() {
                 <Badge variant={access?.paid ? "success" : "warning"}>
                   {access?.paid ? "Paid" : "Unpaid"}
                 </Badge>
-                <Badge variant={access?.agreementAccepted ? "success" : "warning"}>
-                  {access?.agreementAccepted ? "Agreement accepted" : "Agreement pending"}
-                </Badge>
+                {centralSource ? (
+                  <Badge variant="info">
+                    {access?.accessSource === "membership"
+                      ? "Central Hub membership"
+                      : access?.accessSource === "access_pass"
+                        ? "Central Hub access pass"
+                        : "Central Hub trial"}
+                  </Badge>
+                ) : (
+                  <Badge variant={access?.agreementAccepted ? "success" : "warning"}>
+                    {access?.agreementAccepted ? "Agreement accepted" : "Agreement pending"}
+                  </Badge>
+                )}
                 <Badge variant="gold">{plan?.plan.planName || "—"}</Badge>
               </div>
               <dl className="flex flex-col gap-1.5 text-[11px]">
@@ -240,9 +252,29 @@ export default function BusinessSettingsPage() {
                 <Row
                   label="Expires"
                   value={
-                    plan?.plan.accessExpiresAt?.slice(0, 10) ?? "Not active"
+                    plan?.plan.accessExpiresAt?.slice(0, 10) ??
+                    (centralSource &&
+                    access?.accessSource === "membership"
+                      ? "Follows membership"
+                      : "Not active")
                   }
                 />
+                {centralSource && (
+                  <Row
+                    label="Access source"
+                    value={
+                      access?.accessSource === "membership"
+                        ? `${access.membershipName ?? "Central Hub"} membership`
+                        : access?.accessSource === "access_pass"
+                          ? `Access pass${access.externalPlanId ? ` (${access.externalPlanId})` : ""}`
+                          : `Trial${
+                              access?.trialDaysRemaining !== undefined
+                                ? ` · ${access.trialDaysRemaining} days left`
+                                : ""
+                            }`
+                    }
+                  />
+                )}
                 <Row
                   label="Group quota"
                   value={String(plan?.quotas.groups ?? "—")}

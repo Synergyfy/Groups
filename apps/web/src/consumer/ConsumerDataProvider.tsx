@@ -163,6 +163,7 @@ function createEmptyConfig() {
     groupCreationRules: {
       allowedPlans: [],
       allowedVariants: [],
+      planCreationRights: {},
       restrictToPlatformGroup: false,
       platformGroupId: null,
       recruitmentTargets: {

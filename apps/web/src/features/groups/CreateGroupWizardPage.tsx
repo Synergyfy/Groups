@@ -114,11 +114,6 @@ export default function CreateGroupWizardPage() {
           title="No group types are available"
           description="Administrators have disabled every group type, so no group can be created right now."
           icon={<Lock className="size-6" />}
-          action={
-            <LinkButton to="/admin/config/types" size="sm">
-              Open Group Type Configuration
-            </LinkButton>
-          }
         />
       ) : (
         <CreateGroupWizard types={creatableTypes} blockedTypes={blockedTypes} />

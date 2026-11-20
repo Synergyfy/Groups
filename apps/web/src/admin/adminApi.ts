@@ -2,18 +2,12 @@ import { apiRequest } from "../app/api";
 import type {
   AdminConfig,
   AuditLogEntry,
-  BusinessRecord,
-  CampaignRecord,
   Group,
   GroupActivity,
   GroupCircle,
   Invitation,
-  LocationHierarchy,
   Plan,
-  PartnerRecord,
   PlatformAccount,
-  ProgrammeRecord,
-  RelationshipRecord,
 } from "../domain/types";
 
 export interface AdminUser {
@@ -45,26 +39,6 @@ export interface RewardDeal {
   sponsorBusiness: string;
 }
 
-export interface AdminContentSection {
-  id: string;
-  label: string;
-  draft: Record<string, unknown>;
-  published: Record<string, unknown>;
-  status: string;
-  publishedAt?: string;
-  updatedAt?: string;
-}
-
-export interface AdminReportSchedule {
-  id: string;
-  name: string;
-  type: string;
-  frequency: string;
-  recipients: string[];
-  status: string;
-  lastRunAt?: string;
-}
-
 export interface AdminOverview {
   metrics: {
     businessOwners: number;
@@ -83,28 +57,12 @@ export interface AdminOverview {
   recentActivity: AuditLogEntry[];
 }
 
-export interface AdminGroupReport {
-  stats: {
-    groups: number;
-    members: number;
-    businesses: number;
-    citiesCovered: number;
-  };
-  originDistribution: Array<{ label: string; value: number }>;
-  growth: Array<{ label: string; value: number }>;
-  groupsByType: Array<{ label: string; value: number }>;
-  groupsByCity: Array<{ label: string; value: number }>;
-  typeTotals: Array<{
-    type: string;
-    total: number;
-    origin: { automatic: number; userCreated: number };
-  }>;
-}
-
 export interface AdminSettingsReport {
   stats: {
     registeredEntities: number;
     totalPlanSubscribers: number;
+    programmeMonthlyFees?: number;
+    partnerMonthlyFees?: number;
     invitationsSent: number;
     invitationConversion: number;
   };
@@ -120,29 +78,6 @@ export interface AdminSettingsReport {
 export interface AdminConfigResponse extends AdminConfig {
   accessRules?: Record<string, unknown>;
   platformSettings?: Record<string, unknown>;
-}
-
-export interface AdminPartnerGroups {
-  groups: Group[];
-  partners: PartnerRecord[];
-  programme: ProgrammeRecord | null;
-  metrics: { partnerGroups: number; members: number };
-}
-
-export interface AdminPermissions {
-  partnerDefaults: Record<string, unknown>;
-  groups: Record<string, string[]>;
-}
-
-export interface AdminGroupRelationships {
-  group: Group;
-  owner: BusinessRecord | null;
-  programme: ProgrammeRecord | null;
-  campaigns: CampaignRecord[];
-  accountManager: RelationshipRecord | null;
-  agent: RelationshipRecord | null;
-  consultant: RelationshipRecord | null;
-  location: { city: string | null; localArea: string | null };
 }
 
 export interface AdminGroupContribution {
@@ -246,109 +181,12 @@ export const adminApi = {
   circles: () => apiRequest<GroupCircle[]>("/admin/circles"),
   groupActivity: (id: string) =>
     apiRequest<GroupActivity[]>(`/admin/groups/${id}/activity`),
-  groupRelationships: (id: string) =>
-    apiRequest<AdminGroupRelationships>(`/admin/groups/${id}/relationships`),
-  updateGroupRelationships: (id: string, patch: Record<string, unknown>) =>
-    apiRequest<Group>(`/admin/groups/${id}/relationships`, {
-      method: "PATCH",
-      body: JSON.stringify(patch),
-    }),
   groupContribution: (id: string) =>
     apiRequest<AdminGroupContribution>(`/admin/groups/${id}/contribution`),
   groupCircles: (id: string) =>
     apiRequest<GroupCircle[]>(`/admin/groups/${id}/circles`),
   groupInvitations: (id: string) =>
     apiRequest<Invitation[]>(`/admin/groups/${id}/invitations`),
-
-  businesses: (search?: string) =>
-    apiRequest<BusinessRecord[]>(`/admin/businesses${query({ search })}`),
-  business: (id: string) =>
-    apiRequest<BusinessRecord & { groups: Group[] }>(`/admin/businesses/${id}`),
-  createBusiness: (body: Record<string, unknown>) =>
-    apiRequest<BusinessRecord>("/admin/businesses", {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
-  updateBusiness: (id: string, patch: Record<string, unknown>) =>
-    apiRequest<BusinessRecord>(`/admin/businesses/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(patch),
-    }),
-  deleteBusiness: (id: string) =>
-    apiRequest<{ ok: boolean }>(`/admin/businesses/${id}`, {
-      method: "DELETE",
-    }),
-  verifyBusiness: (id: string) =>
-    apiRequest<BusinessRecord>(`/admin/businesses/${id}/verify`, {
-      method: "POST",
-    }),
-  suspendBusiness: (id: string) =>
-    apiRequest<BusinessRecord>(`/admin/businesses/${id}/suspend`, {
-      method: "POST",
-    }),
-
-  partners: (search?: string) =>
-    apiRequest<PartnerRecord[]>(`/admin/partners${query({ search })}`),
-  partner: (id: string) => apiRequest<PartnerRecord>(`/admin/partners/${id}`),
-  createPartner: (body: Record<string, unknown>) =>
-    apiRequest<PartnerRecord>("/admin/partners", {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
-  updatePartner: (id: string, patch: Record<string, unknown>) =>
-    apiRequest<PartnerRecord>(`/admin/partners/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(patch),
-    }),
-  deletePartner: (id: string) =>
-    apiRequest<{ ok: boolean }>(`/admin/partners/${id}`, { method: "DELETE" }),
-  partnerGroups: () => apiRequest<AdminPartnerGroups>("/admin/partner-groups"),
-
-  programmes: () => apiRequest<ProgrammeRecord[]>("/admin/programmes"),
-  createProgramme: (body: Record<string, unknown>) =>
-    apiRequest<ProgrammeRecord>("/admin/programmes", {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
-  updateProgramme: (id: string, patch: Record<string, unknown>) =>
-    apiRequest<ProgrammeRecord>(`/admin/programmes/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(patch),
-    }),
-  deleteProgramme: (id: string) =>
-    apiRequest<{ ok: boolean }>(`/admin/programmes/${id}`, {
-      method: "DELETE",
-    }),
-
-  campaigns: () => apiRequest<CampaignRecord[]>("/admin/campaigns"),
-  createCampaign: (body: Record<string, unknown>) =>
-    apiRequest<CampaignRecord>("/admin/campaigns", {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
-  updateCampaign: (id: string, patch: Record<string, unknown>) =>
-    apiRequest<CampaignRecord>(`/admin/campaigns/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(patch),
-    }),
-  deleteCampaign: (id: string) =>
-    apiRequest<{ ok: boolean }>(`/admin/campaigns/${id}`, { method: "DELETE" }),
-
-  relationships: () => apiRequest<RelationshipRecord[]>("/admin/relationships"),
-  createRelationship: (body: Record<string, unknown>) =>
-    apiRequest<RelationshipRecord>("/admin/relationships", {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
-  updateRelationship: (id: string, patch: Record<string, unknown>) =>
-    apiRequest<RelationshipRecord>(`/admin/relationships/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(patch),
-    }),
-  deleteRelationship: (id: string) =>
-    apiRequest<{ ok: boolean }>(`/admin/relationships/${id}`, {
-      method: "DELETE",
-    }),
 
   plans: () => apiRequest<Plan[]>("/admin/plans"),
   planStats: () =>
@@ -418,101 +256,11 @@ export const adminApi = {
       method: "POST",
     }),
 
-  pendingReview: () => apiRequest<Group[]>("/admin/pending-review"),
-  approvePending: (id: string) =>
-    apiRequest<Group>(`/admin/pending-review/${id}/approve`, {
-      method: "POST",
-    }),
-  rejectPending: (id: string) =>
-    apiRequest<Group>(`/admin/pending-review/${id}/reject`, {
-      method: "POST",
-    }),
-
-  auditLog: () => apiRequest<AuditLogEntry[]>("/admin/audit-log"),
-
   config: () => apiRequest<AdminConfigResponse>("/admin/config"),
   patchConfig: (patch: Record<string, unknown>) =>
     apiRequest<AdminConfigResponse>("/admin/config", {
       method: "PATCH",
       body: JSON.stringify(patch),
-    }),
-  configField: <T>(field: string) => apiRequest<T>(`/admin/config/${field}`),
-  permissions: () => apiRequest<AdminPermissions>("/admin/permissions"),
-  accessRules: () =>
-    apiRequest<Record<string, unknown>>("/admin/access-rules"),
-  platformSettings: () =>
-    apiRequest<Record<string, unknown>>("/admin/settings"),
-
-  locations: () => apiRequest<LocationHierarchy>("/admin/locations"),
-  createCity: (name: string) =>
-    apiRequest<{ id: string; name: string }>("/admin/locations/cities", {
-      method: "POST",
-      body: JSON.stringify({ name }),
-    }),
-  updateCity: (id: string, name: string) =>
-    apiRequest<{ id: string; name: string }>(`/admin/locations/cities/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify({ name }),
-    }),
-  deleteCity: (id: string) =>
-    apiRequest<{ ok: boolean }>(`/admin/locations/cities/${id}`, {
-      method: "DELETE",
-    }),
-  createArea: (cityId: string, name: string) =>
-    apiRequest<{ id: string; name: string }>(
-      `/admin/locations/cities/${cityId}/areas`,
-      { method: "POST", body: JSON.stringify({ name }) },
-    ),
-  updateArea: (id: string, name: string) =>
-    apiRequest<{ id: string; name: string }>(`/admin/locations/areas/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify({ name }),
-    }),
-  deleteArea: (id: string) =>
-    apiRequest<{ ok: boolean }>(`/admin/locations/areas/${id}`, {
-      method: "DELETE",
-    }),
-
-  content: () => apiRequest<AdminContentSection[]>("/admin/content"),
-  contentStatus: () =>
-    apiRequest<{
-      published: boolean;
-      total: number;
-      publishedCount: number;
-      lastPublishedAt?: string;
-    }>("/admin/content/status"),
-  contentSection: (id: string) =>
-    apiRequest<AdminContentSection>(`/admin/content/${id}`),
-  updateContent: (id: string, patch: Record<string, unknown>) =>
-    apiRequest<AdminContentSection>(`/admin/content/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(patch),
-    }),
-  publishContent: (id: string) =>
-    apiRequest<AdminContentSection>(`/admin/content/${id}/publish`, {
-      method: "POST",
-    }),
-  publishAllContent: () =>
-    apiRequest<{ ok: boolean; published: number }>("/admin/content/publish-all", {
-      method: "POST",
-    }),
-
-  report: () => apiRequest<AdminGroupReport>("/admin/reports"),
-  reportSchedules: () =>
-    apiRequest<AdminReportSchedule[]>("/admin/reports/schedules"),
-  createReportSchedule: (body: Record<string, unknown>) =>
-    apiRequest<AdminReportSchedule>("/admin/reports/schedules", {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
-  updateReportSchedule: (id: string, patch: Record<string, unknown>) =>
-    apiRequest<AdminReportSchedule>(`/admin/reports/schedules/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(patch),
-    }),
-  deleteReportSchedule: (id: string) =>
-    apiRequest<{ ok: boolean }>(`/admin/reports/schedules/${id}`, {
-      method: "DELETE",
     }),
   settingsReport: () =>
     apiRequest<AdminSettingsReport>("/admin/settings-reports"),

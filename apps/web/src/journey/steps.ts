@@ -286,7 +286,9 @@ export const BUSINESS_STEPS: JourneyStep[] = [
     cta: { label: "Open account settings", to: "/business/settings" },
     detect: (ctx) =>
       Boolean(
-        ctx.state.plan.paid && ctx.state.plan.agreementAccepted
+        (ctx.state.plan.accessSource !== undefined &&
+          ctx.state.plan.accessSource !== "local") ||
+          (ctx.state.plan.paid && ctx.state.plan.agreementAccepted)
       ),
   },
 ];
@@ -358,105 +360,5 @@ export const ADMIN_STEPS: JourneyStep[] = [
     route: "/admin/invitations",
     cta: { label: "Open admin inbox", to: "/admin/invitations" },
     detect: (ctx) => hasVisited(ctx, "/admin/invitations"),
-  },
-  {
-    id: "admin-auto",
-    scope: "admin",
-    chapter: "Chapter B · Set the rules",
-    title: "Configure automatic grouping",
-    instruction: "Open Automatic Group Rules and change the threshold or method.",
-    why: "This is the one switch that changes every user's network group: when it splits, how it splits and what it splits by. It is never hard-coded in a screen.",
-    how: [
-      "Open Automatic Group Rules (screen 20).",
-      "Set threshold (6, 12, 18 or 24), method, scope and combining.",
-      "Watch the business network screen recompute — 9 / 12 becomes 9 / 6, for example.",
-    ],
-    route: "/admin/config/automatic",
-    cta: { label: "Open automatic rules", to: "/admin/config/automatic" },
-    detect: (ctx) =>
-      hasVisited(ctx, "/admin/config/automatic") ||
-      ctx.state.adminConfig.groupTypes.length > 0,
-  },
-  {
-    id: "admin-types",
-    scope: "admin",
-    chapter: "Chapter B · Set the rules",
-    title: "Decide which group types exist",
-    instruction: "Open Group Type Configuration and toggle a type.",
-    why: "Types are the vocabulary of the whole platform: if a type is disabled or creation is off, it disappears from the business create wizard immediately.",
-    how: [
-      "Open Group Type Configuration (screen 21).",
-      "Toggle enabled, allow-create or allow-join for a type.",
-      "Check the business wizard — the type list changes with your setting.",
-    ],
-    route: "/admin/config/types",
-    cta: { label: "Open type configuration", to: "/admin/config/types" },
-    detect: (ctx) =>
-      hasVisited(ctx, "/admin/config/types") ||
-      ctx.state.adminConfig.groupTypes.length > 0,
-  },
-  {
-    id: "admin-locations",
-    scope: "admin",
-    chapter: "Chapter B · Set the rules",
-    title: "Keep the location hierarchy honest",
-    instruction: "Open Location Relationships and review cities and local areas.",
-    why: "Cities and local areas drive grouping and discovery. Group ≠ location ≠ campaign — each is maintained in its own place.",
-    how: [
-      "Open Location Relationships.",
-      "Check the city → local area tree.",
-      "Confirm your own city and area still match where you trade.",
-    ],
-    route: "/admin/locations",
-    cta: { label: "Open locations", to: "/admin/locations" },
-    detect: (ctx) => hasVisited(ctx, "/admin/locations"),
-  },
-  {
-    id: "admin-partners",
-    scope: "admin",
-    chapter: "Chapter B · Set the rules",
-    title: "Review partner-managed groups",
-    instruction: "Open Partner Groups.",
-    why: "Partner groups are owned outside your organisation — you supervise them, their owners run them.",
-    how: [
-      "Open Partner Groups.",
-      "Identify which groups are partner-owned.",
-      "Remember ownership gates every change.",
-    ],
-    route: "/admin/partner-groups",
-    cta: { label: "Open partner groups", to: "/admin/partner-groups" },
-    detect: (ctx) => hasVisited(ctx, "/admin/partner-groups"),
-  },
-  {
-    id: "admin-circles",
-    scope: "admin",
-    chapter: "Chapter B · Set the rules",
-    title: "Check mandatory circles",
-    instruction: "Open Mandatory Circles.",
-    why: "Some circles are required for every member — they are policy, not preference.",
-    how: [
-      "Open Mandatory Circles.",
-      "See which circles everyone belongs to.",
-      "Contrast them with the optional circles users create themselves.",
-    ],
-    route: "/admin/mandatory-circles",
-    cta: { label: "Open mandatory circles", to: "/admin/mandatory-circles" },
-    detect: (ctx) => hasVisited(ctx, "/admin/mandatory-circles"),
-  },
-  {
-    id: "admin-reports",
-    scope: "admin",
-    chapter: "Chapter C · Prove it works",
-    title: "Report on the network",
-    instruction: "Open Reports & Statistics and read the totals.",
-    why: "Numbers are how you justify the configuration you just set — growth, membership and coverage across the whole network.",
-    how: [
-      "Open Reports & Statistics (screen 22).",
-      "Read group, member and activity totals.",
-      "Compare against the thresholds and types you configured.",
-    ],
-    route: "/admin/reports",
-    cta: { label: "Open reports", to: "/admin/reports" },
-    detect: (ctx) => hasVisited(ctx, "/admin/reports"),
   },
 ];

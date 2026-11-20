@@ -18,6 +18,7 @@ interface CachedToken {
 export class McomService {
   private readonly logger = new Logger(McomService.name);
   private readonly tokenCache = new Map<string, CachedToken>();
+  private warnedMissingApiKey = false;
   private allowedCallersCache: { callers: string[]; expiresAt: number } | null =
     null;
 
@@ -78,6 +79,41 @@ export class McomService {
     return this.requestJson<Record<string, unknown>>(
       "/api/v1/ecosystem/discovery",
     );
+  }
+
+  /**
+   * Server-to-server entitlement introspection. Central Hub remains the source
+   * of truth; the API key scopes the response to this registered client.
+   */
+  async getEntitlement(
+    userId: string,
+  ): Promise<Record<string, unknown> | null> {
+    const apiKey = this.config.get<string>("MCOM_API_KEY", "").trim();
+    if (!apiKey) {
+      if (!this.warnedMissingApiKey) {
+        this.warnedMissingApiKey = true;
+        this.logger.warn(
+          "MCOM_API_KEY is not configured — Central Hub entitlements cannot be revalidated in the background.",
+        );
+      }
+      return null;
+    }
+
+    const params = new URLSearchParams({
+      client_id: this.clientId,
+      user_id: userId,
+    });
+    const data = await this.requestJson<{
+      entitlement?: Record<string, unknown> | null;
+      data?: { entitlement?: Record<string, unknown> | null } | null;
+    }>(`/api/v1/auth/sso/entitlement?${params.toString()}`, {
+      headers: {
+        "X-API-Key": apiKey,
+        Accept: "application/json",
+      },
+    });
+
+    return data.entitlement ?? data.data?.entitlement ?? null;
   }
 
   async getServices(): Promise<McomServiceEntry[]> {

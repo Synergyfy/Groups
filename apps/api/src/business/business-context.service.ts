@@ -4,11 +4,18 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import type { Business, User } from "../generated/prisma/client.js";
+import { Prisma } from "../generated/prisma/client.js";
+import type {
+  Business,
+  BusinessPlan,
+  User,
+} from "../generated/prisma/client.js";
 import { jsonObject } from "../admin/admin.mappers.js";
+import type { AccessDecision } from "../auth/entitlement-access.js";
 import type { SessionUser } from "../auth/auth.types.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { toMinorPence } from "../common/money.js";
+import { CentralAccessService } from "./central-access.service.js";
 import { toBusinessConfig, normalizeTier, normalizeVariant, planAccessDays } from "./business.rules.js";
 import type { BusinessContext, BusinessConfig } from "./business.types.js";
 
@@ -21,12 +28,21 @@ function firstNonEmpty(...values: unknown[]): string | null {
   return null;
 }
 
+function toDate(value: unknown): Date | null {
+  if (!value) return null;
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 @Injectable()
 export class BusinessContextService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly centralAccess: CentralAccessService,
+  ) {}
 
   async resolve(session: SessionUser): Promise<BusinessContext> {
-    const user = await this.prisma.user.findUnique({
+    let user = await this.prisma.user.findUnique({
       where: { id: session.id },
     });
     if (!user) throw new NotFoundException("User account not found");
@@ -34,15 +50,100 @@ export class BusinessContextService {
       throw new ForbiddenException("Business account required");
     }
 
+    // Central Hub remains authoritative. Refresh the cached entitlement before
+    // resolving the local plan so a membership/pass/trial can open access.
+    const resolved = await this.centralAccess.revalidate(user);
+    user = resolved.user;
+
     const config = await this.getConfig();
     const business = await this.findOrCreateBusiness(user);
+    if (
+      business.status === "Suspended" ||
+      business.status === "Closed"
+    ) {
+      throw new ForbiddenException({
+        code: "BUSINESS_SUSPENDED",
+        message: `This business account is ${business.status.toLowerCase()}. Contact an administrator.`,
+      });
+    }
+
     const plan = await this.findOrCreatePlan(
       user,
       business,
       config,
+      resolved.decision,
     );
+    await this.applyTemporaryAccessExpiry(user, business, plan, config);
+    const partner = await this.prisma.partner.findFirst({
+      where: { businessId: business.id },
+    });
 
-    return { user, business, plan, config };
+    return {
+      user,
+      business,
+      plan,
+      config,
+      partner,
+      centralAccess: resolved.decision,
+    };
+  }
+
+  /**
+   * When temporary access expires and the administrator chose "auto-leave",
+   * remove the business from groups it joined. Counts are recomputed so the
+   * activation rules keep operating on accurate membership.
+   */
+  private async applyTemporaryAccessExpiry(
+    user: User,
+    business: Business,
+    plan: BusinessPlan,
+    config: BusinessConfig,
+  ): Promise<void> {
+    const temporary = (config.accessRules.temporaryAccess ?? {}) as {
+      duration?: string | number;
+      expiryAction?: string;
+    };
+    if (temporary.expiryAction !== "auto-leave") return;
+    if (plan.paid && !plan.accessExpiresAt) return;
+
+    const durationDays = Number(temporary.duration ?? 0);
+    const trialEnd =
+      user.trialAccessExpiresAt ??
+      (plan.accessSource === "trial" ? plan.accessExpiresAt : null) ??
+      (user.membershipStatus?.trim().toLowerCase() === "trial" &&
+      durationDays > 0
+        ? new Date(
+            business.joinedAt.getTime() +
+              durationDays * 24 * 60 * 60 * 1000,
+          )
+        : null);
+    if (!trialEnd || trialEnd.getTime() > Date.now()) return;
+
+    const memberships = await this.prisma.groupMember.findMany({
+      where: { memberId: business.id },
+      select: {
+        id: true,
+        groupId: true,
+        group: { select: { ownerId: true } },
+      },
+    });
+    const leavable = memberships.filter(
+      (membership) => membership.group.ownerId !== business.id,
+    );
+    if (leavable.length === 0) return;
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const membership of leavable) {
+        await tx.groupMember.delete({ where: { id: membership.id } });
+        const memberCount = await tx.groupMember.count({
+          where: { groupId: membership.groupId },
+        });
+        await tx.group.update({
+          where: { id: membership.groupId },
+          data: { memberCount },
+        });
+      }
+    });
   }
 
   async getConfig(): Promise<BusinessConfig> {
@@ -142,21 +243,99 @@ export class BusinessContextService {
     user: User,
     business: Business,
     config: BusinessConfig,
+    centralDecision: AccessDecision | null,
   ) {
     const existing = await this.prisma.businessPlan.findUnique({
       where: { businessId: business.id },
     });
-    if (existing) return existing;
+
+    // Central Hub access (membership, access pass or trial) takes priority over
+    // any local plan. Provision the local row so the rest of the dashboard —
+    // quotas, group creation and the API guard — keeps working unchanged.
+    if (centralDecision?.allowed && centralDecision.source !== "none") {
+      return this.applyCentralAccess(
+        user,
+        business,
+        existing,
+        centralDecision,
+      );
+    }
+
+    if (existing) {
+      // A Central Hub-sourced plan is revoked as soon as Central Hub says the
+      // membership/pass/trial is no longer valid. Locally purchased plans are
+      // left to the local expiry rules below.
+      if (existing.accessSource !== "local") {
+        if (!centralDecision) {
+          // Enforcement is disabled, or Central Hub returned no entitlement at
+          // all. Do not destroy access we cannot verify; keep the cached row.
+          return existing;
+        }
+
+        return this.prisma.businessPlan.update({
+          where: { businessId: business.id },
+          data: {
+            status: "Expired",
+            paid: false,
+            accessReason:
+              centralDecision.reason ?? "NO_ACTIVE_ENTITLEMENT",
+            upgradeUrl: centralDecision.upgradeUrl ?? null,
+            programmeTasks:
+              centralDecision.tasks.length > 0
+                ? (centralDecision.tasks as unknown as Prisma.InputJsonValue)
+                : Prisma.JsonNull,
+            centralQuotas: Prisma.JsonNull,
+          },
+        });
+      }
+
+      const now = Date.now();
+      const ownAccessExpired = Boolean(
+        existing.accessExpiresAt &&
+          existing.accessExpiresAt.getTime() <= now &&
+          config.groupCreationRules.requirePaidAccess,
+      );
+      const membershipInactive = ["expired", "inactive", "suspended", "cancelled"].includes(
+        (user.membershipStatus ?? "").trim().toLowerCase(),
+      );
+      const membershipExpired = Boolean(
+        user.membershipExpiresAt &&
+          user.membershipExpiresAt.getTime() <= now,
+      );
+      const shouldExpire =
+        ownAccessExpired ||
+        (!existing.paid &&
+          config.groupCreationRules.requirePaidAccess &&
+          (membershipInactive || membershipExpired));
+
+      if (shouldExpire && (existing.status !== "Expired" || existing.paid)) {
+        return this.prisma.businessPlan.update({
+          where: { businessId: business.id },
+          data: { status: "Expired", paid: false },
+        });
+      }
+
+      return existing;
+    }
 
     const planName =
       (user.membershipTier ?? business.tier).trim() || "Free";
     const variant = normalizeVariant(user.membershipPlanName);
-    const active = user.membershipStatus?.toLowerCase() === "active";
-    const status = active ? "Active" : "Pending";
-    const accessDays = planAccessDays(variant);
+    // Central Hub is authoritative: if it denied access (for example because
+    // the platform is not bundled into the membership), never infer an active
+    // local plan from the membership status alone.
+    const active =
+      !centralDecision &&
+      user.membershipStatus?.toLowerCase() === "active";
+    const status = centralDecision ? "Pending" : active ? "Active" : "Pending";
+    const accessDays = user.membershipPlanName?.trim()
+      ? planAccessDays(variant)
+      : config.groupCreationRules.entryAccessDays === 180
+        ? 180
+        : planAccessDays(variant);
     const matchingPlan = await this.prisma.plan.findFirst({
       where: { name: planName, variant, status: "Active" },
-      select: { priceMinor: true },
+      select: { priceMinor: true, id: true },
     });
     const accessFeeMinor =
       matchingPlan?.priceMinor ??
@@ -167,6 +346,7 @@ export class BusinessContextService {
         data: {
           businessId: business.id,
           variant,
+          planId: matchingPlan?.id ?? null,
           planName,
           status,
           paid: active,
@@ -176,6 +356,9 @@ export class BusinessContextService {
           accessExpiresAt: active
             ? new Date(Date.now() + accessDays * 24 * 60 * 60 * 1000)
             : null,
+          accessSource: "local",
+          accessReason: centralDecision?.reason ?? null,
+          upgradeUrl: centralDecision?.upgradeUrl ?? null,
         },
       });
     } catch (error) {
@@ -186,5 +369,111 @@ export class BusinessContextService {
       if (raced) return raced;
       throw error;
     }
+  }
+
+  /**
+   * Mirror a Central Hub grant onto the local BusinessPlan row. The external
+   * plan id is kept as the catalogue key; if the same id exists in this app's
+   * published plans its name, variant and quotas win.
+   */
+  private async applyCentralAccess(
+    user: User,
+    business: Business,
+    existing: BusinessPlan | null,
+    decision: AccessDecision,
+  ): Promise<BusinessPlan> {
+    const catalogue = await this.findCataloguePlan(
+      decision.planId,
+      decision.planName,
+    );
+    const variant = catalogue
+      ? normalizeVariant(catalogue.variant)
+      : normalizeVariant(decision.planName);
+    const planName =
+      catalogue?.name?.trim() ||
+      decision.planName?.trim() ||
+      "Central Hub Access";
+    const expiresAt = toDate(decision.expiresAt);
+    const accessDays = expiresAt
+      ? Math.max(
+          1,
+          Math.ceil(
+            (expiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000),
+          ),
+        )
+      : (existing?.accessDays ?? planAccessDays(variant));
+
+    const data = {
+      variant,
+      planId: catalogue?.id ?? decision.planId,
+      planName,
+      status: "Active",
+      // Memberships and access passes are prepaid centrally; a trial is not a
+      // local purchase, and the guard recognises it through accessSource.
+      paid: decision.source !== "trial",
+      accessDays,
+      accessFeeMinor: 0,
+      accessExpiresAt: expiresAt,
+      accessSource: decision.source,
+      externalPlanId: decision.planId,
+      membershipName: decision.membershipName,
+      accessReason: decision.reason ?? null,
+      upgradeUrl: decision.upgradeUrl ?? null,
+      programmeTasks:
+        decision.tasks.length > 0
+          ? (decision.tasks as unknown as Prisma.InputJsonValue)
+          : Prisma.JsonNull,
+      centralQuotas: {
+        quotas: decision.quotas,
+        limits: decision.limits,
+        features: decision.features,
+      } as Prisma.InputJsonValue,
+    } satisfies Prisma.BusinessPlanUpdateInput;
+
+    const plan = await this.prisma.businessPlan.upsert({
+      where: { businessId: business.id },
+      update: data,
+      create: {
+        businessId: business.id,
+        agreementAccepted: existing?.agreementAccepted ?? false,
+        agreedAt: existing?.agreedAt ?? null,
+        ...data,
+      },
+    });
+
+    // Keep Business.tier aligned with the membership tier for reporting and
+    // directory filters, without touching a locally purchased plan's name.
+    const tier = decision.membershipName?.trim();
+    if (tier && tier !== business.tier) {
+      await this.prisma.business.update({
+        where: { id: business.id },
+        data: { tier: normalizeTier(tier) },
+      });
+      business.tier = normalizeTier(tier);
+    }
+
+    return plan;
+  }
+
+  private async findCataloguePlan(
+    planId: string | null,
+    planName: string | null,
+  ) {
+    if (planId) {
+      const byId = await this.prisma.plan.findUnique({
+        where: { id: planId },
+      });
+      if (byId) return byId;
+    }
+    if (planName?.trim()) {
+      return this.prisma.plan.findFirst({
+        where: {
+          name: { equals: planName.trim(), mode: "insensitive" },
+          status: "Active",
+        },
+        orderBy: { variant: "asc" },
+      });
+    }
+    return null;
   }
 }

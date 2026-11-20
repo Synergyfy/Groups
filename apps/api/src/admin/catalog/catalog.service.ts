@@ -35,9 +35,21 @@ export class AdminCatalogService {
   // -------------------------------------------------------------------------
 
   async listPlans(query: AdminListQueryDto) {
-    const plans = await this.prisma.plan.findMany({
-      orderBy: [{ name: "asc" }, { variant: "asc" }],
-    });
+    const [plans, subscriptions] = await Promise.all([
+      this.prisma.plan.findMany({
+        orderBy: [{ name: "asc" }, { variant: "asc" }],
+      }),
+      this.prisma.businessPlan.findMany({
+        select: {
+          planId: true,
+          planName: true,
+          variant: true,
+          status: true,
+          paid: true,
+        },
+      }),
+    ]);
+    const counts = this.subscriptionCounts(subscriptions);
     const search = query.search?.trim().toLowerCase();
 
     return plans
@@ -56,29 +68,73 @@ export class AdminCatalogService {
         }
         return true;
       })
-      .map(mapPlan);
+      .map((plan) => ({
+        ...mapPlan(plan),
+        subscriberCount:
+          counts.byNameVariant.get(`${plan.name}|${plan.variant}`) ?? 0,
+      }));
   }
 
   async getPlanStats() {
-    const [totalPlans, activePlans, aggregate] = await Promise.all([
+    const [totalPlans, activePlans, plans, subscriptions] = await Promise.all([
       this.prisma.plan.count(),
       this.prisma.plan.count({ where: { status: "Active" } }),
       this.prisma.plan.findMany({
-        select: { priceMinor: true, subscriberCount: true },
+        select: { id: true, name: true, variant: true, priceMinor: true },
+      }),
+      this.prisma.businessPlan.findMany({
+        select: {
+          planId: true,
+          planName: true,
+          variant: true,
+          status: true,
+          paid: true,
+        },
       }),
     ]);
+
+    const priceByNameVariant = new Map(
+      plans.map((plan) => [
+        `${plan.name}|${plan.variant}`,
+        plan.priceMinor,
+      ]),
+    );
+    const activeSubscriptions = subscriptions.filter(
+      (subscription) =>
+        subscription.status === "Active" || subscription.paid,
+    );
+    const monthlyRecurringMinor = activeSubscriptions.reduce(
+      (sum, subscription) =>
+        sum +
+        (priceByNameVariant.get(
+          `${subscription.planName}|${subscription.variant}`,
+        ) ?? 0),
+      0,
+    );
+
     return {
       totalPlans,
       activePlans,
-      totalSubscribers: aggregate.reduce(
-        (sum, plan) => sum + plan.subscriberCount,
-        0,
-      ),
-      monthlyRecurringRunRate: aggregate.reduce(
-        (sum, plan) => sum + plan.priceMinor * plan.subscriberCount,
-        0,
-      ) / 100,
+      totalSubscribers: activeSubscriptions.length,
+      monthlyRecurringRunRate: monthlyRecurringMinor / 100,
     };
+  }
+
+  private subscriptionCounts(
+    subscriptions: Array<{
+      planName: string;
+      variant: string;
+      status: string;
+      paid: boolean;
+    }>,
+  ) {
+    const byNameVariant = new Map<string, number>();
+    for (const subscription of subscriptions) {
+      if (subscription.status !== "Active" && !subscription.paid) continue;
+      const key = `${subscription.planName}|${subscription.variant}`;
+      byNameVariant.set(key, (byNameVariant.get(key) ?? 0) + 1);
+    }
+    return { byNameVariant };
   }
 
   async createPlans(dto: CreatePlanDto, actor?: SessionUser) {

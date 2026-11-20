@@ -20,6 +20,7 @@ import {
   mapInvitation,
   mapProgramme,
   mapRelationship,
+  jsonObject,
 } from "../../admin/admin.mappers.js";
 import type {
   AddGroupMemberDto,
@@ -28,6 +29,16 @@ import type {
   UpdateGroupAdminDto,
   UpdateGroupRelationshipsDto,
 } from "../../admin/dto/admin.dto.js";
+import {
+  loadGroupCreationRules,
+  syncGroupActivationStatus,
+} from "../../business/group-activation.js";
+import {
+  assertCampaignsAvailable,
+  assertLocation,
+  assertProgrammeAvailable,
+  assertStageLabel,
+} from "../../business/business.validation.js";
 
 function slugify(value: string): string {
   return value
@@ -210,7 +221,67 @@ export class AdminGroupsService {
     return { ...mapGroup(group), activity: activity.map(mapGroupActivity) };
   }
 
+  private async assertGroupInput(dto: {
+    stage?: string;
+    city?: string;
+    localArea?: string;
+    campaignIds?: string[];
+    programmeId?: string;
+  }): Promise<void> {
+    const config = await this.prisma.adminConfig.findFirst({
+      select: { stageLabels: true },
+    });
+    assertStageLabel(
+      dto.stage,
+      Array.isArray(config?.stageLabels)
+        ? config.stageLabels.map(String)
+        : [],
+    );
+    if (dto.city !== undefined || dto.localArea !== undefined) {
+      await assertLocation(this.prisma, dto.city, dto.localArea);
+    }
+    await assertCampaignsAvailable(this.prisma, dto.campaignIds);
+    await assertProgrammeAvailable(this.prisma, dto.programmeId);
+  }
+
+  private async notifyModerationQueue(group: {
+    id: string;
+    name: string;
+    status: string;
+  }): Promise<void> {
+    if (group.status !== "Pending Review") return;
+    const config = await this.prisma.adminConfig.findFirst({
+      select: { platformSettings: true },
+    });
+    const settings = jsonObject(config?.platformSettings);
+    if (settings.notifyOnModerationQueue === false) return;
+    await this.prisma.auditLog.create({
+      data: {
+        action: "moderation-queued",
+        actorId: "system",
+        actorName: "Moderation queue",
+        targetType: "group",
+        targetId: group.id,
+        targetName: group.name,
+        detail: "Group submitted to the moderation queue",
+      },
+    });
+  }
+
   async create(dto: CreateGroupAdminDto, actor?: SessionUser) {
+    await this.assertGroupInput(dto);
+    const config = await this.prisma.adminConfig.findFirst({
+      select: { platformSettings: true, accessRules: true },
+    });
+    const settings = jsonObject(config?.platformSettings);
+    const accessRules = jsonObject(config?.accessRules);
+    const policy = String(accessRules.joiningPolicy ?? "invitation-first");
+    const defaultAccessType =
+      policy === "open"
+        ? "open"
+        : policy === "approval"
+          ? "request"
+          : "invitation";
     const baseSlug = slugify(dto.slug ?? dto.name);
     const slug = await this.uniqueSlug(baseSlug);
     const requiredPlanIds = await this.resolveRequiredPlanIds(dto.requiredPlanIds);
@@ -226,13 +297,21 @@ export class AdminGroupsService {
         ownerId: dto.ownerId,
         ownerName: dto.ownerName ?? "",
         status: dto.status ?? "Active",
-        accessType: dto.accessType ?? "open",
-        directoryVisibility: dto.visibility ?? "directory",
+        accessType: dto.accessType ?? defaultAccessType,
+        directoryVisibility:
+          dto.visibility ??
+          (settings.defaultVisibility === "members"
+            ? "members"
+            : "directory"),
         city: dto.city,
         localArea: dto.localArea,
-        requiredSize: dto.requiredSize,
+        requiredSize:
+          dto.requiredSize ??
+          (Number(settings.defaultRequiredSize ?? 0) || undefined),
         stage: dto.stage,
-        pricing: dto.pricing ?? "free",
+        pricing:
+          dto.pricing ??
+          (settings.defaultPricing === "paid" ? "paid" : "free"),
         requiredPlanIds,
         contributionMinor:
           dto.contribution !== undefined
@@ -263,12 +342,22 @@ export class AdminGroupsService {
       targetName: group.name,
       detail: "Group created from the admin console",
     });
+    await this.notifyModerationQueue(group);
 
     return mapGroup(group);
   }
 
   async update(id: string, dto: UpdateGroupAdminDto, actor?: SessionUser) {
-    await this.ensureGroup(id);
+    const existing = await this.ensureGroup(id);
+    await this.assertGroupInput({
+      ...dto,
+      ...(dto.city !== undefined || dto.localArea !== undefined
+        ? {
+            city: dto.city ?? existing.city ?? undefined,
+            localArea: dto.localArea ?? existing.localArea ?? undefined,
+          }
+        : {}),
+    });
     const requiredPlanIds = await this.resolveRequiredPlanIds(dto.requiredPlanIds);
 
     const group = await this.prisma.group.update({
@@ -319,6 +408,7 @@ export class AdminGroupsService {
       targetName: group.name,
       detail: "Group updated from the admin console",
     });
+    await this.notifyModerationQueue(group);
 
     return mapGroup(group);
   }
@@ -414,6 +504,12 @@ export class AdminGroupsService {
       return created;
     });
 
+    await syncGroupActivationStatus(
+      this.prisma,
+      id,
+      await loadGroupCreationRules(this.prisma),
+    );
+
     await this.audit.record(actor, {
       action: "member-added",
       targetType: "member",
@@ -453,6 +549,12 @@ export class AdminGroupsService {
         },
       });
     });
+
+    await syncGroupActivationStatus(
+      this.prisma,
+      id,
+      await loadGroupCreationRules(this.prisma),
+    );
 
     await this.audit.record(actor, {
       action: "member-removed",

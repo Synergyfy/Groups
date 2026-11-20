@@ -6,6 +6,7 @@ import {
   Param,
   ParseUUIDPipe,
   Patch,
+  Post,
   Query,
 } from "@nestjs/common";
 import type { SessionUser } from "../auth/auth.types.js";
@@ -60,6 +61,15 @@ export class ConsumerController {
     @Param("id", ParseUUIDPipe) id: string,
   ) {
     return this.consumer.leave(user, id);
+  }
+
+  @Post("groups/:id/activity")
+  postActivity(
+    @CurrentUser() user: SessionUser,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body("message") message: string,
+  ) {
+    return this.consumer.postActivity(user, id, message);
   }
 
   @Get("invitations")

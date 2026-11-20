@@ -552,7 +552,13 @@ function PlatformGroupsTab({
   const { data } = useAdminData();
   const ukLocations = [
     "National (UK-wide)",
-    ...(data?.locations.cities.map((city) => city.name) ?? []),
+    ...Array.from(
+      new Set(
+        groups
+          .map((group) => group.location?.city)
+          .filter((city): city is string => Boolean(city)),
+      ),
+    ).sort(),
   ];
   const availablePlans = (data?.plans ?? []).filter(
     (plan) => plan.status === "Active",
@@ -1548,9 +1554,6 @@ function ReportsTab({
                   <span className="text-sm font-bold text-white">{row.value}</span>
                 </div>
               ))}
-            </div>
-            <div className="flex justify-end">
-              <Link to="/admin/audit-log" className="text-xs text-gold-400 hover:text-gold-300 flex items-center gap-1">View full audit log <ArrowRight className="size-3" /></Link>
             </div>
           </CardBody>
         </Card>

@@ -12,7 +12,9 @@ import {
   UserRole,
 } from "../generated/prisma/client.js";
 import { PrismaService } from "../prisma/prisma.service.js";
+import { jsonObject } from "../admin/admin.mappers.js";
 import { McomService } from "../mcom/mcom.service.js";
+import { decideAccess } from "./entitlement-access.js";
 import type {
   McomEntitlement,
   McomProfile,
@@ -95,11 +97,19 @@ export class AuthService {
     }
 
     const profile = data.user ?? data.profile;
-    const entitlement = data.entitlement ?? data.entitlements ?? null;
+    let entitlement = data.entitlement ?? data.entitlements ?? null;
 
     if (!profile?.email) {
       throw new UnauthorizedException(
         "Central Hub did not return a user email",
+      );
+    }
+
+    // The token response normally carries the entitlement. If it does not, ask
+    // the introspection endpoint rather than guessing from cached data.
+    if (!entitlement && (profile.id ?? profile.sub)) {
+      entitlement = await this.introspectEntitlement(
+        (profile.id ?? profile.sub)!,
       );
     }
 
@@ -156,7 +166,52 @@ export class AuthService {
       );
     }
 
+    await this.assertAccountActive(user);
+
     return this.toSessionUser(user);
+  }
+
+  /**
+   * Admin suspensions are stored on the Business/PlatformAccount rows, not on
+   * the session User row. Check them here so a suspended account loses access
+   * immediately instead of keeping a valid session.
+   */
+  private async assertAccountActive(user: {
+    role: UserRole;
+    businessId: string | null;
+    email: string;
+  }): Promise<void> {
+    if (user.role === UserRole.BUSINESS) {
+      const business = user.businessId
+        ? await this.prisma.business.findUnique({
+            where: { id: user.businessId },
+            select: { status: true },
+          })
+        : await this.prisma.business.findUnique({
+            where: { email: user.email.trim().toLowerCase() },
+            select: { status: true },
+          });
+      if (business && (business.status === "Suspended" || business.status === "Closed")) {
+        throw new ForbiddenException({
+          code: "BUSINESS_SUSPENDED",
+          message: `This business account is ${business.status.toLowerCase()}.`,
+        });
+      }
+      return;
+    }
+
+    if (user.role === UserRole.ADMIN) return;
+
+    const account = await this.prisma.platformAccount.findUnique({
+      where: { email: user.email.trim().toLowerCase() },
+      select: { status: true },
+    });
+    if (account?.status === "Suspended") {
+      throw new ForbiddenException({
+        code: "ACCOUNT_SUSPENDED",
+        message: "This account is suspended.",
+      });
+    }
   }
 
   async signSession(user: SessionUser): Promise<string> {
@@ -169,6 +224,22 @@ export class AuthService {
     };
 
     return this.jwt.signAsync(payload);
+  }
+
+  private async introspectEntitlement(
+    userId: string,
+  ): Promise<McomEntitlement | null> {
+    try {
+      const entitlement = await this.mcomService.getEntitlement(userId);
+      return (entitlement as McomEntitlement | null) ?? null;
+    } catch (error) {
+      this.logger.warn(
+        `Central Hub entitlement introspection failed for ${userId}: ${
+          error instanceof Error ? error.message : "unknown error"
+        }`,
+      );
+      return null;
+    }
   }
 
   private enforceAccess(
@@ -196,9 +267,40 @@ export class AuthService {
       return;
     }
 
-    if (!entitlement?.access?.hasAccess) {
-      const reason =
-        entitlement?.access?.reason ?? "NO_ACTIVE_ENTITLEMENT";
+    const whitelabelEnabled =
+      entitlement?.whitelabel?.enabled === true ||
+      this.config.get<string>("MCOM_WHITELABEL_ENABLED", "false") === "true";
+    const whitelabelGranted =
+      profile.profileType?.toUpperCase() === "BUSINESS" &&
+      entitlement?.access?.hasAccess === true &&
+      entitlement?.access?.accessType === "WHITELABEL" &&
+      entitlement?.whitelabel?.granted === true;
+
+    if (whitelabelEnabled) {
+      if (!whitelabelGranted) {
+        throw new ForbiddenException({
+          code: "WHITELABEL_ACCESS_DENIED",
+          message:
+            "White-label access has not been granted for this business.",
+        });
+      }
+      return;
+    }
+
+    // Legacy white-label grants predate the PlatformEntitlement contract and
+    // carry no platform plan. Keep them working when white-label is optional.
+    if (entitlement?.access?.accessType === "WHITELABEL") {
+      if (whitelabelGranted) return;
+      throw new ForbiddenException({
+        code: "WHITELABEL_ACCESS_DENIED",
+        message:
+          "White-label access has not been granted for this business.",
+      });
+    }
+
+    const decision = decideAccess(entitlement);
+    if (!decision.allowed) {
+      const reason = decision.reason ?? "NO_ACTIVE_ENTITLEMENT";
       this.logger.warn(
         `Access denied for ${profile.email}: ${reason}`,
       );
@@ -207,27 +309,8 @@ export class AuthService {
         code: reason,
         reason,
         message: messageForAccessReason(reason),
-        upgradeUrl: entitlement?.access?.upgradeUrl ?? null,
+        upgradeUrl: decision.upgradeUrl ?? null,
       });
-    }
-
-    const whitelabelEnabled =
-      entitlement.whitelabel?.enabled === true ||
-      this.config.get<string>("MCOM_WHITELABEL_ENABLED", "false") === "true";
-
-    if (whitelabelEnabled) {
-      const granted =
-        profile.profileType?.toUpperCase() === "BUSINESS" &&
-        entitlement.access.accessType === "WHITELABEL" &&
-        entitlement.whitelabel?.granted === true;
-
-      if (!granted) {
-        throw new ForbiddenException({
-          code: "WHITELABEL_ACCESS_DENIED",
-          message:
-            "White-label access has not been granted for this business.",
-        });
-      }
     }
   }
 
@@ -245,6 +328,7 @@ export class AuthService {
       email;
     const displayName = profile.name?.trim() || fullName;
     const role = toUserRole(profile.role ?? profile.profileType);
+    const decision = decideAccess(entitlement);
 
     const common = {
       mcomUserId: profile.id ?? profile.sub ?? null,
@@ -263,26 +347,64 @@ export class AuthService {
       isAffiliate: profile.isAffiliate ?? false,
       businessId: profile.businessId ?? null,
       businessName: profile.businessName ?? null,
-      membershipLevel: profile.membershipLevel ?? null,
+      membershipLevel:
+        profile.membershipLevel ??
+        entitlement?.membershipContext?.membershipLevel ??
+        null,
       membershipTier: profile.membershipTier ?? null,
-      membershipStatus: profile.membershipStatus ?? null,
-      membershipPlanName: profile.membershipPlanName ?? null,
+      membershipStatus:
+        profile.membershipStatus ??
+        entitlement?.membershipContext?.membershipStatus ??
+        null,
+      membershipPlanName:
+        profile.membershipPlanName ??
+        entitlement?.membershipContext?.membershipPlanName ??
+        null,
       membershipExpiresAt: toDate(profile.membershipExpiresAt),
-      trialAccessExpiresAt: toDate(profile.trialAccessExpiresAt),
+      trialAccessExpiresAt:
+        toDate(profile.trialAccessExpiresAt) ??
+        (decision.source === "trial" ? toDate(decision.expiresAt) : undefined),
       businessProfile: toJson(profile.businessProfile),
       customerProfile: toJson(profile.customerProfile),
       agentProfile: toJson(profile.agentProfile),
       consultantProfile: toJson(profile.consultantProfile),
       accountManagerProfile: toJson(profile.accountManagerProfile),
       entitlement: toJson(entitlement),
+      entitlementCheckedAt: new Date(),
       lastLoginAt: new Date(),
     };
 
-    return this.prisma.user.upsert({
+    const existing = await this.prisma.user.findUnique({
+      where: { email },
+      select: { id: true },
+    });
+    const user = await this.prisma.user.upsert({
       where: { email },
       create: { email, ...common },
       update: common,
     });
+
+    if (!existing) {
+      const config = await this.prisma.adminConfig.findFirst({
+        select: { platformSettings: true },
+      });
+      const settings = jsonObject(config?.platformSettings);
+      if (settings.notifyOnNewRegistration !== false) {
+        await this.prisma.auditLog.create({
+          data: {
+            action: "account-registered",
+            actorId: user.id,
+            actorName: user.fullName ?? user.displayName ?? user.email,
+            targetType: "member",
+            targetId: user.id,
+            targetName: user.email,
+            detail: `New ${String(user.role).toLowerCase()} registration`,
+          },
+        });
+      }
+    }
+
+    return user;
   }
 
   private toSessionUser(user: {

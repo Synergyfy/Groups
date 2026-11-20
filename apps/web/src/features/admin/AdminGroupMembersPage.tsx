@@ -163,12 +163,12 @@ export default function AdminGroupMembersPage() {
     setFeedback(`${row.name} removed from ${group.name}`);
   };
 
-  const candidates = state.businesses.filter(
-    (b) =>
-      !group.memberIds.includes(b.id) &&
+  const candidates = state.accounts.filter(
+    (account) =>
+      !group.memberIds.includes(account.id) &&
       (!addSearch ||
-        b.name.toLowerCase().includes(addSearch.toLowerCase()) ||
-        b.contactName.toLowerCase().includes(addSearch.toLowerCase()))
+        account.name.toLowerCase().includes(addSearch.toLowerCase()) ||
+        account.email.toLowerCase().includes(addSearch.toLowerCase()))
   );
 
   const addMember = (id: string, name: string) => {
@@ -366,40 +366,40 @@ export default function AdminGroupMembersPage() {
                 >
                   <UserPlus className="size-3.5" /> Add member
                 </button>
-                <TipIcon text="Opens a searchable list of businesses; adding takes effect immediately." />
+                <TipIcon text="Opens a searchable list of accounts; adding takes effect immediately." />
               </div>
             </div>
 
             {addOpen && (
               <div className="rounded-xl border border-white/10 bg-ink-950/60 p-3">
                 <FieldHint>
-                  Only businesses that are not already in this group are listed. Search matches name
-                  or contact.
+                  Only accounts that are not already in this group are listed. Search matches name
+                  or email.
                 </FieldHint>
                 <input
                   type="text"
                   value={addSearch}
                   onChange={(e) => setAddSearch(e.target.value)}
-                  placeholder="Search businesses by name or contact…"
+                  placeholder="Search accounts by name or email…"
                   className="w-full rounded-lg border border-white/10 bg-ink-900 px-3 py-2 text-xs text-white placeholder:text-slate-500 focus:border-gold-500/40 focus:outline-none"
                 />
                 <ul className="mt-2 max-h-48 overflow-y-auto">
                   {candidates.length === 0 ? (
                     <li className="py-3 text-center text-[11px] text-slate-500">
-                      No matching businesses to add.
+                      No matching accounts to add.
                     </li>
                   ) : (
-                    candidates.map((b) => (
-                      <li key={b.id}>
+                    candidates.map((account) => (
+                      <li key={account.id}>
                         <button
                           type="button"
-                          onClick={() => addMember(b.id, b.name)}
+                          onClick={() => addMember(account.id, account.name)}
                           className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-white/5"
                         >
                           <span>
-                            <span className="block text-xs font-medium text-white">{b.name}</span>
+                            <span className="block text-xs font-medium text-white">{account.name}</span>
                             <span className="block text-[10px] text-slate-500">
-                              {b.contactName} · {b.city}
+                              {account.name} · {account.email}
                             </span>
                           </span>
                           <UserPlus className="size-3.5 text-gold-400" />

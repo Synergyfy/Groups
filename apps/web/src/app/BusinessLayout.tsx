@@ -9,6 +9,7 @@ import {
   Settings,
   Users,
 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import DashboardShell from "./DashboardShell";
 import type { NavSection } from "./Sidebar";
@@ -103,9 +104,30 @@ export default function BusinessLayout() {
   const { adminConfig, plan } = useAppState();
   const location = useLocation();
   const rules = adminConfig.groupCreationRules;
-  // Paid access + accepted agreement are required before dashboard entry.
+  // Re-check the time-based expiry while the business is sitting on a page so
+  // they are moved back to the plan page as soon as access lapses.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  // An active plan is required before any dashboard page. Paid access and the
+  // accepted agreement are additional gates on top of the active plan — but a
+  // Central Hub membership, access pass or trial already covers both.
+  const accessExpired =
+    plan.status === "Expired" ||
+    (plan.accessExpiresAt
+      ? new Date(plan.accessExpiresAt).getTime() <= now
+      : false);
+  const hasActivePlan = plan.status === "Active" && !accessExpired;
+  const centralAccess =
+    plan.accessSource !== undefined && plan.accessSource !== "local";
   const entered =
-    plan.agreementAccepted && (!rules.requirePaidAccess || plan.paid);
+    hasActivePlan &&
+    (centralAccess ||
+      (plan.agreementAccepted &&
+        (!rules.requirePaidAccess || plan.paid)));
   const planPath = "/business/plan";
   const onPlanPage =
     location.pathname === planPath ||

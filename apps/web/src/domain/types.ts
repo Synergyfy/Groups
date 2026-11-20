@@ -412,16 +412,21 @@ export interface GroupPaymentRules {
 /**
  * Administrator rules for how businesses create groups.
  *
- * - `allowedPlans` / `allowedVariants` decide which plans may create a group.
- *   Everyone else is placed into the admin-set platform group instead.
- * - `recruitmentTargets` is the recruitment requirement per plan name, keyed
- *   by plan. Groups stay non-functional until they reach their target.
+ * - `planCreationRights` decides, per plan name and variant, whether that plan
+ *   combination may create a group. Everyone else is placed into the admin-set
+ *   platform group instead.
+ * - `allowedPlans` / `allowedVariants` mirror the older cross-product form of
+ *   the same rights and are kept for compatibility with older saved configs.
+ * - `recruitmentTargets` is the recruitment requirement per plan variant.
+ *   Groups stay non-functional until they reach their target.
  * - `entryAccessDays` / `entryAccessFee` are the paid access models (90-day or
  *   180-day) that must be paid — and agreed to — before dashboard entry.
  */
 export interface GroupCreationRules {
   allowedPlans: string[];
   allowedVariants: PlanVariant[];
+  /** Per plan+variant permission to create groups. */
+  planCreationRights?: Record<string, Record<PlanVariant, boolean>>;
   /** Place members without creation rights into the admin platform group. */
   restrictToPlatformGroup: boolean;
   /** The group administrators assign those members to. */
@@ -457,6 +462,25 @@ export interface PlanAccess {
   accessFeeMinor: number;
   agreementAccepted: boolean;
   agreedAt?: string;
+  /** End of the paid access period, when one has been set. */
+  accessExpiresAt?: string;
+  /** Where access came from: a local purchase or a Central Hub grant. */
+  accessSource?: "local" | "membership" | "access_pass" | "trial";
+  externalPlanId?: string;
+  membershipName?: string;
+  accessReason?: string;
+  upgradeUrl?: string;
+  trialDaysRemaining?: number;
+  programmeTasks?: Array<{
+    taskId: string;
+    title: string;
+    description: string;
+    deadlineDays: number;
+    status: string;
+  }>;
+  quotas?: Record<string, unknown>;
+  limits?: Record<string, unknown>;
+  features?: string[];
 }
 
 export interface AdminConfig {

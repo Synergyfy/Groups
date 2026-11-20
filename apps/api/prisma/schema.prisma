@@ -58,6 +58,7 @@ model User {
   consultantProfile       Json?        @map("consultant_profile")
   accountManagerProfile   Json?        @map("account_manager_profile")
   entitlement              Json?
+  entitlementCheckedAt    DateTime?    @map("entitlement_checked_at")
   lastLoginAt             DateTime?    @map("last_login_at")
   createdAt               DateTime     @default(now()) @map("created_at")
   updatedAt               DateTime     @updatedAt @map("updated_at")
@@ -192,6 +193,15 @@ model BusinessPlan {
   agreementAccepted Boolean   @default(false) @map("agreement_accepted")
   agreedAt          DateTime? @map("agreed_at")
   accessExpiresAt   DateTime? @map("access_expires_at")
+  /// Where dashboard access comes from: local plan purchase, a Central Hub
+  /// membership, a Central Hub access pass, or a Central Hub trial window.
+  accessSource      String    @default("local") @map("access_source")
+  externalPlanId    String?   @map("external_plan_id")
+  membershipName    String?   @map("membership_name")
+  accessReason      String?   @map("access_reason")
+  upgradeUrl        String?   @map("upgrade_url")
+  programmeTasks    Json?     @map("programme_tasks")
+  centralQuotas     Json?     @map("central_quotas")
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
 
@@ -530,32 +540,6 @@ model LocationArea {
   @@unique([cityId, name])
   @@index([cityId])
   @@map("location_areas")
-}
-
-model ContentSection {
-  id          String    @id
-  label       String
-  draft       Json
-  published   Json
-  status      String    @default("draft")
-  publishedAt DateTime? @map("published_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
-
-  @@map("content_sections")
-}
-
-model ReportSchedule {
-  id         String    @id
-  name       String
-  type       String
-  frequency  String    @default("monthly")
-  recipients String[]  @default([])
-  status     String    @default("Active")
-  lastRunAt  DateTime? @map("last_run_at")
-  createdAt  DateTime  @default(now()) @map("created_at")
-
-  @@index([createdAt])
-  @@map("report_schedules")
 }
 
 // ---------------------------------------------------------------------------

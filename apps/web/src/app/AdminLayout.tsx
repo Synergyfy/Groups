@@ -1,18 +1,8 @@
 import {
-  Building2,
-  CircleDashed,
-  ClipboardList,
   Crown,
   FolderKanban,
-  Gauge,
-  Handshake,
-  KeyRound,
-  Layers,
   LayoutDashboard,
   Mail,
-  MapPin,
-  Megaphone,
-  ShieldAlert,
   SlidersHorizontal,
   Tag,
   Users,
@@ -52,18 +42,6 @@ const ADMIN_NAV: NavSection[] = [
         end: true,
       },
       {
-        to: "/admin/access-rules",
-        label: "Access Rules",
-        icon: <KeyRound className="size-4" />,
-        end: true,
-      },
-      {
-        to: "/admin/config/group-rules",
-        label: "Group Rules",
-        icon: <Gauge className="size-4" />,
-        end: true,
-      },
-      {
         to: "/admin/plans",
         label: "Plans",
         icon: <Crown className="size-4" />,
@@ -79,112 +57,6 @@ const ADMIN_NAV: NavSection[] = [
         to: "/admin/settings-reports",
         label: "Settings and Reports",
         icon: <SlidersHorizontal className="size-4" />,
-        end: true,
-      },
-    ],
-  },
-  {
-    title: "Operations",
-    items: [
-      {
-        to: "/admin/pending-review",
-        label: "Moderation Queue",
-        icon: <ShieldAlert className="size-4" />,
-        end: true,
-      },
-      {
-        to: "/admin/businesses",
-        label: "Businesses",
-        icon: <Building2 className="size-4" />,
-        end: true,
-      },
-      {
-        to: "/admin/partners",
-        label: "Partners",
-        icon: <Handshake className="size-4" />,
-        end: true,
-      },
-      {
-        to: "/admin/programmes",
-        label: "Programmes",
-        icon: <Layers className="size-4" />,
-        end: true,
-      },
-      {
-        to: "/admin/campaigns",
-        label: "Campaigns",
-        icon: <Megaphone className="size-4" />,
-        end: true,
-      },
-      {
-        to: "/admin/relationships",
-        label: "Relationships",
-        icon: <Users className="size-4" />,
-        end: true,
-      },
-      {
-        to: "/admin/locations",
-        label: "Locations",
-        icon: <MapPin className="size-4" />,
-        end: true,
-      },
-      {
-        to: "/admin/reports",
-        label: "Reports",
-        icon: <ClipboardList className="size-4" />,
-        end: true,
-      },
-      {
-        to: "/admin/audit-log",
-        label: "Audit Log",
-        icon: <ClipboardList className="size-4" />,
-        end: true,
-      },
-    ],
-  },
-  {
-    title: "Group Configuration",
-    items: [
-      {
-        to: "/admin/config/automatic",
-        label: "Automatic Grouping",
-        icon: <Gauge className="size-4" />,
-        end: true,
-      },
-      {
-        to: "/admin/config/types",
-        label: "Group Types",
-        icon: <Layers className="size-4" />,
-        end: true,
-      },
-      {
-        to: "/admin/config/circles",
-        label: "Circle Types",
-        icon: <CircleDashed className="size-4" />,
-        end: true,
-      },
-      {
-        to: "/admin/config/permissions",
-        label: "Permissions",
-        icon: <KeyRound className="size-4" />,
-        end: true,
-      },
-      {
-        to: "/admin/mandatory-circles",
-        label: "Mandatory Circles",
-        icon: <CircleDashed className="size-4" />,
-        end: true,
-      },
-      {
-        to: "/admin/partner-groups",
-        label: "Partner Groups",
-        icon: <Handshake className="size-4" />,
-        end: true,
-      },
-      {
-        to: "/admin/content",
-        label: "Public Content",
-        icon: <ClipboardList className="size-4" />,
         end: true,
       },
     ],
@@ -218,6 +90,7 @@ export default function AdminLayout() {
         sectionLabel="Central Solution Admin"
         nav={ADMIN_NAV}
         bottomNav={ADMIN_BOTTOM_NAV}
+        wide
       />
     </AdminDataProvider>
   );

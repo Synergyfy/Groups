@@ -283,8 +283,19 @@ export function selectPlan(state: AppState): PlanAccess {
 export function selectCanCreateGroups(state: AppState): boolean {
   const rules = state.adminConfig.groupCreationRules;
   const plan = state.plan;
-  if (!plan.agreementAccepted) return false;
-  if (rules.requirePaidAccess && !plan.paid) return false;
+  const expired =
+    plan.status === "Expired" ||
+    (plan.accessExpiresAt
+      ? new Date(plan.accessExpiresAt).getTime() <= Date.now()
+      : false);
+  if (plan.status !== "Active" || expired) return false;
+  const central = plan.accessSource !== undefined && plan.accessSource !== "local";
+  if (!central && !plan.agreementAccepted) return false;
+  if (!central && rules.requirePaidAccess && !plan.paid) {
+    return false;
+  }
+  const rights = rules.planCreationRights?.[plan.planName];
+  if (rights) return rights[plan.variant] === true;
   return (
     rules.allowedPlans.includes(plan.planName) &&
     rules.allowedVariants.includes(plan.variant)
@@ -297,9 +308,15 @@ export function selectCanCreateGroups(state: AppState): boolean {
  */
 export function selectCreationRightsLabel(state: AppState): string {
   const rules = state.adminConfig.groupCreationRules;
-  const combos = rules.allowedPlans.flatMap((planName) =>
-    rules.allowedVariants.map((variant) => `${planName} ${variant}`)
-  );
+  const combos = rules.planCreationRights
+    ? Object.entries(rules.planCreationRights).flatMap(([planName, variants]) =>
+        (Object.entries(variants) as Array<[PlanVariant, boolean]>)
+          .filter(([, allowed]) => allowed === true)
+          .map(([variant]) => `${planName} ${variant}`)
+      )
+    : rules.allowedPlans.flatMap((planName) =>
+        rules.allowedVariants.map((variant) => `${planName} ${variant}`)
+      );
   if (combos.length === 0) return "No plan can create groups";
   if (combos.length > 4) {
     return `${combos.slice(0, 4).join(", ")} and ${combos.length - 4} more`;
@@ -347,15 +364,14 @@ export function selectGroupActivation(state: AppState, group: Group): GroupActiv
   const rules = state.adminConfig.groupCreationRules;
   const current = group.memberCount ?? group.memberIds.length;
   const { planName, variant } = planOfOwner(state, group.ownerId);
-  const target =
-    rules.recruitmentTargets[planName]?.[variant] ??
-    Object.values(rules.recruitmentTargets)[0]?.Standard ??
-    0;
+  const target = Math.max(
+    rules.recruitmentTargets[planName]?.[variant] ?? 0,
+    Math.max(0, group.requiredSize ?? 0),
+  );
   const gated =
     rules.activationEnabled &&
     group.source === "user-created" &&
-    group.status !== "Suspended" &&
-    group.status !== "Closed";
+    group.status === "Recruiting";
   const active = !gated || current >= target;
   return {
     target,

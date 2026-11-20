@@ -29,6 +29,10 @@ import {
   planAccessDays,
   toPlanAccess,
 } from "../business.rules.js";
+import {
+  assertPartnerPermission,
+  partnerPermissionsFor,
+} from "../business.validation.js";
 import { mapBusinessPlan, mapBusinessDirectoryEntry } from "../business.mappers.js";
 import type { BusinessContext } from "../business.types.js";
 import type {
@@ -64,7 +68,10 @@ export class BusinessPlatformService {
           where: { businessId: ctx.business.id },
           select: { id: true, type: true, memberIds: true },
         }),
-        this.prisma.programme.findMany({ orderBy: { monthlyFeeMinor: "desc" } }),
+        this.prisma.programme.findMany({
+          where: { status: "Active" },
+          orderBy: { monthlyFeeMinor: "desc" },
+        }),
         this.relationshipsFor(ctx.business),
       ]);
 
@@ -109,8 +116,11 @@ export class BusinessPlatformService {
   async getProfile(ctx: BusinessContext) {
     const [programme, relationships] = await Promise.all([
       ctx.business.programmeId
-        ? this.prisma.programme.findUnique({
-            where: { id: ctx.business.programmeId },
+        ? this.prisma.programme.findFirst({
+            where: {
+              id: ctx.business.programmeId,
+              status: "Active",
+            },
           })
         : null,
       this.relationshipsFor(ctx.business),
@@ -372,6 +382,8 @@ export class BusinessPlatformService {
     const params = pageParams(query.page, query.limit, 25);
     const search = query.search?.trim();
     const where: Prisma.BusinessWhereInput = {
+      status: "Active",
+      verified: true,
       ...(search
         ? {
             OR: [
@@ -483,6 +495,7 @@ export class BusinessPlatformService {
 
   async getProgrammes(ctx: BusinessContext) {
     const programmes = await this.prisma.programme.findMany({
+      where: { status: "Active" },
       orderBy: { monthlyFeeMinor: "desc" },
     });
     const current = ctx.business.programmeId
@@ -505,6 +518,11 @@ export class BusinessPlatformService {
     ctx: BusinessContext,
     query: BusinessCampaignsQueryDto,
   ) {
+    assertPartnerPermission(
+      partnerPermissionsFor(ctx.partner, ctx.config.partnerDefaults),
+      "canAccessCampaigns",
+      "Your partner permissions do not allow campaign access.",
+    );
     const params = pageParams(query.page, query.limit, 25);
     const myGroups = await this.prisma.group.findMany({
       where: {
@@ -516,9 +534,14 @@ export class BusinessPlatformService {
       select: { id: true, name: true, ownerId: true },
     });
     const myGroupIds = myGroups.map((group) => group.id);
+    const now = new Date();
     const where: Prisma.CampaignWhereInput = {
-      ...(query.status ? { status: query.status } : {}),
+      status: "Active",
       ...(query.groupId ? { groupIds: { has: query.groupId } } : {}),
+      AND: [
+        { OR: [{ startDate: null }, { startDate: { lte: now } }] },
+        { OR: [{ endDate: null }, { endDate: { gte: now } }] },
+      ],
     };
 
     const [total, campaigns] = await Promise.all([
@@ -585,7 +608,16 @@ export class BusinessPlatformService {
   ) {
     const params = pageParams(query.page, query.limit, 25);
     const search = query.search?.trim();
+    const now = new Date();
+    const audience = ["All Users", "Business Owners"];
+    if (["Gold", "Platinum"].includes(ctx.plan.planName)) {
+      audience.push("Gold & Platinum");
+    }
     const where: Prisma.RewardDealWhereInput = {
+      status: "Active",
+      liveOnFrontend: true,
+      expiryDate: { gte: now },
+      targetAudience: { in: audience },
       ...(query.category ? { category: query.category } : {}),
       ...(search
         ? {
@@ -599,7 +631,10 @@ export class BusinessPlatformService {
 
     const [programmes, plans, totalDeals, deals, campaigns] =
       await Promise.all([
-        this.prisma.programme.findMany({ orderBy: { monthlyFeeMinor: "desc" } }),
+        this.prisma.programme.findMany({
+          where: { status: "Active" },
+          orderBy: { monthlyFeeMinor: "desc" },
+        }),
         this.prisma.plan.findMany({
           where: { status: "Active" },
           orderBy: [{ name: "asc" }, { variant: "asc" }],
@@ -612,6 +647,13 @@ export class BusinessPlatformService {
           take: params.limit,
         }),
         this.prisma.campaign.findMany({
+          where: {
+            status: "Active",
+            AND: [
+              { OR: [{ startDate: null }, { startDate: { lte: now } }] },
+              { OR: [{ endDate: null }, { endDate: { gte: now } }] },
+            ],
+          },
           orderBy: { createdAt: "desc" },
           take: 25,
         }),
@@ -642,6 +684,71 @@ export class BusinessPlatformService {
         campaigns: campaigns.length,
       },
     };
+  }
+
+  async claimReward(ctx: BusinessContext, id: string) {
+    const deal = await this.prisma.rewardDeal.findUnique({ where: { id } });
+    if (!deal) throw new NotFoundException(`Reward deal ${id} not found`);
+    if (
+      deal.status !== "Active" ||
+      !deal.liveOnFrontend ||
+      deal.expiryDate.getTime() <= Date.now()
+    ) {
+      throw new ConflictException("This reward is no longer available.");
+    }
+    const audience = ["All Users", "Business Owners"];
+    if (["Gold", "Platinum"].includes(ctx.plan.planName)) {
+      audience.push("Gold & Platinum");
+    }
+    if (!audience.includes(deal.targetAudience)) {
+      throw new ConflictException(
+        "This reward is not available on your plan.",
+      );
+    }
+
+    const claimed = await this.prisma.$transaction(async (tx) => {
+      if (deal.maxClaims > 0) {
+        const updated = await tx.rewardDeal.updateMany({
+          where: {
+            id,
+            claimsCount: { lt: deal.maxClaims },
+            status: "Active",
+          },
+          data: { claimsCount: { increment: 1 } },
+        });
+        if (updated.count === 0) {
+          throw new ConflictException("This reward has been fully claimed.");
+        }
+      } else {
+        await tx.rewardDeal.update({
+          where: { id },
+          data: { claimsCount: { increment: 1 } },
+        });
+      }
+      const current = await tx.rewardDeal.findUniqueOrThrow({
+        where: { id },
+      });
+      if (current.maxClaims > 0 && current.claimsCount >= current.maxClaims) {
+        await tx.rewardDeal.update({
+          where: { id },
+          data: { status: "Expired" },
+        });
+      }
+      await tx.auditLog.create({
+        data: {
+          action: "config-updated",
+          actorId: ctx.user.id,
+          actorName: ctx.business.name,
+          targetType: "config",
+          targetId: id,
+          targetName: current.title,
+          detail: "Reward deal claimed",
+        },
+      });
+      return current;
+    });
+
+    return mapRewardDeal(claimed);
   }
 
   async getCommunity(ctx: BusinessContext) {
@@ -764,7 +871,25 @@ export class BusinessPlatformService {
           where: { businessId: ctx.business.id },
         }),
         this.prisma.circle.count({ where: { businessId: ctx.business.id } }),
-        this.prisma.campaign.count(),
+        this.prisma.campaign.count({
+          where: {
+            status: "Active",
+            AND: [
+              {
+                OR: [
+                  { startDate: null },
+                  { startDate: { lte: new Date() } },
+                ],
+              },
+              {
+                OR: [
+                  { endDate: null },
+                  { endDate: { gte: new Date() } },
+                ],
+              },
+            ],
+          },
+        }),
       ]);
 
     const automatic = automaticGroups[0];
@@ -867,7 +992,9 @@ export class BusinessPlatformService {
         id: "access",
         title: "Activate your paid access",
         route: "/business/plan",
-        done: ctx.plan.paid && ctx.plan.agreementAccepted,
+        done:
+          ctx.plan.accessSource !== "local" ||
+          (ctx.plan.paid && ctx.plan.agreementAccepted),
       },
     ];
 
@@ -937,7 +1064,7 @@ export class BusinessPlatformService {
             status: "Active",
           },
         });
-    if (plan && plan.groupQuota > 0) return plan.groupQuota;
+    if (plan) return Math.max(0, plan.groupQuota);
     return accessQuotas(ctx.config, ctx.plan).groups;
   }
 
@@ -953,7 +1080,7 @@ export class BusinessPlatformService {
             status: "Active",
           },
         });
-    if (plan && plan.circleQuota > 0) return plan.circleQuota;
+    if (plan) return Math.max(0, plan.circleQuota);
     return accessQuotas(ctx.config, ctx.plan).circles;
   }
 
