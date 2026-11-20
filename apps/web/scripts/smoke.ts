@@ -73,6 +73,7 @@ const emptyConfig = {
   groupCreationRules: {
     allowedPlans: [],
     allowedVariants: [],
+    planCreationRights: {},
     restrictToPlatformGroup: false,
     platformGroupId: null,
     recruitmentTargets: {
@@ -237,7 +238,7 @@ function adminStub(path: string): unknown {
   }
   if (path.endsWith("/config")) return emptyConfig;
   if (path.endsWith("/permissions")) return { partnerDefaults: {}, groups: {} };
-  if (path.endsWith("/access-rules") || path.endsWith("/settings")) return {};
+  if (path.endsWith("/settings")) return {};
   if (path.endsWith("/invitations/counts")) {
     return { total: 0, pending: 0, accepted: 0, declined: 0, cancelled: 0 };
   }
@@ -466,27 +467,12 @@ const cases: SmokeCase[] = [
   { path: "/admin/groups/admin-group-1/relationships", expect: "19 — Admin Group Relationships" },
   { path: "/admin/groups/admin-group-1/relationships", expect: "Admin Verification Group" },
   { path: "/admin/groups/grp-net-024", expect: "Group not found" },
-  { path: "/admin/config/automatic", expect: "20 — Automatic Group Rules" },
-  { path: "/admin/config/types", expect: "21 — Group Type Configuration" },
-  { path: "/admin/config/types", expect: "Required groups for business owners" },
-  { path: "/admin/config/types", expect: "Stage labels" },
-  { path: "/admin/locations", expect: "Location Relationships" },
-  { path: "/admin/locations", expect: "Groups without a location" },
-  { path: "/admin/partner-groups", expect: "Partner Groups" },
-  { path: "/admin/partner-groups", expect: "Financial rules" },
-  { path: "/admin/mandatory-circles", expect: "Mandatory Circles" },
-  { path: "/admin/mandatory-circles", expect: "Rules to confirm" },
   { path: "/admin/invitations", expect: "Invitations & Requests" },
   { path: "/admin/invitations", expect: "Network invitation register" },
-  { path: "/admin/reports", expect: "22 — Group Reports & Statistics" },
-  { path: "/admin/reports", expect: "Origin distribution" },
   { path: "/admin/groups/grp-net-024/members", expect: "Group not found" },
   { path: "/admin/groups/grp-net-024/activity", expect: "Group not found" },
   { path: "/admin/groups/grp-net-024/relationships", expect: "Group not found" },
-  { path: "/admin/config/automatic", expect: "Live outcome preview" },
-  { path: "/admin/config/automatic", expect: "", reject: "Tour this screen" },
   { path: "/admin/types-not-a-route", expect: "Page not found" },
-  { path: "/admin/config/types", expect: "Stage labels" },
   { path: "/admin/does-not-exist", expect: "Page not found" },
 
   // Spec 21/28 — owner vs member tab shell
@@ -641,13 +627,21 @@ const cases: SmokeCase[] = [
   },
   { path: "/business/groups/grp-headstart-b2b", expect: "04 — Group Details" },
 
-  // Admin — Group Creation Rules screen
-  { path: "/admin/config/group-rules", expect: "Group Creation Rules" },
-  { path: "/admin/config/group-rules", expect: "Who can create a group" },
-  { path: "/admin/config/group-rules", expect: "Recruitment requirements per plan" },
-    { path: "/admin/config/group-rules", expect: "Paid entry & agreement" },
-  { path: "/admin/config/group-rules", expect: "Group activation" },
-  { path: "/admin/config/group-rules", expect: "How the rules combine" },
+  // Admin — Plans & Group Rules screen (group rules merged into plans)
+  { path: "/admin/plans", expect: "Plans & Group Rules" },
+  { path: "/admin/plans", expect: "Plan + Variant Architecture" },
+  { path: "/admin/plans", expect: "Variants that create groups" },
+  { path: "/admin/plans", click: "Group Rules", expect: "Platform group rules" },
+  {
+    path: "/admin/plans",
+    click: "Group Rules",
+    expect: "Keep groups non-functional until their threshold is reached",
+  },
+  { path: "/admin/plans", click: "Group Rules", expect: "Save group rules" },
+  // Group configuration is available while creating/editing a plan.
+  { path: "/admin/plans", click: "Configure Plans", expect: "Group creation" },
+  { path: "/admin/plans", click: "Configure Plans", expect: "Recruitment target" },
+  { path: "/admin/plans", click: "Configure Plans", expect: "May create" },
 ];
 
 const container = dom.window.document.createElement("div");

@@ -141,7 +141,44 @@ MCOM_ENFORCE_ENTITLEMENTS=false
 
 When set to `false`, the entitlement and white-label gates are skipped, but
 Central Hub administrators are still required to use `/admin/login`.
-The local `.env` currently uses `false`; `.env.example` defaults to `true`.
+`.env.example` defaults to `true`; keep it `true` in production.
+
+### Central Hub membership, access pass and trial access
+
+A business can reach this dashboard through any of the three Central Hub access
+models. Central Hub is the source of truth; the Groups app mirrors the verdict:
+
+| Access model | `accessSource` | Local plan treatment |
+| --- | --- | --- |
+| Membership bundling a Groups plan | `membership` | Active, paid; expiry follows the membership |
+| Central Hub access pass | `access_pass` | Active, paid; `accessExpiresAt` = pass expiry |
+| Dashboard access / trial | `trial` | Active, unpaid; `accessExpiresAt` = trial expiry |
+| Locally purchased plan | `local` | Existing plan/payment rules apply |
+
+- The SSO token response and `GET /api/v1/auth/sso/entitlement` are read through
+  `decideAccess()` (`apps/api/src/auth/entitlement-access.ts`), which applies
+  the published priority order and rejects expired plans even when
+  `access.hasAccess` is still cached as true.
+- `BusinessContextService.resolve()` provisions or revokes the local
+  `BusinessPlan` row (`accessSource`, `externalPlanId`, `membershipName`,
+  `accessExpiresAt`, `programmeTasks`, `centralQuotas`). `plan.planId` is mapped
+  to a published local plan when the IDs match, otherwise to the plan name.
+- The entitlement is revalidated at most every five minutes using
+  `MCOM_API_KEY` (`GET /api/v1/auth/sso/entitlement`). Set the key or background
+  revalidation is skipped.
+- `BusinessAccessGuard` and `BusinessLayout` treat a Central Hub grant as
+  covering the local access fee and agreement. Denials carry the Central Hub
+  `reason` and `upgradeUrl` so the UI can send the business back to
+  Central Hub.
+- Trial programme tasks returned in `trialContext.programmeTasks` are shown on
+  the plan page with the remaining days.
+- Local plan purchases are disabled while a Central Hub grant is active,
+  because Central Hub takes priority and would overwrite the local plan on the
+  next revalidation.
+
+Plan/access-pass IDs should be stable and published in the local catalogue
+(`/admin/plans`). A Central Hub plan whose ID matches a local plan inherits that
+plan's name, variant, quotas and group-creation rights.
 
 ### Central Hub mesh smoke test
 
@@ -225,7 +262,7 @@ receive `401`, non-admin sessions `403`.
 | Moderation | `GET /api/admin/pending-review`, `POST /api/admin/pending-review/:id/approve\|reject` |
 | Audit log | `GET /api/admin/audit-log` |
 | Configuration | `GET/PATCH /api/admin/config`, plus `GET/PATCH /api/admin/config/automatic`, `GET/PATCH /api/admin/config/group-rules`, `GET/PUT /api/admin/config/types`, `GET/PUT /api/admin/config/circles`, `GET/PUT /api/admin/config/mandatory-circles`, `GET/PUT /api/admin/config/mandatory-groups`, `GET/PUT /api/admin/config/stages`, `GET/PATCH /api/admin/config/payment-rules` |
-| Permissions & access | `GET/PATCH /api/admin/permissions`, `GET/PATCH /api/admin/access-rules`, `GET/PATCH /api/admin/settings` |
+| Permissions & access | `GET/PATCH /api/admin/permissions`, `GET/PATCH /api/admin/settings` |
 | Locations | `GET /api/admin/locations`, `POST /api/admin/locations/cities`, `PATCH/DELETE /api/admin/locations/cities/:id`, `POST /api/admin/locations/cities/:cityId/areas`, `PATCH/DELETE /api/admin/locations/areas/:id` |
 | Content | `GET /api/admin/content`, `GET /api/admin/content/status`, `GET/PATCH /api/admin/content/:id`, `POST /api/admin/content/:id/publish`, `POST /api/admin/content/publish-all` |
 | Reports | `GET /api/admin/reports`, `GET/POST /api/admin/reports/schedules`, `PATCH/DELETE /api/admin/reports/schedules/:id`, `GET /api/admin/settings-reports` |

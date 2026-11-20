@@ -8,12 +8,13 @@ import { clearAuthSession, readAuthSession } from "./authSession";
 
 interface TopBarProps {
   sectionLabel: string;
+  wide?: boolean;
 }
 
 const MENU_ITEM_CLASS =
   "flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-slate-300 transition-colors hover:bg-white/5 hover:text-white";
 
-export default function TopBar({ sectionLabel }: TopBarProps) {
+export default function TopBar({ sectionLabel, wide = false }: TopBarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
@@ -59,7 +60,11 @@ export default function TopBar({ sectionLabel }: TopBarProps) {
 
   return (
     <header className="sticky top-0 z-30 border-b border-white/10 bg-ink-950/85 backdrop-blur">
-      <div className="mx-auto flex w-full max-w-[1440px] items-center justify-between gap-3 px-4 py-3 lg:px-6">
+      <div
+        className={`flex w-full items-center justify-between gap-3 px-4 py-3 lg:px-6 ${
+          wide ? "" : "mx-auto max-w-[1440px]"
+        }`}
+      >
         <div className="flex min-w-0 items-center gap-3">
           <svg viewBox="0 0 32 32" className="size-8 shrink-0" aria-hidden="true">
             <circle cx="16" cy="16" r="15" fill="#0a0f1c" stroke="#e6a92b" strokeWidth="2" />

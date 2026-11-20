@@ -58,14 +58,14 @@ const SIGN_OFF_RULES = [
   },
   {
     id: "rule-4",
-    title: "4. Plan entitlements and temporary-access rules",
+    title: "4. Plan entitlements",
     ruleText:
-      "Plan entitlements and temporary-access rules are clearly defined.",
+      "Plan entitlements are clearly defined.",
     status: "Verified",
     evidence:
-      "Bronze, Silver, Gold and Platinum entitlements are mapped alongside configurable 7-day and 14-day temporary access periods in AdminAccessRulesPage.tsx.",
-    link: "/admin/access-rules",
-    linkText: "Review Access Rules",
+      "Bronze, Silver, Gold and Platinum entitlements are mapped per plan and editable in AdminPlansPage.tsx.",
+    link: "/admin/plans",
+    linkText: "Review Plans",
   },
   {
     id: "rule-5",
@@ -324,7 +324,7 @@ export default function AdminSettingsReportsPage() {
       {/* --- TAB 2: Platform Reports ------------------------------------ */}
       {activeTab === "reports" && (
         <div className="flex flex-col gap-4">
-          <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
             <StatCard
               label="Registered entities"
               value={stats?.registeredEntities ?? 0}
@@ -336,6 +336,24 @@ export default function AdminSettingsReportsPage() {
               value={stats?.totalPlanSubscribers ?? 0}
               hint="Active plan subscribers"
               accent="success"
+            />
+            <StatCard
+              label="Programme fees"
+              value={`£${(stats?.programmeMonthlyFees ?? 0).toLocaleString(
+                "en-GB",
+                { maximumFractionDigits: 2 }
+              )}`}
+              hint="Monthly across active programmes"
+              accent="warning"
+            />
+            <StatCard
+              label="Partner fees"
+              value={`£${(stats?.partnerMonthlyFees ?? 0).toLocaleString(
+                "en-GB",
+                { maximumFractionDigits: 2 }
+              )}`}
+              hint="Monthly across active partners"
+              accent="info"
             />
             <StatCard
               label="Invitations sent"

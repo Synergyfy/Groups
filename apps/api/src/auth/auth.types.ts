@@ -59,26 +59,68 @@ export interface McomProfile {
   accountManagerProfile?: Record<string, unknown> | null;
 }
 
+export type EntitlementAccessType =
+  | "PAID_MEMBERSHIP"
+  | "DIRECT_PACKAGE"
+  | "TRIAL_PROGRAMME"
+  | "NONE";
+
+export type EntitlementPlanSource = "membership" | "direct" | "trial";
+
+export interface PlatformEntitlementTask {
+  taskId: string;
+  title: string;
+  description: string;
+  deadlineDays: number;
+  status: "PENDING" | "IN_PROGRESS" | "COMPLETED" | "EXPIRED" | string;
+}
+
+/**
+ * The Central Hub contract (`PlatformEntitlement`, protocol 2026-10-01).
+ * Central Hub is the source of truth; this app only mirrors the verdict.
+ */
 export interface McomEntitlement {
+  version?: string;
+  targetPlatform?: {
+    clientId?: string | null;
+    platformSlug?: string | null;
+    name?: string | null;
+  };
   access?: {
     hasAccess?: boolean;
-    accessType?: string;
+    accessType?: EntitlementAccessType | string;
     reason?: string;
     upgradeUrl?: string;
+  };
+  plan?: {
+    planId?: string;
+    planName?: string;
+    source?: EntitlementPlanSource | string;
+    status?: string;
+    billingCycle?: string | null;
+    expiresAt?: string | null;
+    quotas?: Record<string, unknown>;
+    limits?: Record<string, unknown>;
+    features?: string[];
+  } | null;
+  membershipContext?: {
+    membershipPlanName?: string | null;
+    membershipLevel?: string;
+    membershipStatus?: string;
+    isIncludedInMembership?: boolean;
+  };
+  trialContext?: {
+    isInTrial?: boolean;
+    hasPaidVerificationFee?: boolean;
+    trialExpiresAt?: string | null;
+    daysRemaining?: number;
+    programmeTasks?: PlatformEntitlementTask[];
   };
   whitelabel?: {
     enabled?: boolean;
     granted?: boolean;
     roleEligible?: boolean;
     grantedAt?: string | null;
-  };
-  plan?: {
-    planId?: string;
-    planName?: string;
-    quotas?: Record<string, unknown>;
-  };
-  trialContext?: {
-    programmeTasks?: unknown[];
   };
 }
 

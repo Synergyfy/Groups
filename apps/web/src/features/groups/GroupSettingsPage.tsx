@@ -14,13 +14,10 @@ import { businessApi, useBusinessData } from "../../business/BusinessDataProvide
 import type {
   Group,
   GroupAccessType,
-  GroupStatus,
   GroupVisibility,
 } from "../../domain/types";
 import { GROUP_VISIBILITY_LABELS } from "../../domain/types";
 import GroupTabsHeader, { GroupMissingState } from "./GroupTabsHeader";
-
-const STATUS_OPTIONS: GroupStatus[] = ["Active", "Recruiting", "Pending Review", "Closed"];
 
 const ACCESS_OPTIONS: { value: GroupAccessType; label: string }[] = [
   { value: "open", label: "Open — anyone can join" },
@@ -61,7 +58,6 @@ function GroupSettingsForm({ group, isOwner }: { group: Group; isOwner: boolean 
 
   const [name, setName] = useState(group.name);
   const [purpose, setPurpose] = useState(group.purpose);
-  const [status, setStatus] = useState<GroupStatus>(group.status);
   const [accessType, setAccessType] = useState<GroupAccessType>(group.accessType);
   const [visibility, setVisibility] = useState<GroupVisibility>(group.visibility ?? "directory");
   const [stage, setStage] = useState(group.stage ?? "");
@@ -74,7 +70,6 @@ function GroupSettingsForm({ group, isOwner }: { group: Group; isOwner: boolean 
       await businessApi.updateGroup(group.id, {
         name: name.trim() || group.name,
         purpose: purpose.trim() || group.purpose,
-        status,
         accessType,
         visibility,
         stage,
@@ -109,7 +104,6 @@ function GroupSettingsForm({ group, isOwner }: { group: Group; isOwner: boolean 
   const reset = () => {
     setName(group.name);
     setPurpose(group.purpose);
-    setStatus(group.status);
     setAccessType(group.accessType);
     setVisibility(group.visibility ?? "directory");
     setStage(group.stage ?? "");
@@ -159,14 +153,18 @@ function GroupSettingsForm({ group, isOwner }: { group: Group; isOwner: boolean 
             </label>
 
             <div className="grid gap-3 sm:grid-cols-2">
-              <Select
-                label="Status"
-                value={status}
-                disabled={!isOwner}
-                onChange={(event) => setStatus(event.target.value as GroupStatus)}
-                options={STATUS_OPTIONS.map((value) => ({ value, label: value }))}
-                hint="Sets the group's current state, shown in lists and badges."
-              />
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[11px] font-medium text-slate-400">Status</span>
+                <div className="flex h-10 items-center gap-2 rounded-lg border border-white/10 bg-ink-800 px-3">
+                  <span className="text-xs text-slate-200">{group.status}</span>
+                  <Badge variant={group.status === "Active" ? "success" : "muted"}>
+                    Managed
+                  </Badge>
+                </div>
+                <p className="text-[11px] leading-relaxed text-slate-500">
+                  Activates automatically when the group reaches its plan's recruitment target.
+                </p>
+              </div>
               <Select
                 label="Access type"
                 value={accessType}

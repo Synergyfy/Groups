@@ -207,17 +207,6 @@ export default function AdminGroupListPage() {
         options={options(state.groups.map((group) => group.ownerName), "All owners")}
       />
       <FilterSelect
-        label="Programme"
-        tip="Filter by programme; 'No programme' shows groups not linked to one."
-        value={filters.programme}
-        onChange={(value) => patch({ programme: value })}
-        options={[
-          { value: "all", label: "All programmes" },
-          ...state.programmes.map((entry) => ({ value: entry.id, label: entry.name })),
-          { value: "", label: "No programme" },
-        ]}
-      />
-      <FilterSelect
         label="Source"
         tip="Automatic groups are created by rules; user-created ones by businesses."
         value={filters.source}

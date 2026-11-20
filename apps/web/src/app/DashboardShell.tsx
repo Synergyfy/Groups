@@ -24,9 +24,11 @@ interface DashboardShellProps {
   sectionLabel: string;
   nav: NavSection[];
   bottomNav?: BottomNavItem[];
+  /** Admin dashboards span the viewport so the sidebar sits flush left. */
+  wide?: boolean;
 }
 
-export default function DashboardShell({ sectionLabel, nav, bottomNav }: DashboardShellProps) {
+export default function DashboardShell({ sectionLabel, nav, bottomNav, wide = false }: DashboardShellProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
   // The admin experience deliberately has no guided journey or page tour —
@@ -39,9 +41,15 @@ export default function DashboardShell({ sectionLabel, nav, bottomNav }: Dashboa
   return (
     <div className="flex min-h-screen flex-col overflow-x-clip">
       <JourneyRecorder enabled={showJourney} />
-      <TopBar sectionLabel={sectionLabel} />
+      <TopBar sectionLabel={sectionLabel} wide={wide} />
 
-      <div className="mx-auto flex w-full max-w-[1440px] flex-1">
+      <div
+        className={
+          wide
+            ? "flex w-full flex-1"
+            : "mx-auto flex w-full max-w-[1440px] flex-1"
+        }
+      >
         <aside
           data-tour="nav"
           className="hidden w-64 shrink-0 border-r border-white/10 bg-ink-950/60 lg:sticky lg:top-[3.75rem] lg:block lg:h-[calc(100vh-3.75rem)] lg:overflow-y-auto"
