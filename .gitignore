@@ -8,8 +8,6 @@ coverage/
 .tmp/
 
 # Environment files
-.env
-.env.*
 !.env.example
 
 # Prisma generated client
