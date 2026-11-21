@@ -3,6 +3,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
   Injectable,
   Logger,
   NotFoundException,
@@ -33,7 +34,10 @@ import {
   McomPayClient,
   McomPayError,
   type McomChargeDto,
+  type McomChargeIntent,
+  type McomChargeSplitInput,
   type McomPayMethod,
+  type McomPayeeType,
 } from "./mcom-pay.client.js";
 import { PaymentSettlementService } from "./payment-settlement.service.js";
 import {
@@ -68,6 +72,18 @@ type Payer =
       planId?: string;
       eligible: boolean;
     };
+
+export interface PayeeView {
+  type: McomPayeeType;
+  id: string;
+  name: string;
+}
+
+interface PayeePlan {
+  intent: McomChargeIntent;
+  splits?: McomChargeSplitInput[];
+  payee?: PayeeView;
+}
 
 @Injectable()
 export class PaymentsService {
@@ -185,12 +201,17 @@ export class PaymentsService {
         purpose: "PLAN_ACCESS",
         businessId: ctx.business.id,
         planId: plan.id,
+        mcomPay: {
+          intent: "PURCHASE",
+          payerUserId: payer.mcomUserId ?? null,
+        },
       },
     });
 
     const result = await this.createCentralCharge(payment, {
       method: dto.method,
       description: `247GBS Groups — ${plan.name} access (${accessDays} days)`,
+      intent: "PURCHASE",
       mcomUserId: payer.mcomUserId ?? undefined,
     });
     const charge = result.charge;
@@ -210,6 +231,7 @@ export class PaymentsService {
       clientSecret: result.clientSecret ?? null,
       approvalUrl: result.approvalUrl ?? null,
       alreadyPaid: false,
+      payee: this.payeeFromPayment(payment),
     };
   }
 
@@ -304,6 +326,7 @@ export class PaymentsService {
     }
 
     const amountMinor = BigInt(group.contributionMinor);
+    const payeePlan = await this.resolveGroupPayee(group.ownerId, amountMinor);
     const paymentId = randomUUID();
     const frequency = group.contributionFrequency ?? "once";
     const payment = await this.insertPayment({
@@ -338,12 +361,20 @@ export class PaymentsService {
         groupId,
         memberId: payer.memberId,
         periodKey,
+        mcomPay: {
+          intent: payeePlan.intent,
+          payerUserId: payer.mcomUserId ?? null,
+          ...(payeePlan.splits ? { splits: payeePlan.splits } : {}),
+          ...(payeePlan.payee ? { payee: payeePlan.payee } : {}),
+        } as unknown as Prisma.InputJsonValue,
       },
     });
 
     const result = await this.createCentralCharge(payment, {
       method: dto.method,
       description: `247GBS Groups — ${group.name} contribution (${periodKey})`,
+      intent: payeePlan.intent,
+      splits: payeePlan.splits,
       mcomUserId: payer.mcomUserId ?? undefined,
     });
     const charge = result.charge;
@@ -363,6 +394,7 @@ export class PaymentsService {
       clientSecret: result.clientSecret ?? null,
       approvalUrl: result.approvalUrl ?? null,
       alreadyPaid: false,
+      payee: this.payeeFromPayment(payment),
     };
   }
 
@@ -410,7 +442,12 @@ export class PaymentsService {
     }
 
     try {
+      const mcomUserId =
+        this.paymentMcomUserId(payment) ??
+        (await this.mcomUserIdFor(user)) ??
+        undefined;
       const result = await this.mcom.confirmCharge(payment.mcomChargeId, {
+        mcomUserId,
         paymentIntentId: dto.paymentIntentId,
         orderId: dto.orderId,
       });
@@ -427,6 +464,7 @@ export class PaymentsService {
       });
       return this.withProviderHandle(settled, true);
     } catch (error) {
+      if (error instanceof HttpException) throw error;
       this.throwMcomError(error);
     }
   }
@@ -460,6 +498,20 @@ export class PaymentsService {
     }
   }
 
+  /** Payee splits and their settlement state for one of this user's payments. */
+  async getPaymentSplits(user: SessionUser, paymentId: string) {
+    this.assertPaymentsEnabled();
+    const payment = await this.getOwnedPayment(user, paymentId);
+    if (!payment.mcomChargeId) {
+      throw new ConflictException("This payment has no MCOM charge yet.");
+    }
+    try {
+      return await this.mcom.getChargeSplits(payment.mcomChargeId);
+    } catch (error) {
+      this.throwMcomError(error);
+    }
+  }
+
   // ─── WEBHOOK ─────────────────────────────────────────────────────────────
 
   async handleWebhook(rawBody: string | Buffer, signature?: string) {
@@ -483,12 +535,14 @@ export class PaymentsService {
       throw new BadRequestException("Invalid webhook signature.");
     }
 
-    const payload = JSON.parse(
-      typeof rawBody === "string" ? rawBody : rawBody.toString("utf8"),
-    ) as {
-      event?: string;
-      data?: Record<string, unknown>;
-    };
+    let payload: { event?: string; data?: Record<string, unknown> };
+    try {
+      payload = JSON.parse(
+        typeof rawBody === "string" ? rawBody : rawBody.toString("utf8"),
+      ) as { event?: string; data?: Record<string, unknown> };
+    } catch {
+      throw new BadRequestException("Invalid webhook payload.");
+    }
     const event = payload.event;
     const data = payload.data ?? {};
 
@@ -515,20 +569,33 @@ export class PaymentsService {
     if (event === "payment.refunded") {
       const payment = await this.findWebhookPayment(data);
       if (!payment) return { received: true };
-      const totalRefunded =
+      const reported =
         typeof data.totalRefundedMinor === "string"
-          ? BigInt(data.totalRefundedMinor)
-          : typeof data.amountMinor === "string"
-            ? BigInt(data.amountMinor)
-            : 0n;
+          ? data.totalRefundedMinor
+          : typeof data.refundedMinor === "string"
+            ? data.refundedMinor
+            : typeof data.amountMinor === "string"
+              ? data.amountMinor
+              : "0";
+      let totalRefunded: bigint;
+      try {
+        totalRefunded = BigInt(reported);
+      } catch {
+        this.logger.warn(
+          `payment.refunded webhook had an invalid amount (${reported}); ignoring.`,
+        );
+        return { received: true };
+      }
+      const capped =
+        totalRefunded > payment.amountMinor
+          ? payment.amountMinor
+          : totalRefunded;
       await this.prisma.payment.update({
         where: { id: payment.id },
         data: {
-          refundedMinor: totalRefunded,
+          refundedMinor: capped,
           status:
-            totalRefunded >= payment.amountMinor
-              ? "REFUNDED"
-              : "PARTIALLY_REFUNDED",
+            capped >= payment.amountMinor ? "REFUNDED" : "PARTIALLY_REFUNDED",
         },
       });
       return { received: true };
@@ -587,6 +654,62 @@ export class PaymentsService {
     );
   }
 
+  /**
+   * A paid group contribution belongs to the group owner, not to 247GBS.
+   *
+   * We therefore send a single payee split for the full amount. Owners with a
+   * Central Hub identity are credited directly to their MCOM wallet; owners
+   * without one park the money on their external payee payable for admin
+   * payout. Platform-owned groups (admin/system) keep the old behaviour and
+   * accrue to the app payable.
+   */
+  private async resolveGroupPayee(
+    ownerId: string | null | undefined,
+    amountMinor: bigint,
+  ): Promise<PayeePlan> {
+    if (!ownerId || this.isSystemOwner(ownerId)) {
+      return { intent: "ORDER" };
+    }
+
+    const owner = await this.prisma.business.findUnique({
+      where: { id: ownerId },
+      select: { id: true, name: true, mcomUserId: true },
+    });
+    if (!owner) return { intent: "ORDER" };
+
+    const amount = amountMinor.toString();
+    if (owner.mcomUserId) {
+      return {
+        intent: "ORDER",
+        splits: [
+          {
+            payeeType: "mcom_user",
+            payeeUserId: owner.mcomUserId,
+            amountMinor: amount,
+          },
+        ],
+        payee: { type: "mcom_user", id: owner.mcomUserId, name: owner.name },
+      };
+    }
+
+    return {
+      intent: "ORDER",
+      splits: [
+        {
+          payeeType: "external",
+          payeeExternalId: owner.id,
+          amountMinor: amount,
+        },
+      ],
+      payee: { type: "external", id: owner.id, name: owner.name },
+    };
+  }
+
+  private isSystemOwner(ownerId: string): boolean {
+    const normalized = ownerId.trim().toLowerCase();
+    return normalized === "admin" || normalized === "system";
+  }
+
   private async assertGroupEligibility(
     group: {
       requiredPlanIds: string[];
@@ -624,6 +747,8 @@ export class PaymentsService {
     input: {
       method: PaymentMethod;
       description: string;
+      intent?: McomChargeIntent;
+      splits?: McomChargeSplitInput[];
       mcomUserId?: string;
     },
   ): Promise<{ charge: McomChargeDto; clientSecret?: string | null; approvalUrl?: string | null }> {
@@ -635,6 +760,8 @@ export class PaymentsService {
           method: this.centralMethod(input.method),
           reference: payment.reference,
           description: input.description,
+          intent: input.intent,
+          splits: input.splits,
           mcomUserId: input.mcomUserId,
           externalCustomerId: payment.userId ?? undefined,
           returnUrl: `${this.publicBaseUrl()}/payment/return?paymentId=${payment.id}`,
@@ -693,7 +820,7 @@ export class PaymentsService {
     if (!alreadyPaid && payment.status === "PENDING") {
       try {
         const replay = await this.mcom.createCharge(
-          this.reconstructChargeInput(payment),
+          await this.reconstructChargeInput(payment),
           payment.idempotencyKey,
         );
         const updated = await this.prisma.payment.update({
@@ -722,6 +849,7 @@ export class PaymentsService {
             clientSecret: null,
             approvalUrl: null,
             alreadyPaid: settled.status === "PAID",
+            payee: this.payeeFromPayment(settled),
           };
         }
 
@@ -741,15 +869,27 @@ export class PaymentsService {
       clientSecret,
       approvalUrl,
       alreadyPaid,
+      payee: this.payeeFromPayment(payment),
     };
   }
 
-  private reconstructChargeInput(payment: Payment) {
+  private async reconstructChargeInput(payment: Payment) {
     const snapshot = jsonObject(
       payment.purpose === "PLAN_ACCESS"
         ? payment.planSnapshot
         : payment.groupSnapshot,
     );
+    const mcomPay = jsonObject(jsonObject(payment.metadata).mcomPay);
+    let mcomUserId = this.paymentMcomUserId(payment);
+    if (!mcomUserId && payment.userId) {
+      mcomUserId =
+        (
+          await this.prisma.user.findUnique({
+            where: { id: payment.userId },
+            select: { mcomUserId: true },
+          })
+        )?.mcomUserId ?? undefined;
+    }
     return {
       amountMinor: payment.amountMinor.toString(),
       currency: payment.currency,
@@ -759,6 +899,9 @@ export class PaymentsService {
         typeof snapshot.description === "string"
           ? snapshot.description
           : "247GBS Groups payment",
+      intent: this.chargeIntent(mcomPay.intent),
+      splits: this.chargeSplits(mcomPay.splits),
+      mcomUserId,
       externalCustomerId: payment.userId ?? undefined,
       returnUrl: `${this.publicBaseUrl()}/payment/return?paymentId=${payment.id}`,
       cancelUrl: `${this.publicBaseUrl()}/payment/cancel?paymentId=${payment.id}`,
@@ -767,6 +910,68 @@ export class PaymentsService {
         paymentId: payment.id,
       },
     };
+  }
+
+  private chargeIntent(value: unknown): McomChargeIntent | undefined {
+    if (typeof value === "string" && value.trim()) {
+      return value as McomChargeIntent;
+    }
+    return undefined;
+  }
+
+  private chargeSplits(value: unknown): McomChargeSplitInput[] | undefined {
+    if (!Array.isArray(value) || value.length === 0) return undefined;
+    const splits: McomChargeSplitInput[] = [];
+    for (const item of value) {
+      const split = jsonObject(item);
+      const payeeType = split.payeeType;
+      const amountMinor = split.amountMinor;
+      if (
+        (payeeType !== "mcom_user" && payeeType !== "external") ||
+        typeof amountMinor !== "string"
+      ) {
+        continue;
+      }
+      splits.push({
+        payeeType,
+        amountMinor,
+        ...(typeof split.payeeUserId === "string"
+          ? { payeeUserId: split.payeeUserId }
+          : {}),
+        ...(typeof split.payeeExternalId === "string"
+          ? { payeeExternalId: split.payeeExternalId }
+          : {}),
+      });
+    }
+    return splits.length > 0 ? splits : undefined;
+  }
+
+  /**
+   * The exact Central Hub payer id used when the charge was created. Confirm
+   * must repeat it so MCOM can prove the payment belongs to the same person.
+   */
+  private paymentMcomUserId(payment: Payment): string | undefined {
+    const mcomPay = jsonObject(jsonObject(payment.metadata).mcomPay);
+    if (
+      typeof mcomPay.payerUserId === "string" &&
+      mcomPay.payerUserId.trim()
+    ) {
+      return mcomPay.payerUserId;
+    }
+    return undefined;
+  }
+
+  private payeeFromPayment(payment: Payment): PayeeView | undefined {
+    const mcomPay = jsonObject(jsonObject(payment.metadata).mcomPay);
+    const payee = jsonObject(mcomPay.payee);
+    if (
+      (payee.type === "mcom_user" || payee.type === "external") &&
+      typeof payee.id === "string" &&
+      typeof payee.name === "string"
+    ) {
+      return { type: payee.type, id: payee.id, name: payee.name };
+    }
+    return undefined;
   }
 
   private async insertPayment(
@@ -882,6 +1087,12 @@ export class PaymentsService {
       createdAt: iso(payment.createdAt),
       plan: payment.planSnapshot ?? undefined,
       group: payment.groupSnapshot ?? undefined,
+      payee: this.payeeFromPayment(payment),
+      intent:
+        typeof jsonObject(jsonObject(payment.metadata).mcomPay).intent ===
+        "string"
+          ? (jsonObject(jsonObject(payment.metadata).mcomPay).intent as string)
+          : undefined,
       failure:
         payment.failureCode || payment.failureMessage
           ? {
@@ -894,6 +1105,12 @@ export class PaymentsService {
 
   private throwMcomError(error: unknown): never {
     if (error instanceof McomPayError) {
+      if (error.httpStatus === 400) {
+        throw new BadRequestException({
+          code: error.code,
+          message: error.message,
+        });
+      }
       if (error.httpStatus === 422) {
         throw new UnprocessableEntityException({
           code: error.code,

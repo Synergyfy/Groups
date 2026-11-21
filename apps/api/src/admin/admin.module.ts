@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { AuthModule } from "../auth/auth.module.js";
+import { PaymentsModule } from "../payments/payments.module.js";
 import { AdminAuditService } from "./admin-audit.service.js";
 import { AdminRoleGuard } from "./admin-role.guard.js";
 import { AdminCatalogService } from "./catalog/catalog.service.js";
@@ -22,13 +23,15 @@ import {
   AdminInvitationsController,
   AdminSettingsReportsController,
 } from "./operations/operations.controller.js";
+import { AdminPaymentsController } from "./payments/admin-payments.controller.js";
+import { AdminPaymentsService } from "./payments/admin-payments.service.js";
 import { AdminOverviewService } from "./overview/overview.service.js";
 import { AdminOverviewController } from "./overview/overview.controller.js";
 import { AdminUsersService } from "./users/users.service.js";
 import { AdminUsersController } from "./users/users.controller.js";
 
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, PaymentsModule],
   controllers: [
     AdminOverviewController,
     AdminUsersController,
@@ -40,6 +43,7 @@ import { AdminUsersController } from "./users/users.controller.js";
     AdminRewardsDealsController,
     AdminInvitationsController,
     AdminSettingsReportsController,
+    AdminPaymentsController,
   ],
   providers: [
     AdminRoleGuard,
@@ -50,6 +54,7 @@ import { AdminUsersController } from "./users/users.controller.js";
     AdminConfigService,
     AdminCatalogService,
     AdminOperationsService,
+    AdminPaymentsService,
   ],
 })
 export class AdminModule {}

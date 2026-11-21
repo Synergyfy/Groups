@@ -286,6 +286,7 @@ export default function GroupDetailsPage() {
               kind: "CONTRIBUTION",
               groupId: body.groupId ?? group.id,
               groupName: group.name,
+              payeeName: group.ownerName,
               amountPounds,
               frequency: body.frequency ?? group.contributionFrequency ?? "once",
               onPaid: async () => {
@@ -339,6 +340,7 @@ export default function GroupDetailsPage() {
       kind: "CONTRIBUTION",
       groupId: group.id,
       groupName: group.name,
+      payeeName: group.ownerName,
       amountPounds: group.contribution ?? 0,
       frequency: group.contributionFrequency ?? "once",
       onPaid: async () => {

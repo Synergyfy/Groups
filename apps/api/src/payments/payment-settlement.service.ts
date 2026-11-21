@@ -230,22 +230,29 @@ export class PaymentSettlementService {
       });
     }
 
-    const partner = group.ownerId
-      ? await tx.partner.findFirst({
-          where: { businessId: group.ownerId },
-          select: { status: true, permissions: true },
-        })
-      : null;
-    const partnerSharePercent =
-      partner?.status === "Active"
-        ? Number(jsonObject(partner.permissions).revenueSharePercent ?? 0)
-        : 0;
-    await this.recordRevenueShare(tx, payment, {
-      scope: "group-contribution",
-      percent: partnerSharePercent,
-      beneficiaryType: partner ? "partner" : "platform",
-      beneficiaryId: partner ? group.ownerId : null,
-    });
+    const payee = this.paymentPayee(payment);
+    if (payee) {
+      // MCOM already moved the money to the owner's wallet/payable. Record the
+      // real split economics (owner gets net, platform keeps the MCOM fee).
+      await this.recordPayeeSplit(tx, payment, payee);
+    } else {
+      const partner = group.ownerId
+        ? await tx.partner.findFirst({
+            where: { businessId: group.ownerId },
+            select: { status: true, permissions: true },
+          })
+        : null;
+      const partnerSharePercent =
+        partner?.status === "Active"
+          ? Number(jsonObject(partner.permissions).revenueSharePercent ?? 0)
+          : 0;
+      await this.recordRevenueShare(tx, payment, {
+        scope: "group-contribution",
+        percent: partnerSharePercent,
+        beneficiaryType: partner ? "partner" : "platform",
+        beneficiaryId: partner ? group.ownerId : null,
+      });
+    }
 
     await tx.groupActivity.create({
       data: {
@@ -269,6 +276,61 @@ export class PaymentSettlementService {
         detail: existing
           ? `Contribution paid for ${group.name} (${payment.periodKey ?? "once"})`
           : `Joined ${group.name} after paying the contribution`,
+      },
+    });
+  }
+
+  private paymentPayee(
+    payment: Payment,
+  ): { type: string; id: string; name: string } | null {
+    const mcomPay = jsonObject(jsonObject(payment.metadata).mcomPay);
+    const splits = Array.isArray(mcomPay.splits) ? mcomPay.splits : [];
+    const payee = jsonObject(mcomPay.payee);
+    if (splits.length === 0 || typeof payee.id !== "string") return null;
+    return {
+      type: typeof payee.type === "string" ? payee.type : "external",
+      id: payee.id,
+      name: typeof payee.name === "string" ? payee.name : "Group owner",
+    };
+  }
+
+  private async recordPayeeSplit(
+    tx: Prisma.TransactionClient,
+    payment: Payment,
+    payee: { type: string; id: string; name: string },
+  ): Promise<void> {
+    const amountMinor = Number(payment.amountMinor);
+    const feeMinor =
+      payment.feeMinor != null
+        ? Number(payment.feeMinor)
+        : 0;
+    const netMinor =
+      payment.netMinor != null
+        ? Number(payment.netMinor)
+        : Math.max(0, amountMinor - feeMinor);
+    const percent =
+      amountMinor > 0
+        ? Math.round((feeMinor / amountMinor) * 10_000) / 100
+        : 0;
+
+    await tx.payment.update({
+      where: { id: payment.id },
+      data: {
+        metadata: {
+          ...jsonObject(payment.metadata),
+          revenueShare: {
+            scope: "group-contribution",
+            mode: "mcom-payee-split",
+            percent,
+            amountMinor: String(amountMinor),
+            platformMinor: String(feeMinor),
+            beneficiaryMinor: String(netMinor),
+            beneficiaryType:
+              payee.type === "mcom_user" ? "owner" : "external-owner",
+            beneficiaryId: payee.id,
+            beneficiaryName: payee.name,
+          },
+        },
       },
     });
   }

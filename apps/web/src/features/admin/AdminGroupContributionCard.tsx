@@ -356,9 +356,15 @@ export default function AdminGroupContributionCard({
 
             <div className="rounded-lg border border-white/5 bg-ink-950/60 p-2.5">
               <span className="text-[11px] text-slate-400 block mb-1">Disbursement / Payout Schedule</span>
-              <p className="font-semibold text-white">Not configured</p>
+              <p className="font-semibold text-white">
+                {group.ownerId && !/^(admin|system)$/i.test(group.ownerId)
+                  ? `Paid to ${group.ownerName || "the group owner"}`
+                  : "247GBS app payable"}
+              </p>
               <p className="text-[10px] text-slate-500 mt-0.5">
-                No payout schedule is configured for this group in the platform.
+                {group.ownerId && !/^(admin|system)$/i.test(group.ownerId)
+                  ? "Each contribution is split to the owner's MCOM wallet, or to their payee payable when they have no Central Hub account."
+                  : "Platform-owned groups accrue to the app payable and are paid out by MCOM admin."}
               </p>
             </div>
 

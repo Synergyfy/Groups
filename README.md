@@ -63,7 +63,7 @@ VITE_MCOM_PROFILE_URL="http://localhost:3000/dashboard/profile"
 
 WEB_PUBLIC_URL="http://localhost:4088"
 VITE_STRIPE_PUBLISHABLE_KEY="pk_test_..."
-VITE_MCOM_WALLET_TOPUP_URL="http://localhost:3010/dashboard/wallet"
+VITE_MCOM_WALLET_TOPUP_URL="http://localhost:3000/dashboard/wallet"
 ```
 
 ### MCOM Pay
@@ -82,6 +82,46 @@ Plan access and paid-group contributions are collected through **MCOM Pay**
   development only.
 - Plan prices, group contributions and payment amounts are stored as integer
   pence. The admin plan form accepts pounds and the API converts to pence.
+- Every charge is attributed to a Central Hub payer. The API sends the
+  signed-in account's `User.mcomUserId` and repeats it on `confirm`, because
+  MCOM refuses a charge whose payer does not match. Accounts without an SSO
+  link cannot create an MCOM charge.
+
+#### Payee splits (paid groups)
+
+Paid group contributions belong to the group owner, so the API creates the
+charge with a **single payee split** for the full amount:
+
+- an owner linked to Central Hub (`Business.mcomUserId`) is paid to their
+  **MCOM wallet** (`payeeType: "mcom_user"`);
+- an owner without a Central Hub identity parks the money on their **external
+  payee payable** (`payeeType: "external"`), ready for an MCOM-approved payout;
+- platform-owned groups (`admin`/`system` owners) keep the old behaviour and
+  accrue to the app payable.
+
+The buyer always pays the full `amountMinor`. The owner receives `netMinor`
+after MCOM's fee (default 2.9% + 20p). Card/PayPal splits settle on the provider
+webhook; the payment return page polls `GET /api/payments/:id/splits` until the
+payee is credited. Failed payee credits never roll back the buyer's payment and
+are retried by MCOM.
+
+#### Admin settlement and refunds
+
+- `GET /api/admin/payments/overview` — app payable balance, local totals and
+  recent payments.
+- `GET /api/admin/payments/charges` — filterable local payment ledger.
+- `GET /api/admin/payments/charges/:id/splits` — payee settlement state.
+- `POST /api/admin/payments/charges/:id/refund` — full or partial refund through
+  MCOM (`amountMinor` optional). Refunds are never applied by editing the ledger.
+
+#### Recurring contributions
+
+MCOM Pay charges are one-time. Recurring group contributions are still paid by
+the member once per cycle; the API uses a stable per-period idempotency key so a
+retry never double-charges. Automatic unattended renewal is intentionally not
+enabled because MCOM does not store a partner wallet/card mandate and the app has
+no stored consent for background debits. If auto-renew is added later it must be
+wallet-only, opt-in, and scheduled server-side with a new key per period.
 
 Create the database if it does not exist:
 

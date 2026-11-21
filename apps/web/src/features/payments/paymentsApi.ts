@@ -14,6 +14,11 @@ export type PaymentStatus =
   | "PARTIALLY_REFUNDED"
   | "PAID_UNFULFILLED";
 
+export interface PayeeView {
+  type: "mcom_user" | "external" | string;
+  name: string;
+}
+
 export interface PaymentView {
   id: string;
   purpose: "PLAN_ACCESS" | "GROUP_CONTRIBUTION";
@@ -28,6 +33,8 @@ export interface PaymentView {
   mcomChargeId?: string;
   provider?: string;
   providerRef?: string;
+  intent?: string;
+  payee?: PayeeView;
   paidAt?: string;
   createdAt?: string;
   plan?: Record<string, unknown>;
@@ -41,8 +48,28 @@ export interface PaymentResponse {
   approvalUrl?: string | null;
   alreadyPaid?: boolean;
   activated?: boolean;
+  payee?: PayeeView;
   plan?: BusinessPlanView;
   access?: PlanAccess;
+}
+
+export interface SplitView {
+  id: string;
+  payeeType: string;
+  payeeUserId: string | null;
+  payeeExternalId: string | null;
+  amountMinor: string;
+  feeMinor: string;
+  netMinor: string;
+  status: "pending" | "credited" | "failed" | string;
+  walletTransactionId: string | null;
+  failureReason: string | null;
+}
+
+export interface PaymentSplitsView {
+  chargeId: string;
+  settlementState: "PENDING" | "SETTLED" | "FAILED" | string;
+  splits: SplitView[];
 }
 
 export interface WalletBalanceView {
@@ -97,6 +124,11 @@ export const paymentsApi = {
     apiRequest<PaymentResponse>(
       `/payments/${encodeURIComponent(id)}/resume`,
       { method: "POST" },
+    ),
+
+  getSplits: (id: string) =>
+    apiRequest<PaymentSplitsView>(
+      `/payments/${encodeURIComponent(id)}/splits`,
     ),
 };
 
@@ -157,6 +189,6 @@ export function mcomWalletTopUpUrl(): string {
     | undefined;
   return (
     env?.VITE_MCOM_WALLET_TOPUP_URL ??
-    "http://localhost:3010/dashboard/wallet"
+    "http://localhost:3000/dashboard/wallet"
   );
 }

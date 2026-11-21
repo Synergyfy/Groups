@@ -96,6 +96,83 @@ export interface AdminGroupContribution {
   }>;
 }
 
+export interface AdminMcomBalance {
+  currency: string;
+  payableMinor: string;
+  pendingPayoutMinor: string;
+  availableMinor: string;
+  paidOutMinor: string;
+}
+
+export interface AdminPaymentRow {
+  id: string;
+  purpose: string;
+  status: string;
+  method: string;
+  amountMinor: string;
+  feeMinor: string | null;
+  netMinor: string | null;
+  refundedMinor: string;
+  currency: string;
+  reference: string;
+  mcomChargeId: string | null;
+  provider: string | null;
+  providerRef: string | null;
+  intent: string | null;
+  payee: { type: string; id: string; name: string } | null;
+  payer: { id: string; name: string; email: string } | null;
+  group: { id: string; name: string } | null;
+  planName: string | null;
+  failureCode: string | null;
+  failureMessage: string | null;
+  paidAt: string | null;
+  createdAt: string;
+  settlementState?: string | null;
+}
+
+export interface AdminPaymentOverview {
+  balance:
+    | { available: true; data: AdminMcomBalance }
+    | { available: false; data: null; message: string };
+  summary: {
+    grossMinor: string;
+    refundedMinor: string;
+    netMinor: string;
+    currency: string;
+  };
+  byStatus: Array<{
+    status: string;
+    count: number;
+    amountMinor: string;
+    refundedMinor: string;
+  }>;
+  recent: AdminPaymentRow[];
+}
+
+export interface AdminPaymentList {
+  data: AdminPaymentRow[];
+  page: number;
+  limit: number;
+  total: number;
+}
+
+export interface AdminPaymentSplits {
+  chargeId: string;
+  settlementState: string;
+  splits: Array<{
+    id: string;
+    payeeType: string;
+    payeeUserId: string | null;
+    payeeExternalId: string | null;
+    amountMinor: string;
+    feeMinor: string;
+    netMinor: string;
+    status: string;
+    walletTransactionId: string | null;
+    failureReason: string | null;
+  }>;
+}
+
 const query = (params: Record<string, string | undefined>) => {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
@@ -264,6 +341,23 @@ export const adminApi = {
     }),
   settingsReport: () =>
     apiRequest<AdminSettingsReport>("/admin/settings-reports"),
+
+  paymentOverview: () =>
+    apiRequest<AdminPaymentOverview>("/admin/payments/overview"),
+  payments: (filters: Record<string, string | undefined> = {}) =>
+    apiRequest<AdminPaymentList>(`/admin/payments/charges${query(filters)}`),
+  paymentSplits: (id: string) =>
+    apiRequest<AdminPaymentSplits>(
+      `/admin/payments/charges/${encodeURIComponent(id)}/splits`,
+    ),
+  refundPayment: (
+    id: string,
+    body: { amountMinor?: string; reason?: string },
+  ) =>
+    apiRequest<{ payment: AdminPaymentRow; refund: unknown }>(
+      `/admin/payments/charges/${encodeURIComponent(id)}/refund`,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
 };
 
 export type AdminAccounts = PlatformAccount[];

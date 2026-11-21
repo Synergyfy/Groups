@@ -29,6 +29,8 @@ export type PaymentTarget =
       groupName: string;
       amountPounds: number;
       frequency: string;
+      /** The group owner who receives the contribution, when known. */
+      payeeName?: string;
       onPaid: () => void | Promise<void>;
     };
 
@@ -183,6 +185,12 @@ export default function PaymentDialog({
   const stripeReady =
     method === "STRIPE" && created?.clientSecret && created.payment;
 
+  const payeeName =
+    created?.payee?.name ??
+    (target.kind === "CONTRIBUTION" ? target.payeeName : undefined);
+  const hasOwnerPayee =
+    Boolean(payeeName) && !/^(admin|system)$/i.test((payeeName ?? "").trim());
+
   return (
     <Modal
       open={open}
@@ -209,6 +217,13 @@ export default function PaymentDialog({
               ) : null}
             </p>
           </div>
+          {hasOwnerPayee ? (
+            <p className="mt-1 text-[10px] text-slate-500">
+              Payee:{" "}
+              <span className="font-semibold text-gold-200">{payeeName}</span>{" "}
+              · settled through MCOM Pay payee splits.
+            </p>
+          ) : null}
         </div>
 
         {!stripeReady && !created?.clientSecret && (

@@ -117,6 +117,14 @@ async function testReads() {
   const filtered = await ok("GET", "/admin/groups?status=Active&query=smoke");
   check("group filters apply", isArray(filtered));
   await ok("GET", "/admin/circles");
+
+  const payments = await ok("GET", "/admin/payments/overview");
+  check(
+    "payments overview has summary and recent rows",
+    Boolean(payments?.summary) && isArray(payments?.recent),
+  );
+  const charges = await ok("GET", "/admin/payments/charges?limit=5");
+  check("payments ledger lists charges", isArray(charges?.data));
 }
 
 async function testConfig() {

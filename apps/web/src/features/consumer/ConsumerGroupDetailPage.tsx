@@ -103,6 +103,7 @@ export default function ConsumerGroupDetailPage() {
           kind: "CONTRIBUTION",
           groupId: required.groupId,
           groupName: group.name,
+          payeeName: group.ownerName,
           amountPounds: required.amountPounds,
           frequency: required.frequency,
           onPaid: async () => {
