@@ -7,13 +7,13 @@
     "node": ">=22.12.0"
   },
   "scripts": {
-    "dev": "node init && turbo run dev",
-    "build": "node init && turbo run build",
+    "dev": "turbo run dev",
+    "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "dev:web": "node init && pnpm --filter @247gbs/web dev",
-    "dev:api": "node init && pnpm --filter @247gbs/api dev",
+    "dev:web": "pnpm --filter @247gbs/web dev",
+    "dev:api": "pnpm --filter @247gbs/api dev",
     "db:generate": "pnpm --filter @247gbs/api db:generate",
     "db:migrate": "pnpm --filter @247gbs/api db:migrate",
     "db:push": "pnpm --filter @247gbs/api db:push",
