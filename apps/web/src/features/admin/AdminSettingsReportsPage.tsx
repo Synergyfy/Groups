@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowRight,
+  Banknote,
   Bell,
   CheckCircle2,
   FileCheck2,
@@ -16,11 +17,14 @@ import Button from "../../components/ui/Button";
 import Card, { CardBody, CardTitle } from "../../components/ui/Card";
 import SectionHeader from "../../components/ui/SectionHeader";
 import StatCard from "../../components/ui/StatCard";
+import Table, { type TableColumn } from "../../components/ui/Table";
 import Toast from "../../components/ui/Toast";
 import BarChart from "../../components/ui/charts/BarChart";
 import Donut from "../../components/ui/charts/Donut";
-import { adminApi } from "../../admin/adminApi";
+import { errorMessage } from "../../app/api";
+import { adminApi, type AdminPaymentOverview, type AdminPaymentRow } from "../../admin/adminApi";
 import { useAdminData } from "../../admin/AdminDataProvider";
+import { formatMinor } from "../payments/paymentsApi";
 
 const SIGN_OFF_RULES = [
   {
@@ -84,6 +88,178 @@ export default function AdminSettingsReportsPage() {
   const { data, refresh } = useAdminData();
   const [activeTab, setActiveTab] = useState<"settings" | "reports" | "completeness">("settings");
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [payments, setPayments] = useState<AdminPaymentOverview | null>(null);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [refundingId, setRefundingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (activeTab !== "reports" || payments) return;
+    let active = true;
+    adminApi
+      .paymentOverview()
+      .then((result) => {
+        if (active) {
+          setPayments(result);
+          setPaymentError(null);
+        }
+      })
+      .catch((cause) => {
+        if (active) setPaymentError(errorMessage(cause));
+      });
+    return () => {
+      active = false;
+    };
+  }, [activeTab, payments]);
+
+  const refreshPayments = async () => {
+    const result = await adminApi.paymentOverview();
+    setPayments(result);
+    setPaymentError(null);
+  };
+
+  const handleRefund = async (row: AdminPaymentRow) => {
+    const remaining = Number(row.amountMinor) - Number(row.refundedMinor);
+    if (
+      !window.confirm(
+        `Refund ${formatMinor(remaining)} of ${formatMinor(row.amountMinor)} for ${row.reference}?`,
+      )
+    ) {
+      return;
+    }
+    setRefundingId(row.id);
+    try {
+      await adminApi.refundPayment(row.id, {
+        reason: "Refund issued from the admin console",
+      });
+      await refreshPayments();
+      setFeedback("Refund issued through MCOM Pay.");
+    } catch (cause) {
+      setFeedback(errorMessage(cause));
+    } finally {
+      setRefundingId(null);
+    }
+  };
+
+  const paymentColumns: TableColumn<AdminPaymentRow>[] = [
+    {
+      key: "createdAt",
+      header: "Date",
+      render: (row) => (
+        <span className="text-[11px] text-slate-400">
+          {new Date(row.createdAt).toLocaleDateString("en-GB")}
+        </span>
+      ),
+    },
+    {
+      key: "reference",
+      header: "Payment",
+      render: (row) => (
+        <div>
+          <p className="text-xs font-semibold text-white">
+            {row.group?.name ?? row.planName ?? row.purpose}
+          </p>
+          <p className="text-[10px] text-slate-500">
+            {row.reference} · {row.method}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: "payer",
+      header: "Payer",
+      render: (row) => (
+        <span className="text-[11px] text-slate-300">
+          {row.payer?.name ?? "Guest"}
+        </span>
+      ),
+    },
+    {
+      key: "payee",
+      header: "Payee",
+      render: (row) => (
+        <div>
+          <p className="text-[11px] text-slate-300">
+            {row.payee?.name ?? "247GBS payable"}
+          </p>
+          <p className="text-[10px] text-slate-500">
+            {row.payee ? row.payee.type : "app balance"}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: "amount",
+      header: "Amount",
+      align: "right",
+      render: (row) => (
+        <div>
+          <p className="text-xs font-semibold text-white">
+            {formatMinor(row.amountMinor)}
+          </p>
+          <p className="text-[10px] text-slate-500">
+            fee {formatMinor(row.feeMinor ?? 0)}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: "settlement",
+      header: "Payee settlement",
+      render: (row) =>
+        row.payee ? (
+          <Badge
+            variant={
+              row.settlementState === "SETTLED"
+                ? "success"
+                : row.settlementState === "FAILED"
+                  ? "danger"
+                  : "warning"
+            }
+          >
+            {row.settlementState ?? "PENDING"}
+          </Badge>
+        ) : (
+          <span className="text-[10px] text-slate-600">app payable</span>
+        ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      render: (row) => (
+        <Badge
+          variant={
+            row.status === "PAID"
+              ? "success"
+              : row.status === "FAILED"
+                ? "danger"
+                : row.status === "PENDING"
+                  ? "warning"
+                  : "muted"
+          }
+        >
+          {row.status.replaceAll("_", " ")}
+        </Badge>
+      ),
+    },
+    {
+      key: "actions",
+      header: "",
+      align: "right",
+      render: (row) =>
+        row.status === "PAID" || row.status === "PARTIALLY_REFUNDED" ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={refundingId === row.id}
+            onClick={() => void handleRefund(row)}
+          >
+            {refundingId === row.id ? "Refunding…" : "Refund"}
+          </Button>
+        ) : (
+          <span className="text-[10px] text-slate-600">—</span>
+        ),
+    },
+  ];
 
   const settings = (data?.adminConfig.platformSettings ?? {}) as {
     defaultRequiredSize?: number;
@@ -368,6 +544,86 @@ export default function AdminSettingsReportsPage() {
               accent="gold"
             />
           </div>
+
+          <Card>
+            <CardBody className="flex flex-col gap-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3">
+                <div className="flex items-center gap-2">
+                  <Banknote className="size-4 text-gold-400" />
+                  <div>
+                    <CardTitle>MCOM Pay settlement</CardTitle>
+                    <p className="text-xs text-slate-400">
+                      Payee splits, app payable and refunds from the central ledger.
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => void refreshPayments().catch((cause) => setPaymentError(errorMessage(cause)))}
+                >
+                  Refresh
+                </Button>
+              </div>
+
+              {paymentError ? (
+                <p className="text-xs text-danger-400">{paymentError}</p>
+              ) : null}
+
+              {payments?.balance.available === false ? (
+                <p className="text-xs text-warning-400">{payments.balance.message}</p>
+              ) : null}
+
+              <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+                <StatCard
+                  label="Available payable"
+                  value={formatMinor(payments?.balance.data?.availableMinor ?? 0)}
+                  hint="Ready for an MCOM-approved payout"
+                  accent="success"
+                />
+                <StatCard
+                  label="Pending payout"
+                  value={formatMinor(payments?.balance.data?.pendingPayoutMinor ?? 0)}
+                  hint="Requested, awaiting approval"
+                  accent="warning"
+                />
+                <StatCard
+                  label="Paid out"
+                  value={formatMinor(payments?.balance.data?.paidOutMinor ?? 0)}
+                  hint="Settled to the bank"
+                  accent="info"
+                />
+                <StatCard
+                  label="Net collected"
+                  value={formatMinor(payments?.summary.netMinor ?? 0)}
+                  hint={`Gross ${formatMinor(payments?.summary.grossMinor ?? 0)} · refunded ${formatMinor(payments?.summary.refundedMinor ?? 0)}`}
+                  accent="gold"
+                />
+              </div>
+              <p className="text-[10px] text-slate-500">
+                Payouts are approved on the MCOM side. Contact MCOM support to
+                release the available app balance; payee splits are already
+                settled to the group owner.
+              </p>
+
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-white">
+                    Recent payments
+                  </h4>
+                  <p className="text-[11px] text-slate-500">
+                    Group contributions are split to the owner automatically.
+                  </p>
+                </div>
+                <Table
+                  columns={paymentColumns}
+                  rows={payments?.recent ?? []}
+                  rowKey={(row) => row.id}
+                  emptyMessage="No MCOM Pay payments yet."
+                />
+              </div>
+            </CardBody>
+          </Card>
 
           <div className="grid gap-4 lg:grid-cols-2">
             <Card>

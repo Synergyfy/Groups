@@ -262,6 +262,7 @@ export default function GroupInvitationLandingPage({
           kind: "CONTRIBUTION",
           groupId: required.groupId,
           groupName: group.name || "Group",
+          payeeName: group.ownerName,
           amountPounds: required.amountPounds,
           frequency: required.frequency,
           onPaid: async () => {

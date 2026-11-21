@@ -4,6 +4,65 @@ import * as crypto from "node:crypto";
 
 export type McomPayMethod = "stripe" | "paypal" | "wallet";
 
+/** Ledger intent labels accepted by MCOM Pay. */
+export type McomChargeIntent =
+  | "ORDER"
+  | "BOOKING"
+  | "DELEGATION"
+  | "PURCHASE"
+  | "SUBSCRIPTION"
+  | "REFERRAL_COMMISSION"
+  | "TOP_UP"
+  | "REFUND"
+  | "PAYOUT"
+  | "TRANSFER"
+  | "ADJUSTMENT"
+  | "FEE"
+  | "CHARGEBACK"
+  | "OPENING_BALANCE";
+
+export type McomPayeeType = "mcom_user" | "external";
+
+/**
+ * One payee allocation on a charge. The amounts must sum to the charge amount;
+ * MCOM rejects an unreconciled split before taking any money.
+ */
+export interface McomChargeSplitInput {
+  payeeType: McomPayeeType;
+  /** Central Hub user id. Required for payeeType "mcom_user". */
+  payeeUserId?: string;
+  /** Partner-side payee id. Required for payeeType "external". */
+  payeeExternalId?: string;
+  amountMinor: string;
+}
+
+export interface McomChargeSplit {
+  id: string;
+  payeeType: McomPayeeType;
+  payeeUserId: string | null;
+  payeeExternalId: string | null;
+  amountMinor: string;
+  feeMinor: string;
+  netMinor: string;
+  status: "pending" | "credited" | "failed" | string;
+  walletTransactionId: string | null;
+  failureReason: string | null;
+}
+
+export interface McomChargeSplits {
+  chargeId: string;
+  settlementState: "PENDING" | "SETTLED" | "FAILED" | string;
+  splits: McomChargeSplit[];
+}
+
+export interface McomAppBalance {
+  currency: string;
+  payableMinor: string;
+  pendingPayoutMinor: string;
+  availableMinor: string;
+  paidOutMinor: string;
+}
+
 export interface McomChargeDto {
   id: string;
   appClientId: string;
@@ -14,6 +73,7 @@ export interface McomChargeDto {
   refundedMinor?: string;
   method: McomPayMethod;
   status: string;
+  intent?: string | null;
   reference?: string | null;
   description?: string | null;
   mcomUserId?: string | null;
@@ -233,11 +293,13 @@ export class McomPayClient {
       method: McomPayMethod;
       reference: string;
       description?: string;
+      intent?: McomChargeIntent;
       mcomUserId?: string;
       externalCustomerId?: string;
       returnUrl?: string;
       cancelUrl?: string;
       metadata?: Record<string, unknown>;
+      splits?: McomChargeSplitInput[];
     },
     idempotencyKey: string,
   ): Promise<McomCreateChargeResponse> {
@@ -249,7 +311,12 @@ export class McomPayClient {
 
   confirmCharge(
     chargeId: string,
-    handle: { paymentIntentId?: string; orderId?: string },
+    handle: {
+      /** The Central Hub payer identity stored when the charge was created. */
+      mcomUserId?: string;
+      paymentIntentId?: string;
+      orderId?: string;
+    },
   ): Promise<McomConfirmChargeResponse> {
     return this.call<McomConfirmChargeResponse>(
       `/app-payments/charges/${encodeURIComponent(chargeId)}/confirm`,
@@ -269,6 +336,26 @@ export class McomPayClient {
       `/wallet/partner/balance/${encodeURIComponent(mcomUserId)}`,
       { method: "GET" },
     );
+  }
+
+  /** Payee splits and their settlement state for one charge. */
+  async getChargeSplits(chargeId: string): Promise<McomChargeSplits> {
+    const response = await this.call<{
+      success: boolean;
+      data: McomChargeSplits;
+    }>(`/app-payments/charges/${encodeURIComponent(chargeId)}/splits`, {
+      method: "GET",
+    });
+    return response.data;
+  }
+
+  /** The app's own MCOM Pay payable balance. */
+  async getAppBalance(): Promise<McomAppBalance> {
+    const response = await this.call<{
+      success: boolean;
+      data: McomAppBalance;
+    }>("/app-payments/balance", { method: "GET" });
+    return response.data;
   }
 
   refundCharge(

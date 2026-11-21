@@ -42,6 +42,14 @@ export class PaymentsController {
     return this.payments.createContributionPayment(user, groupId, dto);
   }
 
+  @Get(":id/splits")
+  getPaymentSplits(
+    @Param("id", ParseUUIDPipe) id: string,
+    @CurrentUser() user: SessionUser,
+  ) {
+    return this.payments.getPaymentSplits(user, id);
+  }
+
   @Get(":id")
   getPayment(
     @Param("id", ParseUUIDPipe) id: string,

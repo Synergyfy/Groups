@@ -152,6 +152,7 @@ export default function ConsumerDiscoverGroupsPage() {
           kind: "CONTRIBUTION",
           groupId: body.groupId ?? result.group.id,
           groupName: result.group.name,
+          payeeName: result.group.ownerName,
           amountPounds:
             body.amountMinor !== undefined
               ? Number(body.amountMinor) / 100

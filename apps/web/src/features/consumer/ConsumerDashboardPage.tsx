@@ -83,6 +83,7 @@ export default function ConsumerDashboardPage() {
             kind: "CONTRIBUTION",
             groupId: body.groupId ?? groupId,
             groupName: group.name,
+            payeeName: group.ownerName,
             amountPounds:
               body.amountMinor !== undefined
                 ? Number(body.amountMinor) / 100

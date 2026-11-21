@@ -52,6 +52,54 @@ export class AdminListQueryDto {
   action?: string;
 }
 
+export class AdminPaymentQueryDto {
+  @IsOptional()
+  @IsIn([
+    "all",
+    "PENDING",
+    "PAID",
+    "FAILED",
+    "CANCELLED",
+    "REFUNDED",
+    "PARTIALLY_REFUNDED",
+    "PAID_UNFULFILLED",
+  ])
+  status?: string;
+
+  @IsOptional()
+  @IsIn(["all", "PLAN_ACCESS", "GROUP_CONTRIBUTION"])
+  purpose?: string;
+
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  limit?: number;
+}
+
+export class AdminRefundPaymentDto {
+  /** Refund amount in minor units (pence). Omit for the remaining balance. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  amountMinor?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+}
+
 export class AdminGroupQueryDto {
   @IsOptional() @IsString() type?: string;
   @IsOptional() @IsString() city?: string;

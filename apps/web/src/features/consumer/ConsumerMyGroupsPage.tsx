@@ -107,6 +107,7 @@ export default function ConsumerMyGroupsPage() {
           kind: "CONTRIBUTION",
           groupId: required.groupId,
           groupName: group?.name ?? "Group invitation",
+          payeeName: group?.ownerName,
           amountPounds: required.amountPounds,
           frequency: required.frequency,
           onPaid: async () => {
