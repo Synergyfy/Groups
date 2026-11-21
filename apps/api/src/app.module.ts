@@ -11,6 +11,7 @@ import { McomModule } from "./mcom/mcom.module.js";
 import { PaymentsModule } from "./payments/payments.module.js";
 import { PrismaModule } from "./prisma/prisma.module.js";
 import { ProfileSyncModule } from "./profile-sync/profile-sync.module.js";
+import { SystemModule } from "./system/system.module.js";
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { ProfileSyncModule } from "./profile-sync/profile-sync.module.js";
     ConsumerModule,
     PaymentsModule,
     ProfileSyncModule,
+    SystemModule,
   ],
 })
 export class AppModule {}
