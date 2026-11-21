@@ -10,11 +10,9 @@ import {
   MapPin,
 } from "lucide-react";
 import Badge from "../../components/ui/Badge";
-import type { GroupCircle } from "../../domain/types";
 import { useConsumerData } from "../../consumer/ConsumerDataProvider";
 import {
   evaluateGroupEligibility,
-  inferCityFromPostcode,
   type UserEligibilityProfile,
 } from "../groups/groupEligibility";
 import { readParticipantSession } from "../../app/authSession";
@@ -29,14 +27,14 @@ export default function ConsumerDashboardPage() {
   }, []);
 
   const session = readParticipantSession();
-  const { groups, invitations, join, refresh } = useConsumerData();
+  const { profile, groups, invitations, explore, join, refresh } = useConsumerData();
 
-  const consumerId = session?.role === "consumer" ? (session.accountId || session.email || "") : "";
-  const consumerName = session?.role === "consumer" ? session.name : "John Doe";
-  const postcode = session?.postcode || "B1 2AB";
-  const city = session?.city || inferCityFromPostcode(postcode) || "Birmingham";
+  const consumerId =
+    profile?.id || (session?.role === "consumer" ? session.accountId || session.email || "" : "");
+  const consumerName = profile?.name || (session?.role === "consumer" ? session.name : "") || "Member";
+  const postcode = profile?.postcode || session?.postcode || "";
+  const city = profile?.city || session?.city || "";
 
-  const circles: GroupCircle[] = [];
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [paymentTarget, setPaymentTarget] = useState<PaymentTarget | null>(null);
 
@@ -50,7 +48,6 @@ export default function ConsumerDashboardPage() {
     };
   }, [consumerId, consumerName, city, postcode]);
 
-  const myCircles = circles.filter((circle) => circle.memberIds.includes(consumerId));
   const myGroups = groups;
 
   const pendingInvites = invitations.filter((inv) => inv.kind === "invite" && inv.status === "pending");
@@ -58,17 +55,19 @@ export default function ConsumerDashboardPage() {
   const pendingGroups = pendingInvites.length - pendingCircles.length;
 
   const recommendedGroups = useMemo(() => {
-    return groups
-      .map((g) => evaluateGroupEligibility(g, userProfile, invitations))
+    const seen = new Set(groups.map((group) => group.id));
+    return explore
+      .filter((group) => !seen.has(group.id))
+      .map((group) => evaluateGroupEligibility(group, userProfile, invitations))
       .filter((res) => res.isEligible && res.status !== "joined" && res.status !== "unavailable")
       .slice(0, 3);
-  }, [groups, invitations, userProfile]);
+  }, [explore, groups, invitations, userProfile]);
 
   const handleQuickJoin = async (groupId: string) => {
     try {
       await join(groupId);
     } catch (cause) {
-      const group = groups.find((entry) => entry.id === groupId);
+      const group = [...groups, ...explore].find((entry) => entry.id === groupId);
       if (cause instanceof ApiError) {
         const body = cause.body as
           | {
@@ -107,9 +106,13 @@ export default function ConsumerDashboardPage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <Badge variant="gold">Consumer Community</Badge>
-            <span className="inline-flex items-center gap-1 text-xs text-slate-400">
-              <MapPin className="size-3.5 text-gold-400" /> {city} ({postcode})
-            </span>
+            <Link
+              to="/consumer/account"
+              className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-white"
+            >
+              <MapPin className="size-3.5 text-gold-400" />
+              {city ? `${city}${postcode ? ` (${postcode})` : ""}` : "Set your location"}
+            </Link>
           </div>
           <Link
             to="/consumer/account"
@@ -150,7 +153,7 @@ export default function ConsumerDashboardPage() {
             to="/consumer/discover"
             className="flex flex-col rounded-xl bg-white/5 p-2.5 transition-colors hover:bg-white/10"
           >
-            <span className="text-base font-bold text-white">{recommendedGroups.length}+</span>
+            <span className="text-base font-bold text-white">{explore.length}</span>
             <span className="text-[11px] text-slate-400">Explore Groups</span>
           </Link>
         </div>
@@ -183,12 +186,10 @@ export default function ConsumerDashboardPage() {
 
           <ul className="flex flex-col gap-1.5 border-t border-gold-500/20 pt-2.5">
             {pendingInvites.slice(0, 3).map((invitation) => {
-              const circle = invitation.circleId
-                ? circles.find((entry) => entry.id === invitation.circleId)
-                : undefined;
-              const group = invitation.groupId
-                ? groups.find((g) => g.id === invitation.groupId)
-                : undefined;
+              const label =
+                invitation.circleName ||
+                invitation.groupName ||
+                (invitation.circleId ? "Circle invitation" : "Group invitation");
               return (
                 <li key={invitation.id}>
                   <Link
@@ -196,7 +197,7 @@ export default function ConsumerDashboardPage() {
                     className="flex items-center justify-between gap-3 rounded-lg px-2.5 py-1.5 transition-colors hover:bg-white/5"
                   >
                     <span className="min-w-0 truncate text-xs text-slate-300">
-                      {circle?.config.name ?? group?.name ?? "Special Invitation"}
+                      {label}
                     </span>
                     <span className="flex shrink-0 items-center gap-1.5">
                       <Badge variant={invitation.circleId ? "gold" : "info"}>
@@ -256,7 +257,7 @@ export default function ConsumerDashboardPage() {
                     <div className="flex items-center justify-between gap-2">
                       <Badge variant="info">{group.type}</Badge>
                       <span className="text-[11px] text-slate-400">
-                        {group.memberIds.length} members
+                        {group.memberCount ?? group.memberIds.length} members
                       </span>
                     </div>
                     <Link
@@ -305,7 +306,7 @@ export default function ConsumerDashboardPage() {
               <p className="text-xs text-slate-400">No new recommendations available at the moment.</p>
             ) : (
               <div className="flex flex-col gap-2.5">
-                {recommendedGroups.map(({ group, matchReasons }) => (
+                {recommendedGroups.map(({ group, matchReasons, status }) => (
                   <div
                     key={group.id}
                     className="flex flex-col gap-2 rounded-xl border border-white/5 bg-white/[0.02] p-3 transition-colors hover:bg-white/[0.04] sm:flex-row sm:items-center sm:justify-between"
@@ -324,13 +325,22 @@ export default function ConsumerDashboardPage() {
                       >
                         Details
                       </Link>
-                      <button
-                        type="button"
-                        onClick={() => handleQuickJoin(group.id)}
-                        className="cursor-pointer rounded-lg bg-gold-500 px-3 py-1 text-xs font-bold text-ink-950 transition-colors hover:bg-gold-400"
-                      >
-                        Join
-                      </button>
+                      {status === "invited" ? (
+                        <Link
+                          to="/consumer/invitations"
+                          className="rounded-lg bg-gold-500 px-3 py-1 text-xs font-bold text-ink-950 transition-colors hover:bg-gold-400"
+                        >
+                          Review
+                        </Link>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleQuickJoin(group.id)}
+                          className="cursor-pointer rounded-lg bg-gold-500 px-3 py-1 text-xs font-bold text-ink-950 transition-colors hover:bg-gold-400"
+                        >
+                          {status === "can_request" ? "Request" : "Join"}
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -341,30 +351,34 @@ export default function ConsumerDashboardPage() {
 
         {/* Right Column (1 col): Community Circles & Quick Actions */}
         <aside className="flex flex-col gap-4">
-          {/* Central Circle & Community Hub Card */}
+          {/* Community Hub Card */}
           <div className="flex flex-col gap-3 rounded-2xl border border-gold-500/20 bg-gradient-to-b from-gold-500/[0.08] to-ink-900/60 p-5">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold uppercase tracking-wider text-gold-400">
-                Central Circle
+                Your Community
               </span>
               <span className="rounded-full bg-gold-500/20 px-2 py-0.5 text-[10px] font-semibold text-gold-300">
-                Connected
+                {city ? "Location set" : "Add location"}
               </span>
             </div>
             <div>
-              <p className="text-sm font-bold text-white">Community Central Circle</p>
+              <p className="text-sm font-bold text-white">
+                {city ? `Groups around ${city}` : "Tell us where you are"}
+              </p>
               <p className="mt-1 text-xs text-slate-300">
-                Your direct connection to updates, announcements, and local activities from businesses in your area.
+                {city
+                  ? "Discover local groups and community activity in your area."
+                  : "Add your postcode so we can show groups near you."}
               </p>
             </div>
             <div className="flex flex-col gap-2 border-t border-gold-500/15 pt-3">
               <div className="flex items-center justify-between text-xs text-slate-300">
-                <span>Active circles</span>
-                <span className="font-semibold text-white">{myCircles.length}</span>
+                <span>Joined groups</span>
+                <span className="font-semibold text-white">{myGroups.length}</span>
               </div>
               <div className="flex items-center justify-between text-xs text-slate-300">
-                <span>Community Area</span>
-                <span className="font-semibold text-white">{city}</span>
+                <span>Pending invitations</span>
+                <span className="font-semibold text-white">{pendingInvites.length}</span>
               </div>
             </div>
           </div>

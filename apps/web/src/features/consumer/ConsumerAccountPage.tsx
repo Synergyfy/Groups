@@ -6,12 +6,18 @@ import {
   Shield,
   LogOut,
   MapPin,
-  CheckCircle2,
+  ExternalLink,
 } from "lucide-react";
 import Badge from "../../components/ui/Badge";
 import Card, { CardBody, CardTitle } from "../../components/ui/Card";
-import { readParticipantSession, writeAuthSession } from "../../app/authSession";
-import { inferCityFromPostcode } from "../groups/groupEligibility";
+import { authApi, errorMessage } from "../../app/api";
+import {
+  clearAuthSession,
+  readParticipantSession,
+} from "../../app/authSession";
+import { consumerApi } from "../../consumer/consumerApi";
+import { useConsumerData } from "../../consumer/ConsumerDataProvider";
+import { mcomProfileUrl } from "../../lib/mcomProfile";
 
 export default function ConsumerAccountPage() {
   useEffect(() => {
@@ -20,54 +26,59 @@ export default function ConsumerAccountPage() {
 
   const navigate = useNavigate();
   const session = readParticipantSession();
+  const { profile, refresh } = useConsumerData();
 
-  const consumerName = (session?.role === "consumer" && session.name) ? session.name : "John Doe";
-  const consumerEmail = session?.email || "";
+  const consumerName = profile?.name || session?.name || "Member";
+  const consumerEmail = profile?.email || session?.email || "";
 
-  const [postcode, setPostcode] = useState(session?.postcode || "B1 2AB");
-  const [city, setCity] = useState(session?.city || "Birmingham");
-  const [isSaved, setIsSaved] = useState(false);
+  const [emailUpdates, setEmailUpdates] = useState(
+    profile?.preferences.emailUpdates ?? true,
+  );
+  const [localDiscovery, setLocalDiscovery] = useState(
+    profile?.preferences.localDiscovery ?? true,
+  );
+  const [profileVisible, setProfileVisible] = useState(
+    profile?.preferences.profileVisible ?? true,
+  );
 
-  const [emailNotifs, setEmailNotifs] = useState(true);
-  const [localDiscovery, setLocalDiscovery] = useState(true);
-  const [profileVisible, setProfileVisible] = useState(true);
+  const [feedback, setFeedback] = useState<string | null>(null);
 
-  const handlePostcodeChange = (newVal: string) => {
-    setPostcode(newVal);
-    const inferred = inferCityFromPostcode(newVal);
-    if (inferred) {
-      setCity(inferred);
+  useEffect(() => {
+    if (!profile) return;
+    // Sync the local-only preference toggles once the API profile arrives.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setEmailUpdates(profile.preferences.emailUpdates);
+    setLocalDiscovery(profile.preferences.localDiscovery);
+    setProfileVisible(profile.preferences.profileVisible);
+  }, [profile]);
+
+  const updatePreference = async (
+    field: "emailUpdates" | "localDiscovery" | "profileVisible",
+    value: boolean,
+  ) => {
+    setFeedback(null);
+    if (field === "emailUpdates") setEmailUpdates(value);
+    if (field === "localDiscovery") setLocalDiscovery(value);
+    if (field === "profileVisible") setProfileVisible(value);
+    try {
+      await consumerApi.updatePreferences({ [field]: value });
+      await refresh();
+    } catch (cause) {
+      setFeedback(errorMessage(cause));
     }
   };
 
-  const handleSaveLocation = (e: React.FormEvent) => {
-    e.preventDefault();
-    const cleanPostcode = postcode.trim().toUpperCase() || "B1 2AB";
-    const cleanCity = city.trim() || inferCityFromPostcode(cleanPostcode) || "Birmingham";
-
-    setPostcode(cleanPostcode);
-    setCity(cleanCity);
-
-    if (session) {
-      writeAuthSession({
-        ...session,
-        postcode: cleanPostcode,
-        city: cleanCity,
-      });
+  const handleSignOut = async () => {
+    try {
+      await authApi.logout();
+    } finally {
+      clearAuthSession();
+      navigate("/");
     }
-
-    setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 3000);
-  };
-
-  const handleSignOut = () => {
-    sessionStorage.removeItem("chs-auth-state");
-    navigate("/");
   };
 
   return (
     <div className="flex flex-col gap-6 pb-8">
-      {/* Page Header */}
       <div>
         <div className="flex items-center gap-2">
           <User className="size-5 text-gold-400" />
@@ -75,20 +86,40 @@ export default function ConsumerAccountPage() {
           <Badge variant="gold">Consumer Member</Badge>
         </div>
         <p className="mt-1 text-xs text-slate-400">
-          Manage your personal consumer profile, community location, and notification preferences.
+          Your identity is managed by Central Hub. Manage your local notification
+          and discovery preferences here.
         </p>
       </div>
 
+      {feedback && (
+        <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-xs text-rose-200">
+          {feedback}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Left Column (2 cols): Profile and Location */}
         <div className="flex flex-col gap-5 lg:col-span-2">
-          {/* Identity Card */}
           <Card className="border border-white/10 bg-ink-900/60">
             <CardBody className="p-5">
-              <CardTitle className="text-sm font-bold text-white">Member Identity</CardTitle>
-              <p className="mt-1 text-xs text-slate-400">
-                How your profile appears to organizers and fellow group members.
-              </p>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <CardTitle className="text-sm font-bold text-white">
+                    Member Identity
+                  </CardTitle>
+                  <p className="mt-1 text-xs text-slate-400">
+                    How your profile appears to organizers and fellow group members.
+                  </p>
+                </div>
+                <a
+                  href={mcomProfileUrl()}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-gold-500/30 bg-gold-500/10 px-3 py-2 text-xs font-semibold text-gold-300 transition-colors hover:border-gold-500/60 hover:bg-gold-500/20"
+                >
+                  <ExternalLink className="size-3.5" />
+                  Edit in Central Hub
+                </a>
+              </div>
 
               <div className="mt-4 flex items-center gap-4">
                 <div className="flex size-14 items-center justify-center rounded-2xl bg-gold-500/20 text-lg font-bold text-gold-300 ring-1 ring-gold-500/30">
@@ -102,106 +133,116 @@ export default function ConsumerAccountPage() {
                       Role: Consumer Member
                     </span>
                     <span className="rounded bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-300">
-                      Active
+                      Free access
                     </span>
                   </div>
                 </div>
               </div>
+
+              <div className="mt-5 grid grid-cols-1 gap-3 border-t border-white/10 pt-4 sm:grid-cols-2">
+                <ReadOnlyField label="Full name" value={profile?.name} />
+                <ReadOnlyField label="Phone" value={profile?.phone} />
+                <ReadOnlyField
+                  label="Address"
+                  value={profile?.address}
+                  className="sm:col-span-2"
+                />
+                <ReadOnlyField label="Postcode" value={profile?.postcode} />
+                <ReadOnlyField label="City / Town" value={profile?.city} />
+                <ReadOnlyField
+                  label="Country"
+                  value={profile?.country}
+                  className="sm:col-span-2"
+                />
+              </div>
+              <p className="mt-3 rounded-xl border border-white/10 bg-ink-950/60 px-3 py-2 text-[11px] leading-relaxed text-slate-500">
+                Name, contact details and location are owned by Central Hub. When
+                you save them there, Groups &amp; Circles updates automatically.
+              </p>
             </CardBody>
           </Card>
 
-          {/* Location & Postcode Card */}
           <Card className="border border-white/10 bg-ink-900/60">
             <CardBody className="p-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
-                    <MapPin className="size-4 text-gold-400" /> Community Location &amp; Postcode
-                  </CardTitle>
-                  <p className="mt-1 text-xs text-slate-400">
-                    Your location determines which local groups, circles, and meetups you are eligible to discover.
-                  </p>
-                </div>
+              <div>
+                <CardTitle className="flex items-center gap-2 text-sm font-bold text-white">
+                  <MapPin className="size-4 text-gold-400" /> Community Location
+                </CardTitle>
+                <p className="mt-1 text-xs text-slate-400">
+                  Your location determines which local groups and meetups we can
+                  recommend.
+                </p>
               </div>
 
-              {isSaved && (
-                <div className="mt-3 flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/15 p-2.5 text-xs font-semibold text-emerald-200">
-                  <CheckCircle2 className="size-4 text-emerald-400" />
-                  Location successfully updated!
+              <div className="mt-4 flex flex-col gap-4">
+                <div className="rounded-xl border border-white/10 bg-ink-950/60 p-3">
+                  <p className="text-[10px] font-semibold uppercase text-slate-400">
+                    Current location
+                  </p>
+                  <p className="mt-1 flex items-center gap-2 text-xs font-semibold text-white">
+                    <MapPin className="size-4 shrink-0 text-gold-400" />
+                    {profile?.city || "Not set"}
+                    {profile?.postcode ? (
+                      <span className="font-normal text-slate-400">
+                        · {profile.postcode}
+                      </span>
+                    ) : null}
+                  </p>
                 </div>
-              )}
-
-              <form onSubmit={handleSaveLocation} className="mt-4 flex flex-col gap-4">
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <label className="flex flex-col gap-1 text-xs text-slate-300">
-                    <span>Postcode</span>
-                    <input
-                      type="text"
-                      value={postcode}
-                      onChange={(e) => handlePostcodeChange(e.target.value)}
-                      placeholder="e.g. B1 2AB"
-                      className="rounded-xl border border-white/10 bg-ink-950 px-3 py-2 text-xs text-white placeholder-slate-500 outline-none focus:border-gold-500"
-                    />
-                  </label>
-
-                  <label className="flex flex-col gap-1 text-xs text-slate-300">
-                    <span>Inferred City / Town</span>
-                    <input
-                      type="text"
-                      value={city}
-                      onChange={(e) => setCity(e.target.value)}
-                      placeholder="e.g. Birmingham"
-                      className="rounded-xl border border-white/10 bg-ink-950 px-3 py-2 text-xs text-white placeholder-slate-500 outline-none focus:border-gold-500"
-                    />
-                  </label>
-                </div>
-
-                <div className="flex items-center justify-end">
-                  <button
-                    type="submit"
-                    className="cursor-pointer rounded-xl bg-gold-500 px-4 py-2 text-xs font-bold text-ink-950 transition-colors hover:bg-gold-400"
-                  >
-                    Save Location
-                  </button>
-                </div>
-              </form>
+                <a
+                  href={mcomProfileUrl()}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 py-2.5 text-xs font-semibold text-slate-300 transition-colors hover:border-gold-500/30 hover:bg-gold-500/10 hover:text-gold-300"
+                >
+                  <ExternalLink className="size-4" /> Update location in Central Hub
+                </a>
+              </div>
             </CardBody>
           </Card>
 
-          {/* Privacy & Discovery Settings */}
           <Card className="border border-white/10 bg-ink-900/60">
             <CardBody className="p-5">
-              <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
+              <CardTitle className="flex items-center gap-2 text-sm font-bold text-white">
                 <Shield className="size-4 text-gold-400" /> Privacy &amp; Group Discovery
               </CardTitle>
 
               <div className="mt-4 flex flex-col gap-3">
-                <label className="flex items-center justify-between rounded-xl bg-white/[0.02] p-3 border border-white/5">
+                <label className="flex items-center justify-between rounded-xl border border-white/5 bg-white/[0.02] p-3">
                   <div className="flex flex-col">
-                    <span className="text-xs font-semibold text-white">Local Group Discovery</span>
+                    <span className="text-xs font-semibold text-white">
+                      Local Group Discovery
+                    </span>
                     <span className="text-[11px] text-slate-400">
-                      Allow local organizers in {city} to recommend relevant community groups.
+                      Allow local organizers to recommend relevant community groups.
                     </span>
                   </div>
                   <input
                     type="checkbox"
                     checked={localDiscovery}
-                    onChange={(e) => setLocalDiscovery(e.target.checked)}
+                    onChange={(e) =>
+                      void updatePreference("localDiscovery", e.target.checked)
+                    }
                     className="size-4 accent-gold-500"
                   />
                 </label>
 
-                <label className="flex items-center justify-between rounded-xl bg-white/[0.02] p-3 border border-white/5">
+                <label className="flex items-center justify-between rounded-xl border border-white/5 bg-white/[0.02] p-3">
                   <div className="flex flex-col">
-                    <span className="text-xs font-semibold text-white">Profile Visible in Groups</span>
+                    <span className="text-xs font-semibold text-white">
+                      Profile Visible in Groups
+                    </span>
                     <span className="text-[11px] text-slate-400">
-                      Show your display name and location avatar in joined group member lists.
+                      Show your display name and location avatar in joined group
+                      member lists.
                     </span>
                   </div>
                   <input
                     type="checkbox"
                     checked={profileVisible}
-                    onChange={(e) => setProfileVisible(e.target.checked)}
+                    onChange={(e) =>
+                      void updatePreference("profileVisible", e.target.checked)
+                    }
                     className="size-4 accent-gold-500"
                   />
                 </label>
@@ -210,25 +251,29 @@ export default function ConsumerAccountPage() {
           </Card>
         </div>
 
-        {/* Right Column (1 col): Notifications and Actions */}
         <div className="flex flex-col gap-5">
-          {/* Notifications Card */}
           <Card className="border border-white/10 bg-ink-900/60">
             <CardBody className="p-5">
-              <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
+              <CardTitle className="flex items-center gap-2 text-sm font-bold text-white">
                 <Bell className="size-4 text-gold-400" /> Notifications
               </CardTitle>
 
               <div className="mt-3 flex flex-col gap-3">
-                <label className="flex items-center justify-between rounded-xl bg-white/[0.02] p-3 border border-white/5">
+                <label className="flex items-center justify-between rounded-xl border border-white/5 bg-white/[0.02] p-3">
                   <div className="flex flex-col">
-                    <span className="text-xs font-semibold text-white">Email Updates</span>
-                    <span className="text-[10px] text-slate-400">Invitations &amp; event reminders</span>
+                    <span className="text-xs font-semibold text-white">
+                      Email Updates
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      Invitations &amp; event reminders
+                    </span>
                   </div>
                   <input
                     type="checkbox"
-                    checked={emailNotifs}
-                    onChange={(e) => setEmailNotifs(e.target.checked)}
+                    checked={emailUpdates}
+                    onChange={(e) =>
+                      void updatePreference("emailUpdates", e.target.checked)
+                    }
                     className="size-4 accent-gold-500"
                   />
                 </label>
@@ -236,14 +281,15 @@ export default function ConsumerAccountPage() {
             </CardBody>
           </Card>
 
-          {/* Account Actions */}
           <Card className="border border-white/10 bg-ink-900/60">
-            <CardBody className="p-5 flex flex-col gap-3">
-              <CardTitle className="text-sm font-bold text-white">Account Actions</CardTitle>
+            <CardBody className="flex flex-col gap-3 p-5">
+              <CardTitle className="text-sm font-bold text-white">
+                Account Actions
+              </CardTitle>
               <button
                 type="button"
-                onClick={handleSignOut}
-                className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 py-2.5 text-xs font-semibold text-slate-300 transition-colors hover:bg-rose-500/10 hover:border-rose-500/30 hover:text-rose-300"
+                onClick={() => void handleSignOut()}
+                className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 py-2.5 text-xs font-semibold text-slate-300 transition-colors hover:border-rose-500/30 hover:bg-rose-500/10 hover:text-rose-300"
               >
                 <LogOut className="size-4" /> Sign Out of CHS
               </button>
@@ -252,5 +298,28 @@ export default function ConsumerAccountPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function ReadOnlyField({
+  label,
+  value,
+  className = "",
+}: {
+  label: string;
+  value?: string | null;
+  className?: string;
+}) {
+  return (
+    <label className={`flex flex-col gap-1 text-xs text-slate-300 ${className}`}>
+      <span>{label}</span>
+      <input
+        type="text"
+        value={value ?? ""}
+        readOnly
+        placeholder="Not set in Central Hub"
+        className="cursor-not-allowed rounded-xl border border-white/10 bg-ink-950 px-3 py-2 text-xs text-slate-300 opacity-80 outline-none placeholder-slate-500"
+      />
+    </label>
   );
 }

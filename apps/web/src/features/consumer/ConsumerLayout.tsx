@@ -15,9 +15,12 @@ import { authApi } from "../../app/api";
 export default function ConsumerLayout() {
   const navigate = useNavigate();
   const session = readParticipantSession();
-  const { groups, invitations } = useConsumerData();
+  const { groups, invitations, profile } = useConsumerData();
 
-  const consumerName = session?.role === "consumer" ? session.name : "John Doe";
+  const consumerName =
+    profile?.name ||
+    (session?.role === "consumer" ? session.name : undefined) ||
+    "Member";
 
   const pendingInvites = invitations.filter(
     (inv) => inv.kind === "invite" && inv.status === "pending"

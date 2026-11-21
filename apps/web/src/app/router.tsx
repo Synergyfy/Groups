@@ -66,6 +66,9 @@ import ConsumerDashboardPage from "../features/consumer/ConsumerDashboardPage";
 import DedicatedConsumerMyGroupsPage from "../features/consumer/ConsumerMyGroupsPage";
 import DedicatedConsumerDiscoverGroupsPage from "../features/consumer/ConsumerDiscoverGroupsPage";
 import ConsumerInvitationsPage from "../features/consumer/ConsumerInvitationsPage";
+import ConsumerInvitationReviewPage from "../features/consumer/ConsumerInvitationReviewPage";
+import ConsumerGroupDetailPage from "../features/consumer/ConsumerGroupDetailPage";
+import ConsumerCircleDetailPage from "../features/consumer/ConsumerCircleDetailPage";
 import ConsumerAccountPage from "../features/consumer/ConsumerAccountPage";
 import { ConsumerDataProvider } from "../consumer/ConsumerDataProvider";
 import {
@@ -364,9 +367,9 @@ export const routes: RouteObject[] = [
       { path: "my-groups", element: <DedicatedConsumerMyGroupsPage /> },
       { path: "discover", element: <DedicatedConsumerDiscoverGroupsPage /> },
       { path: "invitations", element: <ConsumerInvitationsPage /> },
-      { path: "invitations/:invitationId/review", element: <InvitationReviewPage /> },
-      { path: "groups/:groupId", element: <ParticipantGroupPage /> },
-      { path: "circles/:groupId", element: <ParticipantCircleDetailPage /> },
+      { path: "invitations/:invitationId/review", element: <ConsumerInvitationReviewPage /> },
+      { path: "groups/:groupId", element: <ConsumerGroupDetailPage /> },
+      { path: "circles/:groupId", element: <ConsumerCircleDetailPage /> },
       { path: "account", element: <ConsumerAccountPage /> },
       { path: "*", element: <NotFoundPage /> },
     ],

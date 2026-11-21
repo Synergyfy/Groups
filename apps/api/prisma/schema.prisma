@@ -146,6 +146,8 @@ model PlatformAccount {
 
 model Business {
   id               String   @id
+  /// The immutable Central Hub user id that owns this business profile.
+  mcomUserId       String?  @unique @map("mcom_user_id")
   name             String
   contactName      String   @map("contact_name")
   email            String   @unique
@@ -540,6 +542,28 @@ model LocationArea {
   @@unique([cityId, name])
   @@index([cityId])
   @@map("location_areas")
+}
+
+// ---------------------------------------------------------------------------
+// Central Hub profile sync
+// ---------------------------------------------------------------------------
+
+/// Receipt log for `profile.updated` webhooks pushed by Central Hub. The event
+/// id is the dedupe key because Central Hub delivers at-least-once.
+model McomProfileEvent {
+  eventId     String    @id @map("event_id")
+  platform    String?
+  eventType   String    @map("event_type")
+  userId      String?   @map("user_id")
+  status      String    @default("processing")
+  attempts    Int       @default(1)
+  error       String?
+  receivedAt  DateTime  @default(now()) @map("received_at")
+  processedAt DateTime? @map("processed_at")
+
+  @@index([status])
+  @@index([receivedAt])
+  @@map("mcom_profile_events")
 }
 
 // ---------------------------------------------------------------------------

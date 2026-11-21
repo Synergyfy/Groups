@@ -19,10 +19,20 @@ import Button from "../../components/ui/Button";
 import Card, { CardBody } from "../../components/ui/Card";
 import ChsLogo from "../../components/ui/ChsLogo";
 import ChsAuthTransition from "../../components/ui/ChsAuthTransition";
+import { authApi, errorMessage } from "../../app/api";
 import { readAuthSession, writeAuthSession } from "../../app/authSession";
 import { useGroup, useInvitation } from "../../store/selectors";
 import { useAppStore } from "../../store/context";
 import type { Group, Invitation } from "../../domain/types";
+import {
+  consumerApi,
+  publicInvitationApi,
+  type PublicInvitationResponse,
+} from "../../consumer/consumerApi";
+import PaymentDialog, {
+  type PaymentTarget,
+} from "../payments/PaymentDialog";
+import { paymentRequiredDetails } from "../payments/paymentsApi";
 
 interface GroupInvitationLandingPageProps {
   targetAudience?: "business" | "consumer";
@@ -37,9 +47,42 @@ export default function GroupInvitationLandingPage({
   const navigate = useNavigate();
   const { dispatch } = useAppStore();
 
-  const id = invitationId || searchParams.get("invitationId") || "inv-001";
+  const id = invitationId || searchParams.get("invitationId") || "";
   const realInvitation = useInvitation(id);
   const realGroup = useGroup(realInvitation?.groupId);
+
+  const [remote, setRemote] = useState<PublicInvitationResponse | null>(null);
+  const [remoteLoading, setRemoteLoading] = useState(Boolean(id));
+  const [remoteError, setRemoteError] = useState<string | null>(
+    id ? null : "This invitation link is missing an invitation id.",
+  );
+
+  useEffect(() => {
+    if (!id) return;
+
+    let active = true;
+    publicInvitationApi
+      .get(id)
+      .then((result) => {
+        if (!active) return;
+        setRemote(result);
+        setRemoteError(null);
+      })
+      .catch((cause) => {
+        if (!active) return;
+        setRemote(null);
+        setRemoteError(errorMessage(cause));
+      })
+      .finally(() => {
+        if (active) setRemoteLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [id]);
+
+  const remoteGroup = remote?.group;
 
   // Detect audience from prop, URL route, or invitation metadata
   const detectedAudience: "business" | "consumer" = (() => {
@@ -51,14 +94,25 @@ export default function GroupInvitationLandingPage({
     const queryAudience = searchParams.get("audience");
     if (queryAudience === "business") return "business";
     if (queryAudience === "consumer") return "consumer";
+    if (remote?.inviteeRole === "business-invitee") return "business";
     if (realInvitation?.inviteeRole === "business-invitee") return "business";
-    if (realGroup?.type === "B2B" || realGroup?.type === "Partner" || realGroup?.type === "Marketing") {
+    if (
+      remoteGroup?.type === "B2B" ||
+      remoteGroup?.type === "Partner" ||
+      remoteGroup?.type === "Marketing" ||
+      realGroup?.type === "B2B" ||
+      realGroup?.type === "Partner" ||
+      realGroup?.type === "Marketing"
+    ) {
       return "business";
     }
     return "consumer";
   })();
 
-  const [audience, setAudience] = useState<"business" | "consumer">(detectedAudience);
+  const [audienceOverride, setAudienceOverride] = useState<
+    "business" | "consumer" | null
+  >(null);
+  const audience = audienceOverride ?? detectedAudience;
 
   useEffect(() => {
     document.title =
@@ -68,29 +122,56 @@ export default function GroupInvitationLandingPage({
   }, [audience]);
 
   const invitation: Invitation = realInvitation || {
-    id,
-    groupId: undefined,
+    id: remote?.id || id,
+    groupId: remoteGroup?.id,
+    circleId: remote?.circle?.id,
     direction: "incoming",
     kind: "invite",
     inviteeName: "",
-    invitedById: "",
-    invitedByName: "",
-    status: "cancelled",
-    createdAt: new Date().toISOString(),
+    invitedById: remote?.invitedById || "",
+    invitedByName: remote?.invitedByName || "",
+    status: (remote?.status as Invitation["status"]) || "cancelled",
+    createdAt: remote?.createdAt || new Date().toISOString(),
+    respondedAt: remote?.respondedAt ?? undefined,
+    groupName: remoteGroup?.name,
+    circleName: remote?.circle?.name,
   };
 
   const group: Group = realGroup || {
-    id: invitation.groupId || id,
-    name: "",
-    type: "Other",
+    id: remoteGroup?.id || remote?.circle?.id || id,
+    name:
+      remoteGroup?.name ||
+      remote?.circle?.name ||
+      (remote ? "Invited community" : ""),
+    type: (remoteGroup?.type as Group["type"]) || "Other",
     source: "user-created",
-    purpose: "",
-    ownerId: "",
-    ownerName: "",
+    purpose:
+      remoteGroup?.purpose ||
+      remoteGroup?.description ||
+      (remote?.circle
+        ? `You have been invited to join ${remote.circle.name}.`
+        : ""),
+    ownerId: remoteGroup?.ownerId || "",
+    ownerName: remoteGroup?.ownerName || remote?.circle?.businessName || "",
     memberIds: [],
-    status: "Closed",
-    accessType: "invitation",
-    createdAt: "",
+    memberCount: remoteGroup?.memberCount ?? remote?.circle?.memberCount ?? 0,
+    location: {
+      city: remoteGroup?.city ?? undefined,
+      localArea: remoteGroup?.localArea ?? undefined,
+    },
+    requiredSize: remoteGroup?.requiredSize ?? undefined,
+    status: (remoteGroup?.status as Group["status"]) || "Active",
+    accessType: (remoteGroup?.accessType as Group["accessType"]) || "invitation",
+    visibility: (remoteGroup?.directoryVisibility as Group["visibility"]) ?? undefined,
+    interactionLevel: (remoteGroup?.interactionLevel as Group["interactionLevel"]) ?? undefined,
+    pricing: (remoteGroup?.pricing as Group["pricing"]) || "free",
+    requiredPlanIds: remoteGroup?.requiredPlanIds ?? [],
+    contribution: remoteGroup?.contribution ?? undefined,
+    contributionMinor: remoteGroup?.contributionMinor ?? undefined,
+    contributionFrequency:
+      (remoteGroup?.contributionFrequency as Group["contributionFrequency"]) ??
+      undefined,
+    createdAt: remoteGroup?.createdAt || "",
   };
 
   const session = readAuthSession();
@@ -109,6 +190,10 @@ export default function GroupInvitationLandingPage({
 
   const [transitioning, setTransitioning] = useState(false);
   const [targetDestination, setTargetDestination] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [paymentTarget, setPaymentTarget] = useState<PaymentTarget | null>(null);
 
   // Edge cases
   const isSuspended = group.status === "Suspended";
@@ -137,9 +222,9 @@ export default function GroupInvitationLandingPage({
       name: name.trim(),
       businessName: businessName.trim(),
       accountId: email.split("@")[0],
-      city: group.location?.city || "Birmingham",
-      postcode: "NW1 8AB",
-      sector: "Food & Hospitality",
+      city: group.location?.city || session?.city || "",
+      postcode: session?.postcode || "",
+      sector: session?.sector || "",
       verifiedBusiness: false,
     });
 
@@ -148,33 +233,54 @@ export default function GroupInvitationLandingPage({
     setTransitioning(true);
   };
 
-  // Customer invite completion:
-  // Gives direct access to the Consumer Dashboard with NO onboarding needed.
-  const handleCompleteCustomerInvite = () => {
-    // 1. Dispatch invitation acceptance in store
-    if (invitation.id) {
-      dispatch({
-        type: "invitation/respond",
-        invitationId: invitation.id,
-        accept: true,
-        responder: { id: email.split("@")[0], name: name.trim() },
-      });
+  // Customer invite completion: consumers sign in through Central Hub and the
+  // API accepts the invitation. No local-only session or plan is required.
+  const handleCompleteCustomerInvite = async () => {
+    if (!invitation.id) return;
+
+    if (!isAuthenticated || session?.role !== "consumer") {
+      window.location.assign(
+        authApi.mcomLoginUrl(`${location.pathname}${location.search}`),
+      );
+      return;
     }
 
-    // 2. Write auth session as Consumer
-    writeAuthSession({
-      role: "consumer",
-      authenticated: true,
-      email: email.trim(),
-      name: name.trim(),
-      accountId: session?.accountId || session?.email || "",
-      city: group.location?.city || "Birmingham",
-      postcode: "B1 2AB",
-    });
-
-    // 3. Navigate directly to Consumer Dashboard
-    setTargetDestination("/consumer");
-    setTransitioning(true);
+    setBusy(true);
+    setFeedback(null);
+    try {
+      await consumerApi.respondInvitation(invitation.id, true);
+      setTargetDestination(
+        invitation.circleId
+          ? `/consumer/circles/${invitation.circleId}`
+          : "/consumer",
+      );
+      setTransitioning(true);
+    } catch (cause) {
+      const required = paymentRequiredDetails(cause);
+      if (required) {
+        setPaymentTarget({
+          kind: "CONTRIBUTION",
+          groupId: required.groupId,
+          groupName: group.name || "Group",
+          amountPounds: required.amountPounds,
+          frequency: required.frequency,
+          onPaid: async () => {
+            await consumerApi.respondInvitation(invitation.id, true);
+            setTargetDestination(
+              invitation.circleId
+                ? `/consumer/circles/${invitation.circleId}`
+                : "/consumer",
+            );
+            setTransitioning(true);
+          },
+        });
+        setPaymentOpen(true);
+        return;
+      }
+      setFeedback(errorMessage(cause));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleTransitionComplete = () => {
@@ -182,6 +288,36 @@ export default function GroupInvitationLandingPage({
       navigate(targetDestination, { replace: true });
     }
   };
+
+  if (remoteLoading && !realInvitation) {
+    return (
+      <div className="flex min-h-[calc(100vh-60px)] items-center justify-center px-4">
+        <p className="text-sm text-slate-400">Loading invitation…</p>
+      </div>
+    );
+  }
+
+  if ((remoteError || !id) && !realInvitation) {
+    return (
+      <div className="flex min-h-[calc(100vh-60px)] items-center justify-center px-4">
+        <Card className="w-full max-w-md border border-white/10 bg-ink-900/95">
+          <CardBody className="flex flex-col items-center gap-3 p-8 text-center">
+            <ShieldAlert className="size-9 text-rose-400" />
+            <h1 className="text-lg font-bold text-white">Invitation unavailable</h1>
+            <p className="text-xs leading-relaxed text-slate-400">
+              {remoteError || "This invitation link is not valid."}
+            </p>
+            <Link
+              to="/login"
+              className="mt-2 rounded-xl bg-gold-500 px-4 py-2 text-xs font-bold text-ink-950"
+            >
+              Go to sign in
+            </Link>
+          </CardBody>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-[calc(100vh-60px)] flex-col items-center justify-center px-4 py-8 sm:px-6">
@@ -326,7 +462,7 @@ export default function GroupInvitationLandingPage({
                 )}
                 <span className="flex items-center gap-1 rounded-md bg-white/5 px-2 py-1">
                   <Users className="size-3 text-sky-400" />
-                  {group.memberIds.length} members
+                  {group.memberCount ?? group.memberIds.length} members
                 </span>
                 <span className="flex items-center gap-1 rounded-md bg-white/5 px-2 py-1 capitalize">
                   <Globe className="size-3 text-emerald-400" />
@@ -382,92 +518,110 @@ export default function GroupInvitationLandingPage({
               <div className="flex flex-col gap-4">
                 {isAuthenticated ? (
                   <div className="flex flex-col gap-3">
-                    <Button
-                      variant="primary"
-                      size="lg"
-                      onClick={() => {
-                        if (session?.role === "business") {
-                          navigate("/business/groups");
-                        } else {
-                          navigate("/participant");
-                        }
-                      }}
-                      className="w-full justify-center shadow-lg shadow-gold-500/20"
-                    >
-                      Continue to Your Dashboard <ArrowRight className="size-4" />
-                    </Button>
-                    <p className="text-center text-[11px] text-slate-400">
-                      Logged in as <strong className="text-white">{session?.name || session?.email}</strong>
-                    </p>
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-4">
-                    {/* User Details Form */}
-                    <div className="flex flex-col gap-3">
-                      {audience === "business" && (
-                        <div>
-                          <label className="mb-1 block text-xs font-semibold text-slate-300">
-                            Business / Trading Name
-                          </label>
-                          <div className="relative">
-                            <Building2 className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" />
-                            <input
-                              type="text"
-                              value={businessName}
-                              onChange={(e) => setBusinessName(e.target.value)}
-                              placeholder="e.g. Rostova Hospitality Ltd"
-                              className="w-full rounded-xl border border-white/10 bg-ink-950 py-2.5 pl-9 pr-3 text-xs text-white placeholder-slate-500 outline-none focus:border-gold-500"
-                            />
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="mb-1 block text-xs font-semibold text-slate-300">
-                            Your Name
-                          </label>
-                          <input
-                            type="text"
-                            value={name}
-                            onChange={(e) => setName(e.target.value)}
-                            placeholder="e.g. Alex Smith"
-                            className="w-full rounded-xl border border-white/10 bg-ink-950 px-3 py-2.5 text-xs text-white placeholder-slate-500 outline-none focus:border-gold-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="mb-1 block text-xs font-semibold text-slate-300">
-                            Email Address
-                          </label>
-                          <input
-                            type="email"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            placeholder="name@example.com"
-                            className="w-full rounded-xl border border-white/10 bg-ink-950 px-3 py-2.5 text-xs text-white placeholder-slate-500 outline-none focus:border-gold-500"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Submit CTA */}
-                    {audience === "business" ? (
+                    {audience === "consumer" ? (
                       <Button
                         variant="primary"
                         size="lg"
-                        onClick={handleCompleteBusinessInvite}
-                        className="w-full justify-center text-sm font-bold shadow-lg shadow-gold-500/20 py-3.5"
+                        disabled={busy}
+                        onClick={() => void handleCompleteCustomerInvite()}
+                        className="w-full justify-center shadow-lg shadow-gold-500/20"
                       >
-                        Accept &amp; Access Participant Dashboard <ArrowRight className="size-4" />
+                        {busy ? "Joining…" : "Accept invitation & open dashboard"}{" "}
+                        <ArrowRight className="size-4" />
                       </Button>
                     ) : (
                       <Button
                         variant="primary"
                         size="lg"
-                        onClick={handleCompleteCustomerInvite}
+                        onClick={() => {
+                          if (session?.role === "business") {
+                            navigate("/business/groups");
+                          } else {
+                            navigate("/participant");
+                          }
+                        }}
+                        className="w-full justify-center shadow-lg shadow-gold-500/20"
+                      >
+                        Continue to Your Dashboard <ArrowRight className="size-4" />
+                      </Button>
+                    )}
+                    <p className="text-center text-[11px] text-slate-400">
+                      Logged in as <strong className="text-white">{session?.name || session?.email}</strong>
+                    </p>
+                    {feedback && (
+                      <p className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[11px] text-rose-200">
+                        {feedback}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-4">
+                    {audience === "business" ? (
+                      <>
+                        {/* User Details Form */}
+                        <div className="flex flex-col gap-3">
+                          <div>
+                            <label className="mb-1 block text-xs font-semibold text-slate-300">
+                              Business / Trading Name
+                            </label>
+                            <div className="relative">
+                              <Building2 className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" />
+                              <input
+                                type="text"
+                                value={businessName}
+                                onChange={(e) => setBusinessName(e.target.value)}
+                                placeholder="e.g. Rostova Hospitality Ltd"
+                                className="w-full rounded-xl border border-white/10 bg-ink-950 py-2.5 pl-9 pr-3 text-xs text-white placeholder-slate-500 outline-none focus:border-gold-500"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="mb-1 block text-xs font-semibold text-slate-300">
+                                Your Name
+                              </label>
+                              <input
+                                type="text"
+                                value={name}
+                                onChange={(e) => setName(e.target.value)}
+                                placeholder="e.g. Alex Smith"
+                                className="w-full rounded-xl border border-white/10 bg-ink-950 px-3 py-2.5 text-xs text-white placeholder-slate-500 outline-none focus:border-gold-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="mb-1 block text-xs font-semibold text-slate-300">
+                                Email Address
+                              </label>
+                              <input
+                                type="email"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                placeholder="name@example.com"
+                                className="w-full rounded-xl border border-white/10 bg-ink-950 px-3 py-2.5 text-xs text-white placeholder-slate-500 outline-none focus:border-gold-500"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        <Button
+                          variant="primary"
+                          size="lg"
+                          onClick={handleCompleteBusinessInvite}
+                          className="w-full justify-center text-sm font-bold shadow-lg shadow-gold-500/20 py-3.5"
+                        >
+                          Accept &amp; Access Participant Dashboard <ArrowRight className="size-4" />
+                        </Button>
+                      </>
+                    ) : (
+                      <Button
+                        variant="primary"
+                        size="lg"
+                        onClick={() => void handleCompleteCustomerInvite()}
                         className="w-full justify-center text-sm font-bold shadow-lg shadow-gold-500/20 py-3.5"
                       >
-                        Accept &amp; Open Consumer Dashboard <ArrowRight className="size-4" />
+                        Sign in with Central Hub to accept{" "}
+                        <ArrowRight className="size-4" />
                       </Button>
                     )}
 
@@ -478,7 +632,9 @@ export default function GroupInvitationLandingPage({
                         <button
                           type="button"
                           onClick={() =>
-                            setAudience(audience === "business" ? "consumer" : "business")
+                            setAudienceOverride(
+                              audience === "business" ? "consumer" : "business",
+                            )
                           }
                           className="cursor-pointer font-semibold text-gold-300 hover:text-gold-200 underline"
                         >
@@ -499,6 +655,12 @@ export default function GroupInvitationLandingPage({
           </CardBody>
         </Card>
       </div>
+
+      <PaymentDialog
+        open={paymentOpen}
+        onClose={() => setPaymentOpen(false)}
+        target={paymentTarget}
+      />
 
       {/* Auth Transition */}
       {transitioning && (

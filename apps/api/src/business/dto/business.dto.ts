@@ -7,7 +7,6 @@ import {
   IsIn,
   IsInt,
   IsNumber,
-  IsObject,
   IsOptional,
   IsString,
   IsUUID,
@@ -262,12 +261,4 @@ export class ActivatePlanDto {
   @IsBoolean() agreementAccepted!: boolean;
 }
 
-export class UpdateBusinessProfileDto {
-  @IsOptional() @IsString() @MaxLength(160) name?: string;
-  @IsOptional() @IsString() @MaxLength(160) contactName?: string;
-  @IsOptional() @IsString() @MaxLength(40) phone?: string;
-  @IsOptional() @IsString() @MaxLength(80) city?: string;
-  @IsOptional() @IsString() @MaxLength(80) localArea?: string;
-  @IsOptional() @IsString() @MaxLength(80) category?: string;
-  @IsOptional() @IsObject() businessProfile?: Record<string, unknown>;
-}
+

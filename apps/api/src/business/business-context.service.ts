@@ -173,6 +173,13 @@ export class BusinessContextService {
       ? await this.prisma.business.findUnique({ where: { id: user.businessId } })
       : null;
 
+    // Prefer the immutable Central Hub id over the email, which can change.
+    if (!business && user.mcomUserId) {
+      business = await this.prisma.business.findUnique({
+        where: { mcomUserId: user.mcomUserId },
+      });
+    }
+
     if (!business) {
       const byEmail = await this.prisma.business.findUnique({
         where: { email: user.email.trim().toLowerCase() },
@@ -197,6 +204,7 @@ export class BusinessContextService {
         business = await this.prisma.business.create({
           data: {
             id: user.businessId ?? `biz-${randomUUID()}`,
+            mcomUserId: user.mcomUserId ?? undefined,
             name,
             contactName:
               firstNonEmpty(user.fullName, user.displayName, name) ?? name,
@@ -226,6 +234,31 @@ export class BusinessContextService {
           },
         });
         if (!business) throw error;
+      }
+    }
+
+    if (user.mcomUserId && business.mcomUserId !== user.mcomUserId) {
+      try {
+        business = await this.prisma.business.update({
+          where: { id: business.id },
+          data: { mcomUserId: user.mcomUserId },
+        });
+      } catch (error) {
+        // Another local row already owns this Central Hub id (for example after
+        // a historical email-based duplicate). Use that row instead.
+        if (
+          typeof error === "object" &&
+          error !== null &&
+          "code" in error &&
+          (error as { code?: unknown }).code === "P2002"
+        ) {
+          const byCentralId = await this.prisma.business.findUnique({
+            where: { mcomUserId: user.mcomUserId },
+          });
+          if (byCentralId) business = byCentralId;
+        } else {
+          throw error;
+        }
       }
     }
 

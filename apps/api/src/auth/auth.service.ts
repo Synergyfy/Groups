@@ -15,6 +15,7 @@ import { PrismaService } from "../prisma/prisma.service.js";
 import { jsonObject } from "../admin/admin.mappers.js";
 import { McomService } from "../mcom/mcom.service.js";
 import { decideAccess } from "./entitlement-access.js";
+import { normalizeRole, toUserRole } from "./roles.js";
 import type {
   McomEntitlement,
   McomProfile,
@@ -256,6 +257,13 @@ export class AuthService {
       });
     }
 
+    // Consumer, agent, consultant, account-manager and partner dashboards are
+    // free. Only business workspaces need a Central Hub membership, access pass
+    // or trial.
+    if (role !== "BUSINESS") {
+      return;
+    }
+
     if (
       this.config
         .get<string>("MCOM_ENFORCE_ENTITLEMENTS", "true")
@@ -374,15 +382,80 @@ export class AuthService {
       lastLoginAt: new Date(),
     };
 
-    const existing = await this.prisma.user.findUnique({
+    const centralId = profile.id ?? profile.sub ?? null;
+    // The Central Hub id never changes; email does. Prefer the id so an email
+    // edit in Central Hub updates the same local row instead of creating a new
+    // account (or hitting the unique mcomUserId constraint).
+    const existingByCentral = centralId
+      ? await this.prisma.user.findUnique({
+          where: { mcomUserId: centralId },
+          select: {
+            id: true,
+            email: true,
+            mcomUserId: true,
+            customerProfile: true,
+          },
+        })
+      : null;
+    const existingByEmail = await this.prisma.user.findUnique({
       where: { email },
-      select: { id: true },
+      select: {
+        id: true,
+        email: true,
+        mcomUserId: true,
+        customerProfile: true,
+      },
     });
-    const user = await this.prisma.user.upsert({
-      where: { email },
-      create: { email, ...common },
-      update: common,
-    });
+    const existing = existingByCentral ?? existingByEmail;
+    const emailTakenByOther =
+      existingByEmail !== null &&
+      existing !== null &&
+      existingByEmail.id !== existing.id;
+
+    const existingCustomerProfile = jsonObject(existing?.customerProfile);
+    const incomingCustomerProfile = jsonObject(profile.customerProfile);
+    const mergedCustomerProfile = mergeDefined(
+      existingCustomerProfile,
+      incomingCustomerProfile,
+    );
+    const hasIncomingName = Boolean(
+      profile.fullName?.trim() ||
+        profile.name?.trim() ||
+        firstName ||
+        lastName,
+    );
+
+    // Central Hub is authoritative for identity and membership, but locally
+    // managed consumer profile fields (location, phone, preferences) must not
+    // be wiped just because the SSO payload omits them.
+    const update = {
+      ...common,
+      mcomUserId: centralId ?? existing?.mcomUserId ?? null,
+      email: emailTakenByOther ? existing!.email : email,
+      ...(hasIncomingName ? { fullName, displayName } : {}),
+      jobTitle: optionalText(profile.jobTitle),
+      avatarUrl: optionalText(profile.avatarUrl),
+      phone: optionalText(profile.phone),
+      address: optionalText(profile.address),
+      postcode: optionalText(profile.postcode),
+      country: optionalText(profile.country),
+      customerProfile:
+        Object.keys(mergedCustomerProfile).length > 0
+          ? (mergedCustomerProfile as Prisma.InputJsonValue)
+          : undefined,
+    };
+
+    const user = existing
+      ? await this.prisma.user.update({
+          where: { id: existing.id },
+          data: update,
+        })
+      : await this.prisma.user.upsert({
+          // Handles two concurrent first-time SSO callbacks for the same email.
+          where: { email },
+          create: { email, ...common },
+          update,
+        });
 
     if (!existing) {
       const config = await this.prisma.adminConfig.findFirst({
@@ -433,42 +506,6 @@ export class AuthService {
   }
 }
 
-function normalizeRole(raw: string | null | undefined): SessionRole {
-  const value = (raw ?? "").trim().toUpperCase();
-  const allowed: SessionRole[] = [
-    "BUSINESS",
-    "CUSTOMER",
-    "AGENT",
-    "CONSULTANT",
-    "ACCOUNT_MANAGER",
-    "PARTNER",
-    "ADMIN",
-  ];
-
-  return allowed.includes(value as SessionRole)
-    ? (value as SessionRole)
-    : "CUSTOMER";
-}
-
-function toUserRole(raw: string | null | undefined): UserRole {
-  switch (normalizeRole(raw)) {
-    case "BUSINESS":
-      return UserRole.BUSINESS;
-    case "AGENT":
-      return UserRole.AGENT;
-    case "CONSULTANT":
-      return UserRole.CONSULTANT;
-    case "ACCOUNT_MANAGER":
-      return UserRole.ACCOUNT_MANAGER;
-    case "PARTNER":
-      return UserRole.PARTNER;
-    case "ADMIN":
-      return UserRole.ADMIN;
-    default:
-      return UserRole.CUSTOMER;
-  }
-}
-
 function toJson(value: unknown): Prisma.InputJsonValue | undefined {
   if (value === undefined || value === null) {
     return undefined;
@@ -484,6 +521,35 @@ function toDate(value: unknown): Date | undefined {
 
   const date = new Date(String(value));
   return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
+function optionalText(value: string | null | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+/**
+ * Merge a new profile payload over an existing one without letting missing or
+ * null upstream values erase locally stored data.
+ */
+function mergeDefined(
+  base: Record<string, unknown>,
+  incoming: Record<string, unknown>,
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(incoming)) {
+    if (value === null || value === undefined) continue;
+    if (isRecord(value) && isRecord(merged[key])) {
+      merged[key] = mergeDefined(merged[key] as Record<string, unknown>, value);
+    } else {
+      merged[key] = value;
+    }
+  }
+  return merged;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function messageForAccessReason(reason: string): string {

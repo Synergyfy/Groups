@@ -14,11 +14,9 @@ import {
   CheckCircle2,
   Mail,
   Check,
-  X,
 } from "lucide-react";
 import Badge from "../../components/ui/Badge";
 import { useConsumerData } from "../../consumer/ConsumerDataProvider";
-import { readParticipantSession } from "../../app/authSession";
 import { errorMessage } from "../../app/api";
 import type { Group } from "../../domain/types";
 import PaymentDialog, {
@@ -32,14 +30,9 @@ export default function ConsumerMyGroupsPage() {
   }, []);
 
   const { groups, invitations, leave, respond } = useConsumerData();
-  const session = readParticipantSession();
-
-  const consumerId = session?.role === "consumer" ? (session.accountId || session.email || "") : "";
-
 
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<"all" | "local" | "invites">("all");
-  const [selectedGroupMembersModal, setSelectedGroupMembersModal] = useState<Group | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [paymentTarget, setPaymentTarget] = useState<PaymentTarget | null>(null);
@@ -59,12 +52,19 @@ export default function ConsumerMyGroupsPage() {
     return groups;
   }, [groups]);
 
-  // Total members connected across joined groups
-  const totalConnectedMembers = useMemo(() => {
-    const allMembers = new Set<string>();
-    myGroups.forEach((g) => g.memberIds.forEach((id) => allMembers.add(id)));
-    return allMembers.size;
-  }, [myGroups]);
+  // Total members across joined groups
+  const totalConnectedMembers = useMemo(
+    () =>
+      myGroups.reduce(
+        (total, group) => total + (group.memberCount ?? group.memberIds.length),
+        0,
+      ),
+    [myGroups],
+  );
+  const localGroups = useMemo(
+    () => myGroups.filter((group) => Boolean(group.location?.city)).length,
+    [myGroups],
+  );
 
   const filteredGroups = useMemo(() => {
     return myGroups.filter((group) => {
@@ -160,9 +160,9 @@ export default function ConsumerMyGroupsPage() {
           <span className="mt-0.5 text-[10px] text-slate-500">Across all groups</span>
         </div>
         <div className="flex flex-col rounded-2xl border border-white/10 bg-ink-900/60 p-4">
-          <span className="text-xs font-medium text-slate-400">Exclusive Perks</span>
-          <span className="mt-1 text-xl font-extrabold text-gold-300">6+</span>
-          <span className="mt-0.5 text-[10px] text-slate-500">Discounts &amp; passes</span>
+          <span className="text-xs font-medium text-slate-400">Local Groups</span>
+          <span className="mt-1 text-xl font-extrabold text-gold-300">{localGroups}</span>
+          <span className="mt-0.5 text-[10px] text-slate-500">In your area</span>
         </div>
         <div className="flex flex-col rounded-2xl border border-white/10 bg-ink-900/60 p-4">
           <span className="text-xs font-medium text-slate-400">Pending Invites</span>
@@ -254,16 +254,24 @@ export default function ConsumerMyGroupsPage() {
                 >
                   <div>
                     <div className="flex items-center justify-between gap-2">
-                      <Badge variant="gold">Group Invitation</Badge>
+                      <Badge variant="gold">
+                        {inv.circleId ? "Circle Invitation" : "Group Invitation"}
+                      </Badge>
                       <span className="text-[10px] text-slate-400">
                         From {inv.invitedByName}
                       </span>
                     </div>
                     <p className="mt-2 text-sm font-bold text-white">
-                      {group?.name || "Community Group"}
+                      {group?.name ||
+                        inv.groupName ||
+                        inv.circleName ||
+                        "Community Group"}
                     </p>
                     <p className="mt-1 line-clamp-2 text-xs text-slate-300">
-                      {group?.purpose || "You are invited to join this community network."}
+                      {group?.purpose ||
+                        (inv.circleId
+                          ? "You are invited to join this circle."
+                          : "You are invited to join this community network.")}
                     </p>
                   </div>
 
@@ -317,10 +325,7 @@ export default function ConsumerMyGroupsPage() {
           ) : (
             <div className="grid gap-4 sm:grid-cols-2">
               {filteredGroups.map((group) => {
-                const memberPreview = group.memberIds.slice(0, 5).map((id) => {
-                  const name = id;
-                  return { id, name };
-                });
+                const memberCount = group.memberCount ?? group.memberIds.length;
 
                 return (
                   <div
@@ -348,7 +353,10 @@ export default function ConsumerMyGroupsPage() {
                             <Link to={`/consumer/groups/${group.id}`}>{group.name}</Link>
                           </h2>
                           <p className="mt-0.5 text-xs text-slate-500">
-                            Organized by <span className="text-slate-300 font-medium">{group.ownerName}</span>
+                            Organized by{" "}
+                            <span className="text-slate-300 font-medium">
+                              {group.ownerName || "Group owner"}
+                            </span>
                           </p>
                         </div>
                       </div>
@@ -358,28 +366,15 @@ export default function ConsumerMyGroupsPage() {
                         {group.purpose}
                       </p>
 
-                      {/* Members Avatar Row */}
+                      {/* Members Row */}
                       <div className="mt-4 flex items-center justify-between border-t border-white/5 pt-3">
-                        <div className="flex items-center gap-2">
-                          <div className="flex -space-x-2 overflow-hidden">
-                            {memberPreview.map((m) => (
-                              <div
-                                key={m.id}
-                                title={m.name}
-                                className="flex size-7 items-center justify-center rounded-full border-2 border-ink-900 bg-gold-500/20 text-[10px] font-bold text-gold-300"
-                              >
-                                {m.name.slice(0, 1).toUpperCase()}
-                              </div>
-                            ))}
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedGroupMembersModal(group)}
-                            className="cursor-pointer text-[11px] font-medium text-slate-400 hover:text-white"
-                          >
-                            {group.memberIds.length} members &rarr;
-                          </button>
-                        </div>
+                        <Link
+                          to={`/consumer/groups/${group.id}`}
+                          className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-400 hover:text-white"
+                        >
+                          <Users className="size-3.5 text-gold-400" />
+                          {memberCount} members &rarr;
+                        </Link>
 
                         <span className="text-[11px] text-slate-500">
                           {group.pricing === "paid" ? `Paid · £${group.contribution}` : "Free to join"}
@@ -392,12 +387,16 @@ export default function ConsumerMyGroupsPage() {
                           <p className="text-[10px] font-bold text-gold-300 uppercase tracking-wider">
                             Your Member Access
                           </p>
-                          <span className="text-[10px] text-slate-500">Full Participant</span>
+                          <span className="text-[10px] capitalize text-slate-500">
+                            {group.interactionLevel ?? "message"} access
+                          </span>
                         </div>
                         <div className="mt-1.5 flex flex-wrap gap-1.5 text-[10px] text-slate-300">
-                          <span className="inline-flex items-center gap-1 rounded bg-white/5 px-2 py-0.5">
-                            <MessageSquare className="size-2.5 text-gold-400" /> Post in Feed
-                          </span>
+                          {group.interactionLevel !== "read" && (
+                            <span className="inline-flex items-center gap-1 rounded bg-white/5 px-2 py-0.5">
+                              <MessageSquare className="size-2.5 text-gold-400" /> Post in Feed
+                            </span>
+                          )}
                           <span className="inline-flex items-center gap-1 rounded bg-white/5 px-2 py-0.5">
                             <Calendar className="size-2.5 text-sky-400" /> RSVP Events
                           </span>
@@ -436,74 +435,6 @@ export default function ConsumerMyGroupsPage() {
               })}
             </div>
           )}
-        </div>
-      )}
-
-      {/* Member Roster Modal */}
-      {selectedGroupMembersModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-          <div className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-2xl border border-white/10 bg-ink-900 p-5 shadow-2xl">
-            <div className="flex items-start justify-between border-b border-white/10 pb-3">
-              <div>
-                <h3 className="text-base font-bold text-white">
-                  {selectedGroupMembersModal.name} &bull; Members
-                </h3>
-                <p className="text-xs text-slate-400">
-                  {selectedGroupMembersModal.memberIds.length} community members connected
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedGroupMembersModal(null)}
-                className="cursor-pointer rounded-lg p-1.5 text-slate-400 hover:text-white"
-              >
-                <X className="size-5" />
-              </button>
-            </div>
-
-            <div className="mt-3 flex-1 overflow-y-auto pr-1">
-              <div className="grid gap-2">
-                {selectedGroupMembersModal.memberIds.map((id) => {
-                  const name = id;
-                  const isOwner = id === selectedGroupMembersModal.ownerId;
-                  const isSelf = id === consumerId;
-                  const city = selectedGroupMembersModal.location?.city || "United Kingdom";
-
-                  return (
-                    <div
-                      key={id}
-                      className="flex items-center justify-between rounded-xl border border-white/5 bg-ink-950/60 p-2.5"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="flex size-8 items-center justify-center rounded-lg bg-gold-500/15 text-gold-400 font-bold text-xs">
-                          {name.slice(0, 1).toUpperCase()}
-                        </div>
-                        <div>
-                          <p className="text-xs font-bold text-white">
-                            {name} {isSelf && <span className="text-gold-300 font-normal">(you)</span>}
-                          </p>
-                          <p className="text-[10px] text-slate-400">{city}</p>
-                        </div>
-                      </div>
-                      <Badge variant={isOwner ? "gold" : "muted"}>
-                        {isOwner ? "Organizer" : "Member"}
-                      </Badge>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="mt-4 border-t border-white/10 pt-3 text-right">
-              <button
-                type="button"
-                onClick={() => setSelectedGroupMembersModal(null)}
-                className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-slate-200 hover:bg-white/10"
-              >
-                Close
-              </button>
-            </div>
-          </div>
         </div>
       )}
 

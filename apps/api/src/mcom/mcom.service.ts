@@ -5,8 +5,10 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import type {
-  McomServiceEntry,
+import type { McomProfile } from "../auth/auth.types.js";
+import {
+  McomProfileLookupError,
+  type McomServiceEntry,
 } from "./mcom.types.js";
 
 interface CachedToken {
@@ -120,6 +122,67 @@ export class McomService {
     return this.requestJson<McomServiceEntry[]>(
       "/api/v1/ecosystem/services",
     );
+  }
+
+  /**
+   * Pull the canonical Central Hub profile for a user through the service mesh.
+   * The call goes directly to Central Hub; it never transits this app.
+   */
+  async getEcosystemProfile(userId: string): Promise<McomProfile> {
+    const audience = this.config.get<string>(
+      "MCOM_CENTRAL_AUDIENCE",
+      "mcom-central",
+    );
+    const scope = this.config.get<string>(
+      "MCOM_CENTRAL_READ_SCOPE",
+      "central:read",
+    );
+    const token = await this.getServiceToken(audience, scope);
+    const url = `${this.baseUrl}/api/v1/ecosystem/profiles/${encodeURIComponent(
+      userId,
+    )}`;
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+          "X-Caller-Id": this.clientId,
+        },
+        signal: AbortSignal.timeout(8000),
+      });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "unknown error";
+      this.logger.warn(
+        `Central Hub profile lookup failed for ${userId}: ${reason}`,
+      );
+      throw new ServiceUnavailableException(
+        "Central Hub profile lookup is temporarily unavailable",
+      );
+    }
+
+    const text = await response.text();
+    const data = text ? (JSON.parse(text) as unknown) : null;
+
+    if (!response.ok) {
+      throw new McomProfileLookupError(
+        response.status,
+        (data as { message?: string } | null)?.message ??
+          `Central Hub profile lookup failed with ${response.status}`,
+      );
+    }
+
+    const profile =
+      (data as { user?: McomProfile } | null)?.user ?? (data as McomProfile);
+    if (!profile || typeof profile.email !== "string") {
+      throw new McomProfileLookupError(
+        502,
+        "Central Hub returned an invalid profile payload",
+      );
+    }
+
+    return profile;
   }
 
   async getServiceToken(
