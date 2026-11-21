@@ -5,8 +5,10 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import type {
-  McomServiceEntry,
+import type { McomProfile } from "../auth/auth.types.js";
+import {
+  McomProfileLookupError,
+  type McomServiceEntry,
 } from "./mcom.types.js";
 
 interface CachedToken {
@@ -18,6 +20,7 @@ interface CachedToken {
 export class McomService {
   private readonly logger = new Logger(McomService.name);
   private readonly tokenCache = new Map<string, CachedToken>();
+  private warnedMissingApiKey = false;
   private allowedCallersCache: { callers: string[]; expiresAt: number } | null =
     null;
 
@@ -80,10 +83,106 @@ export class McomService {
     );
   }
 
+  /**
+   * Server-to-server entitlement introspection. Central Hub remains the source
+   * of truth; the API key scopes the response to this registered client.
+   */
+  async getEntitlement(
+    userId: string,
+  ): Promise<Record<string, unknown> | null> {
+    const apiKey = this.config.get<string>("MCOM_API_KEY", "").trim();
+    if (!apiKey) {
+      if (!this.warnedMissingApiKey) {
+        this.warnedMissingApiKey = true;
+        this.logger.warn(
+          "MCOM_API_KEY is not configured — Central Hub entitlements cannot be revalidated in the background.",
+        );
+      }
+      return null;
+    }
+
+    const params = new URLSearchParams({
+      client_id: this.clientId,
+      user_id: userId,
+    });
+    const data = await this.requestJson<{
+      entitlement?: Record<string, unknown> | null;
+      data?: { entitlement?: Record<string, unknown> | null } | null;
+    }>(`/api/v1/auth/sso/entitlement?${params.toString()}`, {
+      headers: {
+        "X-API-Key": apiKey,
+        Accept: "application/json",
+      },
+    });
+
+    return data.entitlement ?? data.data?.entitlement ?? null;
+  }
+
   async getServices(): Promise<McomServiceEntry[]> {
     return this.requestJson<McomServiceEntry[]>(
       "/api/v1/ecosystem/services",
     );
+  }
+
+  /**
+   * Pull the canonical Central Hub profile for a user through the service mesh.
+   * The call goes directly to Central Hub; it never transits this app.
+   */
+  async getEcosystemProfile(userId: string): Promise<McomProfile> {
+    const audience = this.config.get<string>(
+      "MCOM_CENTRAL_AUDIENCE",
+      "mcom-central",
+    );
+    const scope = this.config.get<string>(
+      "MCOM_CENTRAL_READ_SCOPE",
+      "central:read",
+    );
+    const token = await this.getServiceToken(audience, scope);
+    const url = `${this.baseUrl}/api/v1/ecosystem/profiles/${encodeURIComponent(
+      userId,
+    )}`;
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+          "X-Caller-Id": this.clientId,
+        },
+        signal: AbortSignal.timeout(8000),
+      });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "unknown error";
+      this.logger.warn(
+        `Central Hub profile lookup failed for ${userId}: ${reason}`,
+      );
+      throw new ServiceUnavailableException(
+        "Central Hub profile lookup is temporarily unavailable",
+      );
+    }
+
+    const text = await response.text();
+    const data = text ? (JSON.parse(text) as unknown) : null;
+
+    if (!response.ok) {
+      throw new McomProfileLookupError(
+        response.status,
+        (data as { message?: string } | null)?.message ??
+          `Central Hub profile lookup failed with ${response.status}`,
+      );
+    }
+
+    const profile =
+      (data as { user?: McomProfile } | null)?.user ?? (data as McomProfile);
+    if (!profile || typeof profile.email !== "string") {
+      throw new McomProfileLookupError(
+        502,
+        "Central Hub returned an invalid profile payload",
+      );
+    }
+
+    return profile;
   }
 
   async getServiceToken(

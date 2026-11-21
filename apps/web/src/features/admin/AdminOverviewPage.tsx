@@ -5,7 +5,6 @@ import {
   Crown,
   FileCheck2,
   FolderKanban,
-  KeyRound,
   LayoutDashboard,
   Mail,
   SlidersHorizontal,
@@ -53,12 +52,12 @@ const COMPLETENESS_RULES = [
   },
   {
     id: "rule-4",
-    title: "Membership entitlements & temporary access rules",
+    title: "Membership entitlements",
     description:
-      "Bronze, Silver, Gold and Platinum entitlements plus 7-day and 14-day temporary access periods are clearly defined and configurable.",
+      "Bronze, Silver, Gold and Platinum entitlements are clearly defined and configurable per plan.",
     status: "verified",
-    link: "/admin/access-rules",
-    linkText: "Access & Temporary Rules",
+    link: "/admin/plans",
+    linkText: "Review Plans",
   },
   {
     id: "rule-5",
@@ -191,12 +190,6 @@ export default function AdminOverviewPage() {
               to="/admin/invitations"
               description="Links, pending/accepted, expired, and non-account support."
               icon={<Mail className="size-4 text-gold-400" />}
-            />
-            <ModuleCard
-              title="Access Rules"
-              to="/admin/access-rules"
-              description="Creation & joining rules, 7-day and 14-day temporary access."
-              icon={<KeyRound className="size-4 text-gold-400" />}
             />
             <ModuleCard
               title="Plans"

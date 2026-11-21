@@ -144,6 +144,11 @@ export interface BusinessPlanView {
   agreementAccepted: boolean;
   agreedAt?: string;
   accessExpiresAt?: string;
+  accessSource?: string;
+  externalPlanId?: string;
+  membershipName?: string;
+  accessReason?: string;
+  upgradeUrl?: string;
 }
 
 export interface GroupStatsView {
@@ -716,11 +721,6 @@ export const businessApi = {
   // Platform / account
   overview: () => apiRequest<BusinessOverviewResponse>("/business/overview"),
   profile: () => apiRequest<BusinessProfileView>("/business/profile"),
-  updateProfile: (body: Record<string, unknown>) =>
-    apiRequest<BusinessProfileView>("/business/profile", {
-      method: "PATCH",
-      body: JSON.stringify(body),
-    }),
   config: () => apiRequest<BusinessConfig>("/business/config"),
   plan: () =>
     apiRequest<BusinessPlanResponse>("/business/plan"),
@@ -765,6 +765,10 @@ export const businessApi = {
     apiRequest<BusinessRewardsResponse>(
       `/business/rewards${queryString(params)}`,
     ),
+  claimReward: (id: string) =>
+    apiRequest<RewardDealView>(`/business/rewards/${encodeURIComponent(id)}/claim`, {
+      method: "POST",
+    }),
   community: () =>
     apiRequest<BusinessCommunityResponse>("/business/community"),
   location: () => apiRequest<BusinessLocationResponse>("/business/location"),

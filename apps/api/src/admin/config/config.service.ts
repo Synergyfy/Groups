@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import type { SessionUser } from "../../auth/auth.types.js";
 import { Prisma } from "../../generated/prisma/client.js";
 import type { AdminConfig } from "../../generated/prisma/client.js";
@@ -17,6 +17,8 @@ import {
   DEFAULT_STAGE_LABELS,
   FREE_PARTNER_PERMISSIONS,
 } from "../../admin/admin-defaults.js";
+import { isUuid } from "../../business/business.utils.js";
+import { syncAllGroupActivations } from "../../business/group-activation.js";
 
 type Json = Record<string, unknown>;
 
@@ -30,6 +32,8 @@ const asArray = (value: unknown): unknown[] =>
 
 @Injectable()
 export class AdminConfigService {
+  private readonly logger = new Logger(AdminConfigService.name);
+
   private cached: {
     row: AdminConfig;
     expiresAt: number;
@@ -107,6 +111,7 @@ export class AdminConfigService {
       } as Prisma.InputJsonValue;
     }
     if (body.groupCreationRules) {
+      await this.validateGroupCreationRules(body.groupCreationRules);
       data.groupCreationRules = {
         ...asObject(config.groupCreationRules),
         ...asObject(body.groupCreationRules),
@@ -162,6 +167,22 @@ export class AdminConfigService {
 
     await this.prisma.adminConfig.update({ where: { id: config.id }, data });
     this.cached = null;
+
+    // Activation status is derived from the rules, so refresh it whenever the
+    // administrator changes the recruitment matrix or the activation toggle.
+    // The configuration itself is already saved; a sync failure must not make
+    // the save look unsuccessful.
+    if (data.groupCreationRules !== undefined) {
+      try {
+        await syncAllGroupActivations(this.prisma);
+      } catch (error) {
+        this.logger.error(
+          "Failed to synchronise group activation statuses",
+          error instanceof Error ? error.stack : undefined,
+        );
+      }
+    }
+
     await this.audit.record(actor, {
       action: "config-updated",
       targetType: "config",
@@ -171,6 +192,158 @@ export class AdminConfigService {
     });
 
     return this.getConfig();
+  }
+
+  private async validateGroupCreationRules(value: unknown): Promise<void> {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw new BadRequestException("groupCreationRules must be an object.");
+    }
+    const rules = value as Record<string, unknown>;
+
+    if ("allowedPlans" in rules) {
+      if (
+        !Array.isArray(rules.allowedPlans) ||
+        !rules.allowedPlans.every(
+          (entry) => typeof entry === "string" && entry.trim().length > 0,
+        )
+      ) {
+        throw new BadRequestException(
+          "allowedPlans must be an array of plan names.",
+        );
+      }
+    }
+
+    if ("allowedVariants" in rules) {
+      if (
+        !Array.isArray(rules.allowedVariants) ||
+        !rules.allowedVariants.every((entry) =>
+          ["Standard", "Pro", "Pro+"].includes(String(entry)),
+        )
+      ) {
+        throw new BadRequestException(
+          "allowedVariants must contain Standard, Pro and/or Pro+.",
+        );
+      }
+    }
+
+    if ("planCreationRights" in rules) {
+      const rights = rules.planCreationRights;
+      if (!rights || typeof rights !== "object" || Array.isArray(rights)) {
+        throw new BadRequestException(
+          "planCreationRights must be keyed by plan name.",
+        );
+      }
+      for (const [planName, entry] of Object.entries(
+        rights as Record<string, unknown>,
+      )) {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+          throw new BadRequestException(
+            `planCreationRights.${planName} must be an object.`,
+          );
+        }
+        for (const [variant, raw] of Object.entries(
+          entry as Record<string, unknown>,
+        )) {
+          if (!["Standard", "Pro", "Pro+"].includes(variant)) {
+            throw new BadRequestException(
+              `Unknown plan variant "${variant}" in planCreationRights.${planName}.`,
+            );
+          }
+          if (typeof raw !== "boolean") {
+            throw new BadRequestException(
+              `planCreationRights.${planName}.${variant} must be true or false.`,
+            );
+          }
+        }
+      }
+    }
+
+    if ("recruitmentTargets" in rules) {
+      const targets = rules.recruitmentTargets;
+      if (!targets || typeof targets !== "object" || Array.isArray(targets)) {
+        throw new BadRequestException(
+          "recruitmentTargets must be keyed by plan name.",
+        );
+      }
+      for (const [planName, entry] of Object.entries(
+        targets as Record<string, unknown>,
+      )) {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+          throw new BadRequestException(
+            `recruitmentTargets.${planName} must be an object.`,
+          );
+        }
+        for (const [variant, raw] of Object.entries(
+          entry as Record<string, unknown>,
+        )) {
+          if (!["Standard", "Pro", "Pro+"].includes(variant)) {
+            throw new BadRequestException(
+              `Unknown plan variant "${variant}" in recruitmentTargets.${planName}.`,
+            );
+          }
+          const numeric = Number(raw);
+          if (!Number.isFinite(numeric) || numeric < 0 || numeric > 50) {
+            throw new BadRequestException(
+              `recruitmentTargets.${planName}.${variant} must be between 0 and 50.`,
+            );
+          }
+        }
+      }
+    }
+
+    if ("platformGroupId" in rules) {
+      const id = rules.platformGroupId;
+      if (id !== null && id !== undefined) {
+        if (typeof id !== "string" || !isUuid(id)) {
+          throw new BadRequestException(
+            "platformGroupId must be a group ID or null.",
+          );
+        }
+        const group = await this.prisma.group.findUnique({
+          where: { id },
+          select: { id: true, pricing: true, status: true },
+        });
+        if (!group) {
+          throw new BadRequestException(
+            "The selected platform group does not exist.",
+          );
+        }
+        if (group.pricing === "paid") {
+          throw new BadRequestException(
+            "The platform group must be a free group so businesses can be placed into it automatically.",
+          );
+        }
+        if (group.status === "Closed" || group.status === "Suspended") {
+          throw new BadRequestException(
+            `The platform group is ${group.status.toLowerCase()} and cannot accept members.`,
+          );
+        }
+      }
+    }
+
+    for (const key of [
+      "activationEnabled",
+      "requirePaidAccess",
+      "restrictToPlatformGroup",
+    ] as const) {
+      if (key in rules && typeof rules[key] !== "boolean") {
+        throw new BadRequestException(`${key} must be true or false.`);
+      }
+    }
+
+    if ("entryAccessFee" in rules) {
+      const fee = Number(rules.entryAccessFee);
+      if (!Number.isFinite(fee) || fee < 0) {
+        throw new BadRequestException("entryAccessFee must be zero or more.");
+      }
+    }
+
+    if ("entryAccessDays" in rules) {
+      const days = Number(rules.entryAccessDays);
+      if (![90, 180, 365].includes(days)) {
+        throw new BadRequestException("entryAccessDays must be 90, 180 or 365.");
+      }
+    }
   }
 
   async getField(field: string) {
@@ -203,38 +376,6 @@ export class AdminConfigService {
     }
 
     return this.patchConfig(payload, actor);
-  }
-
-  async getPermissions() {
-    const config = await this.getConfig();
-    return {
-      partnerDefaults: config.partnerDefaults,
-      groups: {
-        groupManagement: [
-          "canCreateGroups",
-          "canInviteMembers",
-          "canRemoveMembers",
-          "maxGroups",
-        ],
-        circleManagement: ["canCreateCircles", "maxCircles"],
-        financial: [
-          "canRunPaidGroups",
-          "canRunFreeGroups",
-          "canSetContributionAmounts",
-          "revenueSharePercent",
-        ],
-        reporting: [
-          "canAccessCampaigns",
-          "canAccessReports",
-          "canSeeFinancials",
-        ],
-      },
-    };
-  }
-
-  async getAccessRules() {
-    const config = await this.getConfig();
-    return config.accessRules;
   }
 
   async getSettings() {

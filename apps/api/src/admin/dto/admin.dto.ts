@@ -6,7 +6,6 @@ import {
   IsIn,
   IsInt,
   IsNumber,
-  IsObject,
   IsOptional,
   IsString,
   MaxLength,
@@ -22,22 +21,6 @@ const GROUP_STATUSES = [
   "Suspended",
   "Closed",
 ] as const;
-
-const BUSINESS_STATUSES = [
-  "Active",
-  "Pending",
-  "Suspended",
-  "Closed",
-] as const;
-
-const PARTNER_STATUSES = [
-  "Active",
-  "Suspended",
-  "Pending",
-  "Closed",
-] as const;
-
-const TIERS = ["Free", "Bronze", "Silver", "Gold", "Platinum"] as const;
 
 export class AdminListQueryDto {
   @IsOptional()
@@ -198,138 +181,6 @@ export class UpdateAdminUserDto {
 }
 
 // ---------------------------------------------------------------------------
-// Businesses
-// ---------------------------------------------------------------------------
-
-export class CreateBusinessDto {
-  @IsString() @MaxLength(160) name!: string;
-  @IsString() @MaxLength(160) contactName!: string;
-  @IsEmail() email!: string;
-  @IsOptional() @IsString() phone?: string;
-  @IsString() city!: string;
-  @IsOptional() @IsString() localArea?: string;
-  @IsString() category!: string;
-  @IsOptional() @IsIn(BUSINESS_STATUSES) status?: string;
-  @IsOptional() @IsBoolean() verified?: boolean;
-  @IsOptional() @IsIn(TIERS) tier?: string;
-  @IsOptional() @IsDateString() joinedAt?: string;
-  @IsOptional() @IsString() programmeId?: string;
-  @IsOptional() @IsString() accountManagerId?: string;
-  @IsOptional() @IsString() agentId?: string;
-  @IsOptional() @IsString() consultantId?: string;
-  @IsOptional() @IsBoolean() isPartner?: boolean;
-}
-
-export class UpdateBusinessDto {
-  @IsOptional() @IsString() @MaxLength(160) name?: string;
-  @IsOptional() @IsString() @MaxLength(160) contactName?: string;
-  @IsOptional() @IsEmail() email?: string;
-  @IsOptional() @IsString() phone?: string;
-  @IsOptional() @IsString() city?: string;
-  @IsOptional() @IsString() localArea?: string;
-  @IsOptional() @IsString() category?: string;
-  @IsOptional() @IsIn(BUSINESS_STATUSES) status?: string;
-  @IsOptional() @IsBoolean() verified?: boolean;
-  @IsOptional() @IsIn(TIERS) tier?: string;
-  @IsOptional() @IsDateString() joinedAt?: string;
-  @IsOptional() @IsString() programmeId?: string;
-  @IsOptional() @IsString() accountManagerId?: string;
-  @IsOptional() @IsString() agentId?: string;
-  @IsOptional() @IsString() consultantId?: string;
-  @IsOptional() @IsBoolean() isPartner?: boolean;
-}
-
-// ---------------------------------------------------------------------------
-// Partners
-// ---------------------------------------------------------------------------
-
-export class CreatePartnerDto {
-  @IsString() businessId!: string;
-  @IsString() businessName!: string;
-  @IsOptional() @IsIn(TIERS) tier?: string;
-  @IsOptional() @IsIn(PARTNER_STATUSES) status?: string;
-  @IsOptional() @IsDateString() joinedAt?: string;
-  @IsOptional() @IsString() programmeId?: string;
-  @IsOptional() @IsNumber() @Min(0) feeMonthly?: number;
-  @IsOptional() @IsObject() permissions?: Record<string, unknown>;
-  @IsOptional() @IsString() notes?: string;
-}
-
-export class UpdatePartnerDto {
-  @IsOptional() @IsString() businessId?: string;
-  @IsOptional() @IsString() businessName?: string;
-  @IsOptional() @IsIn(TIERS) tier?: string;
-  @IsOptional() @IsIn(PARTNER_STATUSES) status?: string;
-  @IsOptional() @IsDateString() joinedAt?: string;
-  @IsOptional() @IsString() programmeId?: string;
-  @IsOptional() @IsNumber() @Min(0) feeMonthly?: number;
-  @IsOptional() @IsObject() permissions?: Record<string, unknown>;
-  @IsOptional() @IsString() notes?: string;
-}
-
-// ---------------------------------------------------------------------------
-// Programmes / campaigns / relationships
-// ---------------------------------------------------------------------------
-
-export class CreateProgrammeDto {
-  @IsString() @MaxLength(160) name!: string;
-  @IsOptional() @IsIn(TIERS) tier?: string;
-  @IsOptional() @IsIn(["Active", "Draft", "Closed"]) status?: string;
-  @IsOptional() @IsString() description?: string;
-  @IsOptional() @IsNumber() @Min(0) monthlyFee?: number;
-  @IsOptional() @IsArray() @IsString({ each: true }) benefits?: string[];
-  @IsOptional() @IsInt() @Min(0) groupCount?: number;
-}
-
-export class UpdateProgrammeDto {
-  @IsOptional() @IsString() @MaxLength(160) name?: string;
-  @IsOptional() @IsIn(TIERS) tier?: string;
-  @IsOptional() @IsIn(["Active", "Draft", "Closed"]) status?: string;
-  @IsOptional() @IsString() description?: string;
-  @IsOptional() @IsNumber() @Min(0) monthlyFee?: number;
-  @IsOptional() @IsArray() @IsString({ each: true }) benefits?: string[];
-  @IsOptional() @IsInt() @Min(0) groupCount?: number;
-}
-
-export class CreateCampaignDto {
-  @IsString() @MaxLength(160) name!: string;
-  @IsOptional() @IsString() platform?: string;
-  @IsOptional() @IsIn(["Active", "Draft", "Closed", "Completed"]) status?: string;
-  @IsOptional() @IsArray() @IsString({ each: true }) groupIds?: string[];
-  @IsOptional() @IsNumber() @Min(0) budget?: number;
-  @IsOptional() @IsDateString() startDate?: string;
-  @IsOptional() @IsDateString() endDate?: string;
-}
-
-export class UpdateCampaignDto {
-  @IsOptional() @IsString() @MaxLength(160) name?: string;
-  @IsOptional() @IsString() platform?: string;
-  @IsOptional() @IsIn(["Active", "Draft", "Closed", "Completed"]) status?: string;
-  @IsOptional() @IsArray() @IsString({ each: true }) groupIds?: string[];
-  @IsOptional() @IsNumber() @Min(0) budget?: number;
-  @IsOptional() @IsDateString() startDate?: string;
-  @IsOptional() @IsDateString() endDate?: string;
-}
-
-export class CreateRelationshipDto {
-  @IsIn(["account-manager", "agent", "consultant"]) kind!: string;
-  @IsString() name!: string;
-  @IsString() role!: string;
-  @IsEmail() email!: string;
-  @IsOptional() @IsString() phone?: string;
-  @IsOptional() @IsInt() @Min(0) activeGroups?: number;
-}
-
-export class UpdateRelationshipDto {
-  @IsOptional() @IsIn(["account-manager", "agent", "consultant"]) kind?: string;
-  @IsOptional() @IsString() name?: string;
-  @IsOptional() @IsString() role?: string;
-  @IsOptional() @IsEmail() email?: string;
-  @IsOptional() @IsString() phone?: string;
-  @IsOptional() @IsInt() @Min(0) activeGroups?: number;
-}
-
-// ---------------------------------------------------------------------------
 // Plans
 // ---------------------------------------------------------------------------
 
@@ -395,29 +246,4 @@ export class UpdateRewardDealDto {
   @IsOptional() @IsInt() @Min(0) claimsCount?: number;
   @IsOptional() @IsInt() @Min(0) maxClaims?: number;
   @IsOptional() @IsString() sponsorBusiness?: string;
-}
-
-// ---------------------------------------------------------------------------
-// Locations
-// ---------------------------------------------------------------------------
-
-export class CreateLocationCityDto {
-  @IsString() @MaxLength(120) name!: string;
-}
-
-export class CreateLocationAreaDto {
-  @IsString() @MaxLength(120) name!: string;
-}
-
-export class UpdateLocationDto {
-  @IsString() @MaxLength(120) name!: string;
-}
-
-// ---------------------------------------------------------------------------
-// Content
-// ---------------------------------------------------------------------------
-
-export class UpdateContentSectionDto {
-  @IsOptional() @IsObject() draft?: Record<string, unknown>;
-  @IsOptional() @IsObject() published?: Record<string, unknown>;
 }

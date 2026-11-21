@@ -12,7 +12,10 @@ import {
   UserRole,
 } from "../generated/prisma/client.js";
 import { PrismaService } from "../prisma/prisma.service.js";
+import { jsonObject } from "../admin/admin.mappers.js";
 import { McomService } from "../mcom/mcom.service.js";
+import { decideAccess } from "./entitlement-access.js";
+import { normalizeRole, toUserRole } from "./roles.js";
 import type {
   McomEntitlement,
   McomProfile,
@@ -95,11 +98,19 @@ export class AuthService {
     }
 
     const profile = data.user ?? data.profile;
-    const entitlement = data.entitlement ?? data.entitlements ?? null;
+    let entitlement = data.entitlement ?? data.entitlements ?? null;
 
     if (!profile?.email) {
       throw new UnauthorizedException(
         "Central Hub did not return a user email",
+      );
+    }
+
+    // The token response normally carries the entitlement. If it does not, ask
+    // the introspection endpoint rather than guessing from cached data.
+    if (!entitlement && (profile.id ?? profile.sub)) {
+      entitlement = await this.introspectEntitlement(
+        (profile.id ?? profile.sub)!,
       );
     }
 
@@ -156,7 +167,52 @@ export class AuthService {
       );
     }
 
+    await this.assertAccountActive(user);
+
     return this.toSessionUser(user);
+  }
+
+  /**
+   * Admin suspensions are stored on the Business/PlatformAccount rows, not on
+   * the session User row. Check them here so a suspended account loses access
+   * immediately instead of keeping a valid session.
+   */
+  private async assertAccountActive(user: {
+    role: UserRole;
+    businessId: string | null;
+    email: string;
+  }): Promise<void> {
+    if (user.role === UserRole.BUSINESS) {
+      const business = user.businessId
+        ? await this.prisma.business.findUnique({
+            where: { id: user.businessId },
+            select: { status: true },
+          })
+        : await this.prisma.business.findUnique({
+            where: { email: user.email.trim().toLowerCase() },
+            select: { status: true },
+          });
+      if (business && (business.status === "Suspended" || business.status === "Closed")) {
+        throw new ForbiddenException({
+          code: "BUSINESS_SUSPENDED",
+          message: `This business account is ${business.status.toLowerCase()}.`,
+        });
+      }
+      return;
+    }
+
+    if (user.role === UserRole.ADMIN) return;
+
+    const account = await this.prisma.platformAccount.findUnique({
+      where: { email: user.email.trim().toLowerCase() },
+      select: { status: true },
+    });
+    if (account?.status === "Suspended") {
+      throw new ForbiddenException({
+        code: "ACCOUNT_SUSPENDED",
+        message: "This account is suspended.",
+      });
+    }
   }
 
   async signSession(user: SessionUser): Promise<string> {
@@ -169,6 +225,22 @@ export class AuthService {
     };
 
     return this.jwt.signAsync(payload);
+  }
+
+  private async introspectEntitlement(
+    userId: string,
+  ): Promise<McomEntitlement | null> {
+    try {
+      const entitlement = await this.mcomService.getEntitlement(userId);
+      return (entitlement as McomEntitlement | null) ?? null;
+    } catch (error) {
+      this.logger.warn(
+        `Central Hub entitlement introspection failed for ${userId}: ${
+          error instanceof Error ? error.message : "unknown error"
+        }`,
+      );
+      return null;
+    }
   }
 
   private enforceAccess(
@@ -185,6 +257,13 @@ export class AuthService {
       });
     }
 
+    // Consumer, agent, consultant, account-manager and partner dashboards are
+    // free. Only business workspaces need a Central Hub membership, access pass
+    // or trial.
+    if (role !== "BUSINESS") {
+      return;
+    }
+
     if (
       this.config
         .get<string>("MCOM_ENFORCE_ENTITLEMENTS", "true")
@@ -196,9 +275,40 @@ export class AuthService {
       return;
     }
 
-    if (!entitlement?.access?.hasAccess) {
-      const reason =
-        entitlement?.access?.reason ?? "NO_ACTIVE_ENTITLEMENT";
+    const whitelabelEnabled =
+      entitlement?.whitelabel?.enabled === true ||
+      this.config.get<string>("MCOM_WHITELABEL_ENABLED", "false") === "true";
+    const whitelabelGranted =
+      profile.profileType?.toUpperCase() === "BUSINESS" &&
+      entitlement?.access?.hasAccess === true &&
+      entitlement?.access?.accessType === "WHITELABEL" &&
+      entitlement?.whitelabel?.granted === true;
+
+    if (whitelabelEnabled) {
+      if (!whitelabelGranted) {
+        throw new ForbiddenException({
+          code: "WHITELABEL_ACCESS_DENIED",
+          message:
+            "White-label access has not been granted for this business.",
+        });
+      }
+      return;
+    }
+
+    // Legacy white-label grants predate the PlatformEntitlement contract and
+    // carry no platform plan. Keep them working when white-label is optional.
+    if (entitlement?.access?.accessType === "WHITELABEL") {
+      if (whitelabelGranted) return;
+      throw new ForbiddenException({
+        code: "WHITELABEL_ACCESS_DENIED",
+        message:
+          "White-label access has not been granted for this business.",
+      });
+    }
+
+    const decision = decideAccess(entitlement);
+    if (!decision.allowed) {
+      const reason = decision.reason ?? "NO_ACTIVE_ENTITLEMENT";
       this.logger.warn(
         `Access denied for ${profile.email}: ${reason}`,
       );
@@ -207,27 +317,8 @@ export class AuthService {
         code: reason,
         reason,
         message: messageForAccessReason(reason),
-        upgradeUrl: entitlement?.access?.upgradeUrl ?? null,
+        upgradeUrl: decision.upgradeUrl ?? null,
       });
-    }
-
-    const whitelabelEnabled =
-      entitlement.whitelabel?.enabled === true ||
-      this.config.get<string>("MCOM_WHITELABEL_ENABLED", "false") === "true";
-
-    if (whitelabelEnabled) {
-      const granted =
-        profile.profileType?.toUpperCase() === "BUSINESS" &&
-        entitlement.access.accessType === "WHITELABEL" &&
-        entitlement.whitelabel?.granted === true;
-
-      if (!granted) {
-        throw new ForbiddenException({
-          code: "WHITELABEL_ACCESS_DENIED",
-          message:
-            "White-label access has not been granted for this business.",
-        });
-      }
     }
   }
 
@@ -245,6 +336,7 @@ export class AuthService {
       email;
     const displayName = profile.name?.trim() || fullName;
     const role = toUserRole(profile.role ?? profile.profileType);
+    const decision = decideAccess(entitlement);
 
     const common = {
       mcomUserId: profile.id ?? profile.sub ?? null,
@@ -263,26 +355,129 @@ export class AuthService {
       isAffiliate: profile.isAffiliate ?? false,
       businessId: profile.businessId ?? null,
       businessName: profile.businessName ?? null,
-      membershipLevel: profile.membershipLevel ?? null,
+      membershipLevel:
+        profile.membershipLevel ??
+        entitlement?.membershipContext?.membershipLevel ??
+        null,
       membershipTier: profile.membershipTier ?? null,
-      membershipStatus: profile.membershipStatus ?? null,
-      membershipPlanName: profile.membershipPlanName ?? null,
+      membershipStatus:
+        profile.membershipStatus ??
+        entitlement?.membershipContext?.membershipStatus ??
+        null,
+      membershipPlanName:
+        profile.membershipPlanName ??
+        entitlement?.membershipContext?.membershipPlanName ??
+        null,
       membershipExpiresAt: toDate(profile.membershipExpiresAt),
-      trialAccessExpiresAt: toDate(profile.trialAccessExpiresAt),
+      trialAccessExpiresAt:
+        toDate(profile.trialAccessExpiresAt) ??
+        (decision.source === "trial" ? toDate(decision.expiresAt) : undefined),
       businessProfile: toJson(profile.businessProfile),
       customerProfile: toJson(profile.customerProfile),
       agentProfile: toJson(profile.agentProfile),
       consultantProfile: toJson(profile.consultantProfile),
       accountManagerProfile: toJson(profile.accountManagerProfile),
       entitlement: toJson(entitlement),
+      entitlementCheckedAt: new Date(),
       lastLoginAt: new Date(),
     };
 
-    return this.prisma.user.upsert({
+    const centralId = profile.id ?? profile.sub ?? null;
+    // The Central Hub id never changes; email does. Prefer the id so an email
+    // edit in Central Hub updates the same local row instead of creating a new
+    // account (or hitting the unique mcomUserId constraint).
+    const existingByCentral = centralId
+      ? await this.prisma.user.findUnique({
+          where: { mcomUserId: centralId },
+          select: {
+            id: true,
+            email: true,
+            mcomUserId: true,
+            customerProfile: true,
+          },
+        })
+      : null;
+    const existingByEmail = await this.prisma.user.findUnique({
       where: { email },
-      create: { email, ...common },
-      update: common,
+      select: {
+        id: true,
+        email: true,
+        mcomUserId: true,
+        customerProfile: true,
+      },
     });
+    const existing = existingByCentral ?? existingByEmail;
+    const emailTakenByOther =
+      existingByEmail !== null &&
+      existing !== null &&
+      existingByEmail.id !== existing.id;
+
+    const existingCustomerProfile = jsonObject(existing?.customerProfile);
+    const incomingCustomerProfile = jsonObject(profile.customerProfile);
+    const mergedCustomerProfile = mergeDefined(
+      existingCustomerProfile,
+      incomingCustomerProfile,
+    );
+    const hasIncomingName = Boolean(
+      profile.fullName?.trim() ||
+        profile.name?.trim() ||
+        firstName ||
+        lastName,
+    );
+
+    // Central Hub is authoritative for identity and membership, but locally
+    // managed consumer profile fields (location, phone, preferences) must not
+    // be wiped just because the SSO payload omits them.
+    const update = {
+      ...common,
+      mcomUserId: centralId ?? existing?.mcomUserId ?? null,
+      email: emailTakenByOther ? existing!.email : email,
+      ...(hasIncomingName ? { fullName, displayName } : {}),
+      jobTitle: optionalText(profile.jobTitle),
+      avatarUrl: optionalText(profile.avatarUrl),
+      phone: optionalText(profile.phone),
+      address: optionalText(profile.address),
+      postcode: optionalText(profile.postcode),
+      country: optionalText(profile.country),
+      customerProfile:
+        Object.keys(mergedCustomerProfile).length > 0
+          ? (mergedCustomerProfile as Prisma.InputJsonValue)
+          : undefined,
+    };
+
+    const user = existing
+      ? await this.prisma.user.update({
+          where: { id: existing.id },
+          data: update,
+        })
+      : await this.prisma.user.upsert({
+          // Handles two concurrent first-time SSO callbacks for the same email.
+          where: { email },
+          create: { email, ...common },
+          update,
+        });
+
+    if (!existing) {
+      const config = await this.prisma.adminConfig.findFirst({
+        select: { platformSettings: true },
+      });
+      const settings = jsonObject(config?.platformSettings);
+      if (settings.notifyOnNewRegistration !== false) {
+        await this.prisma.auditLog.create({
+          data: {
+            action: "account-registered",
+            actorId: user.id,
+            actorName: user.fullName ?? user.displayName ?? user.email,
+            targetType: "member",
+            targetId: user.id,
+            targetName: user.email,
+            detail: `New ${String(user.role).toLowerCase()} registration`,
+          },
+        });
+      }
+    }
+
+    return user;
   }
 
   private toSessionUser(user: {
@@ -311,42 +506,6 @@ export class AuthService {
   }
 }
 
-function normalizeRole(raw: string | null | undefined): SessionRole {
-  const value = (raw ?? "").trim().toUpperCase();
-  const allowed: SessionRole[] = [
-    "BUSINESS",
-    "CUSTOMER",
-    "AGENT",
-    "CONSULTANT",
-    "ACCOUNT_MANAGER",
-    "PARTNER",
-    "ADMIN",
-  ];
-
-  return allowed.includes(value as SessionRole)
-    ? (value as SessionRole)
-    : "CUSTOMER";
-}
-
-function toUserRole(raw: string | null | undefined): UserRole {
-  switch (normalizeRole(raw)) {
-    case "BUSINESS":
-      return UserRole.BUSINESS;
-    case "AGENT":
-      return UserRole.AGENT;
-    case "CONSULTANT":
-      return UserRole.CONSULTANT;
-    case "ACCOUNT_MANAGER":
-      return UserRole.ACCOUNT_MANAGER;
-    case "PARTNER":
-      return UserRole.PARTNER;
-    case "ADMIN":
-      return UserRole.ADMIN;
-    default:
-      return UserRole.CUSTOMER;
-  }
-}
-
 function toJson(value: unknown): Prisma.InputJsonValue | undefined {
   if (value === undefined || value === null) {
     return undefined;
@@ -362,6 +521,35 @@ function toDate(value: unknown): Date | undefined {
 
   const date = new Date(String(value));
   return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
+function optionalText(value: string | null | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+/**
+ * Merge a new profile payload over an existing one without letting missing or
+ * null upstream values erase locally stored data.
+ */
+function mergeDefined(
+  base: Record<string, unknown>,
+  incoming: Record<string, unknown>,
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(incoming)) {
+    if (value === null || value === undefined) continue;
+    if (isRecord(value) && isRecord(merged[key])) {
+      merged[key] = mergeDefined(merged[key] as Record<string, unknown>, value);
+    } else {
+      merged[key] = value;
+    }
+  }
+  return merged;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function messageForAccessReason(reason: string): string {

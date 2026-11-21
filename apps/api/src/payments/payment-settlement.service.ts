@@ -143,6 +143,22 @@ export class PaymentSettlementService {
       accessExpiresAt: addDays(now, accessDays),
     });
 
+    const plan =
+      payment.planId ??
+      (typeof snapshot.planId === "string" ? snapshot.planId : null);
+    const planRow = plan
+      ? await tx.plan.findUnique({
+          where: { id: plan },
+          select: { revenueSharePercent: true },
+        })
+      : null;
+    await this.recordRevenueShare(tx, payment, {
+      scope: "plan",
+      percent: planRow?.revenueSharePercent ?? 0,
+      beneficiaryType: "platform",
+      beneficiaryId: null,
+    });
+
     await tx.auditLog.create({
       data: {
         action: "plan-payment",
@@ -214,6 +230,23 @@ export class PaymentSettlementService {
       });
     }
 
+    const partner = group.ownerId
+      ? await tx.partner.findFirst({
+          where: { businessId: group.ownerId },
+          select: { status: true, permissions: true },
+        })
+      : null;
+    const partnerSharePercent =
+      partner?.status === "Active"
+        ? Number(jsonObject(partner.permissions).revenueSharePercent ?? 0)
+        : 0;
+    await this.recordRevenueShare(tx, payment, {
+      scope: "group-contribution",
+      percent: partnerSharePercent,
+      beneficiaryType: partner ? "partner" : "platform",
+      beneficiaryId: partner ? group.ownerId : null,
+    });
+
     await tx.groupActivity.create({
       data: {
         groupId,
@@ -236,6 +269,49 @@ export class PaymentSettlementService {
         detail: existing
           ? `Contribution paid for ${group.name} (${payment.periodKey ?? "once"})`
           : `Joined ${group.name} after paying the contribution`,
+      },
+    });
+  }
+
+  /**
+   * Persists the configured revenue share on the payment so partner and
+   * platform reporting can use the same numbers the admin configured.
+   */
+  private async recordRevenueShare(
+    tx: Prisma.TransactionClient,
+    payment: Payment,
+    input: {
+      scope: "plan" | "group-contribution";
+      percent: number;
+      beneficiaryType: "platform" | "partner";
+      beneficiaryId: string | null;
+    },
+  ): Promise<void> {
+    const percent = Number.isFinite(input.percent)
+      ? Math.min(100, Math.max(0, input.percent))
+      : 0;
+    const amountMinor = Number(payment.amountMinor);
+    const beneficiaryMinor = Math.round((amountMinor * percent) / 100);
+    const platformMinor =
+      input.beneficiaryType === "platform"
+        ? beneficiaryMinor
+        : amountMinor - beneficiaryMinor;
+
+    await tx.payment.update({
+      where: { id: payment.id },
+      data: {
+        metadata: {
+          ...jsonObject(payment.metadata),
+          revenueShare: {
+            scope: input.scope,
+            percent,
+            amountMinor: String(amountMinor),
+            platformMinor: String(platformMinor),
+            beneficiaryMinor: String(beneficiaryMinor),
+            beneficiaryType: input.beneficiaryType,
+            beneficiaryId: input.beneficiaryId,
+          },
+        },
       },
     });
   }

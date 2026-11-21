@@ -290,122 +290,17 @@ const TOURS: TourDef[] = [
       {
         target: "location",
         title: "Where it sits",
-        body: "National Community → city → local area → this group. Joining a group never moves a business's location relationship.",
+        body: "City and local area for this group. Joining a group never moves a business's location relationship.",
       },
       {
         target: "people",
         title: "Who is involved",
-        body: "Owner business, account manager, agent and consultant — the human relationships beside the structural ones.",
-      },
-      {
-        target: "campaigns",
-        title: "Campaigns and programme",
-        body: "Linked campaigns and the membership programme are references, not memberships — none of them change the group's stage.",
+        body: "Owner business and membership details — the relationships that belong to this group.",
       },
       {
         target: "membership",
         title: "The membership itself",
         body: "Source, access, status, stage and member count — the membership relationship, kept separate from everything above.",
-      },
-    ],
-  },
-  {
-    id: "tour-admin-rules",
-    matches: ["/admin/config/automatic"],
-    auto: true,
-    items: [
-      {
-        target: "controls",
-        title: "The rule everyone lives by",
-        body: "Threshold (6/12/18/24), method, scope and combining rules. Every automatic group on the platform reads this configuration.",
-      },
-      {
-        target: "preview",
-        title: "Before you commit",
-        body: "The preview shows what each threshold would do to today's network — splits and seats short, calculated live from the store.",
-      },
-      {
-        target: "outcome",
-        title: "And after you change it",
-        body: "Each automatic group's progress bar follows the threshold. Change it here, then reopen the network group to see its \"N more members needed\" move with it.",
-      },
-    ],
-  },
-  {
-    id: "tour-admin-types",
-    matches: ["/admin/config/types"],
-    auto: true,
-    items: [
-      {
-        target: "types",
-        title: "Three switches per type",
-        body: "Enabled, allow creation and allow joining. The wizard only offers creatable types, and Explore only shows joinable ones.",
-      },
-      {
-        target: "stages",
-        title: "Stages are labels",
-        body: "Stage labels feed group settings and the register. A stage is never a status — this screen keeps them apart.",
-      },
-    ],
-  },
-  {
-    id: "tour-admin-locations",
-    matches: ["/admin/locations"],
-    auto: true,
-    items: [
-      {
-        target: "hierarchy",
-        title: "The configured hierarchy",
-        body: "National Community → cities → local areas, with group counts at every level. This structure drives discovery and grouping.",
-      },
-      {
-        target: "cities",
-        title: "Groups under each city",
-        body: "Open any group to inspect it. Groups without a location stay visible in their own section — no report drops them.",
-      },
-    ],
-  },
-  {
-    id: "tour-admin-partners",
-    matches: ["/admin/partner-groups"],
-    auto: true,
-    items: [
-      {
-        target: "notice",
-        title: "What the specification does not say yet",
-        body: "Partner financial rules are a placeholder — this screen shows structure only and never implies money has moved.",
-      },
-      {
-        target: "list",
-        title: "Partner-owned groups",
-        body: "Every group of type Partner with its owner, size and location — the same register data, filtered for partners.",
-      },
-      {
-        target: "programme",
-        title: "Programme, not payment",
-        body: "The partner membership programme is a membership relationship — not a group, not a campaign and not a fee.",
-      },
-    ],
-  },
-  {
-    id: "tour-admin-mandatory",
-    matches: ["/admin/mandatory-circles"],
-    auto: true,
-    items: [
-      {
-        target: "notice",
-        title: "Rules still to confirm",
-        body: "Which circles are mandatory and how they are enforced is not settled in the specification — so this screen reports, it does not enforce.",
-      },
-      {
-        target: "circles",
-        title: "The structure that exists",
-        body: "Duration, visibility, interaction level and member count for each configured circle.",
-      },
-      {
-        target: "note",
-        title: "Circles are their own concept",
-        body: "A circle never grants group membership, and its configuration lives here rather than inside a group.",
       },
     ],
   },
@@ -423,33 +318,6 @@ const TOURS: TourDef[] = [
         target: "list",
         title: "Report, don't act",
         body: "This screen shows state across the platform. Accepting or declining stays with the group owner or the invited business.",
-      },
-    ],
-  },
-  {
-    id: "tour-admin-reports",
-    matches: ["/admin/reports"],
-    auto: true,
-    items: [
-      {
-        target: "origin",
-        title: "Origin beside volume",
-        body: "Automatic versus user created is always shown next to the total — a report never gives a number without its origin.",
-      },
-      {
-        target: "growth",
-        title: "Growth over time",
-        body: "Groups created per month, read straight from persisted creation dates.",
-      },
-      {
-        target: "types",
-        title: "Distribution by type",
-        body: "Type distribution comes from live data, so a disabled type still appears if groups already exist.",
-      },
-      {
-        target: "table",
-        title: "The table behind the charts",
-        body: "Type totals with origin in the last column — system created, user created or mixed.",
       },
     ],
   },

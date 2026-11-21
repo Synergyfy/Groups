@@ -26,14 +26,8 @@ const ROUTE_NOTES: Record<string, string> = {
   "/admin/groups/:groupId": "One group inspected end to end.",
   "/admin/groups/:groupId/members": "Membership, roles and requests for this group.",
   "/admin/groups/:groupId/activity": "Everything that happened in this group.",
-  "/admin/groups/:groupId/relationships": "Which location, campaign and programme this group touches.",
-  "/admin/config/automatic": "Threshold, method, scope and combining rules for automatic groups.",
-  "/admin/config/types": "Which types exist, and whether users may create or join them.",
-  "/admin/locations": "City → local area hierarchy used by grouping and discovery.",
-  "/admin/partner-groups": "Groups owned and run by partners.",
-  "/admin/mandatory-circles": "Circles every member must belong to.",
+  "/admin/groups/:groupId/relationships": "Which location and owner this group touches.",
   "/admin/invitations": "Platform-wide invitations and join requests.",
-  "/admin/reports": "Statistics across the whole network.",
   "/admin/journey": "The admin storyline with your progress through it.",
 };
 
