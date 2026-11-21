@@ -150,48 +150,25 @@ export function evaluateGroupEligibility(
     };
   }
 
-  // 5. Audience check
-  const isConsumer = profile.accountType === "consumer";
-  const isBusiness = profile.accountType === "business" || profile.accountType === "business-invitee";
-
-  if (isConsumer && audience === "Business Owners") {
-    return {
-      group,
-      status: "ineligible",
-      isEligible: false,
-      matchReasons: ["This group is reserved for registered business owners."],
-      audienceLabel: audience,
-    };
-  }
-
-  // 6. Location matching
+  // 5. Location matching is informational. Administrators decide which
+  // groups are published and joinable; the UI must not hide an allowed group
+  // merely because the member is in a different city.
   const userCity = profile.city || inferCityFromPostcode(profile.postcode);
   const groupCity = group.location?.city;
   const isUkWide = !groupCity || groupCity.toLowerCase().includes("national") || groupCity.toLowerCase().includes("uk");
 
-  let locationMatched = false;
   if (isUkWide) {
-    locationMatched = true;
     matchReasons.push("UK-wide community accessible to all areas.");
   } else if (userCity && groupCity && userCity.toLowerCase() === groupCity.toLowerCase()) {
-    locationMatched = true;
     matchReasons.push(`Located in your area (${groupCity}).`);
   } else if (profile.postcode && group.location?.localArea) {
-    locationMatched = true;
     matchReasons.push(`Local area match (${group.location.localArea}).`);
+  } else if (groupCity) {
+    matchReasons.push(`Open to members across the UK (${groupCity}).`);
   }
 
-  if (!locationMatched) {
-    return {
-      group,
-      status: "ineligible",
-      isEligible: false,
-      matchReasons: [`Outside your local area (${groupCity ?? "different region"}).`],
-      audienceLabel: audience,
-    };
-  }
-
-  // 7. Sector matching for businesses
+  // 6. Sector matching for businesses
+  const isBusiness = profile.accountType === "business" || profile.accountType === "business-invitee";
   if (isBusiness && profile.sector) {
     const text = `${group.name} ${group.type} ${group.purpose}`.toLowerCase();
     const sector = profile.sector.toLowerCase();

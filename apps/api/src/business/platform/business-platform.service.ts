@@ -40,7 +40,6 @@ import type {
   BusinessCampaignsQueryDto,
   BusinessDirectoryQueryDto,
   BusinessRewardsQueryDto,
-  UpdateBusinessProfileDto,
 } from "../dto/business.dto.js";
 import {
   pageParams,
@@ -151,89 +150,6 @@ export class BusinessPlatformService {
         joinedAt: ctx.business.joinedAt.toISOString(),
       },
     };
-  }
-
-  async updateProfile(
-    ctx: BusinessContext,
-    dto: UpdateBusinessProfileDto,
-  ) {
-    if (dto.businessProfile) {
-      const current = (ctx.user.businessProfile ?? {}) as Record<
-        string,
-        unknown
-      >;
-      await this.prisma.user.update({
-        where: { id: ctx.user.id },
-        data: {
-          businessProfile: {
-            ...current,
-            ...dto.businessProfile,
-          } as Prisma.InputJsonValue,
-          ...(dto.name ? { businessName: dto.name } : {}),
-          ...(dto.contactName ? { fullName: dto.contactName } : {}),
-          ...(dto.phone ? { phone: dto.phone } : {}),
-        },
-      });
-    } else if (dto.name || dto.contactName || dto.phone) {
-      await this.prisma.user.update({
-        where: { id: ctx.user.id },
-        data: {
-          ...(dto.name ? { businessName: dto.name } : {}),
-          ...(dto.contactName ? { fullName: dto.contactName } : {}),
-          ...(dto.phone ? { phone: dto.phone } : {}),
-        },
-      });
-    }
-
-    const hasBusinessField = [
-      dto.name,
-      dto.contactName,
-      dto.phone,
-      dto.city,
-      dto.localArea,
-      dto.category,
-    ].some((value) => value !== undefined);
-    if (hasBusinessField) {
-      await this.prisma.business.update({
-        where: { id: ctx.business.id },
-        data: {
-          name: dto.name,
-          contactName: dto.contactName,
-          phone: dto.phone,
-          city: dto.city,
-          localArea: dto.localArea,
-          category: dto.category,
-        },
-      });
-    }
-
-    await this.prisma.auditLog.create({
-      data: {
-        action: "business-updated",
-        actorId: ctx.user.id,
-        actorName: ctx.business.name,
-        targetType: "business",
-        targetId: ctx.business.id,
-        targetName: dto.name ?? ctx.business.name,
-        detail: "Business profile updated from the business dashboard",
-      },
-    });
-
-    const user = await this.prisma.user.findUnique({
-      where: { id: ctx.user.id },
-    });
-    const business = await this.prisma.business.findUnique({
-      where: { id: ctx.business.id },
-    });
-    if (!business || !user) {
-      throw new NotFoundException("Business profile not found");
-    }
-
-    // Return the same shape as GET /business/profile so the client can use the
-    // response directly instead of re-fetching everything.
-    ctx.user = user;
-    ctx.business = business;
-    return this.getProfile(ctx);
   }
 
   getConfig(ctx: BusinessContext) {

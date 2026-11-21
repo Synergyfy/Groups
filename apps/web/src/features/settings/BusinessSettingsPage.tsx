@@ -1,71 +1,25 @@
-import { useState } from "react";
 import {
   Building2,
-  CheckCircle2,
+  ExternalLink,
   Mail,
   MapPin,
   Settings,
   ShieldCheck,
 } from "lucide-react";
 import Badge from "../../components/ui/Badge";
-import Button from "../../components/ui/Button";
 import Card, { CardBody, CardTitle } from "../../components/ui/Card";
 import FieldHint from "../../components/ui/FieldHint";
 import LinkButton from "../../components/ui/LinkButton";
 import SectionHeader from "../../components/ui/SectionHeader";
-import Toast from "../../components/ui/Toast";
-import { errorMessage } from "../../app/api";
 import { accessDaysLabel } from "../../domain/types";
-import { businessApi, useBusinessData } from "../../business/BusinessDataProvider";
+import { useBusinessData } from "../../business/BusinessDataProvider";
+import { mcomProfileUrl } from "../../lib/mcomProfile";
 
 const FIELD_CLASS =
-  "h-11 rounded-lg border border-white/10 bg-ink-800 px-3 text-sm text-slate-200 placeholder:text-slate-500 focus:border-gold-500/50 focus:outline-none";
+  "h-11 cursor-not-allowed rounded-lg border border-white/10 bg-ink-800 px-3 text-sm text-slate-300 opacity-80 outline-none";
 
 export default function BusinessSettingsPage() {
-  const { profile, plan, locations, refresh } = useBusinessData();
-
-  const [name, setName] = useState(profile?.business.name ?? "");
-  const [contactName, setContactName] = useState(
-    profile?.business.contactName ?? ""
-  );
-  const [phone, setPhone] = useState(profile?.business.phone ?? "");
-  const [category, setCategory] = useState(profile?.business.category ?? "");
-  const [city, setCity] = useState(profile?.business.city ?? "");
-  const [localArea, setLocalArea] = useState(
-    profile?.business.localArea ?? ""
-  );
-  const [saving, setSaving] = useState(false);
-  const [feedback, setFeedback] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const cities = locations?.cities ?? [];
-  const cityNames = cities.map((entry) => entry.name);
-  const areas =
-    cities.find((entry) => entry.name === city)?.areas.map((entry) => entry.name) ??
-    [];
-
-  const save = async () => {
-    if (!name.trim() || saving) return;
-    setSaving(true);
-    setFeedback(null);
-    setError(null);
-    try {
-      await businessApi.updateProfile({
-        name: name.trim(),
-        contactName: contactName.trim(),
-        phone: phone.trim() || undefined,
-        category: category.trim(),
-        city,
-        localArea: localArea || undefined,
-      });
-      await refresh();
-      setFeedback("Account settings saved");
-    } catch (cause) {
-      setError(errorMessage(cause));
-    } finally {
-      setSaving(false);
-    }
-  };
+  const { profile, plan } = useBusinessData();
 
   const access = profile?.access;
   const relationships = profile?.relationships;
@@ -82,19 +36,36 @@ export default function BusinessSettingsPage() {
       <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <Card>
           <CardBody className="flex flex-col gap-4">
-            <div className="flex items-center gap-2">
-              <Building2 className="size-4 text-gold-400" />
-              <CardTitle>Business profile</CardTitle>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Building2 className="size-4 text-gold-400" />
+                <CardTitle>Business profile</CardTitle>
+              </div>
+              <a
+                href={mcomProfileUrl()}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-gold-500/30 bg-gold-500/10 px-3 py-2 text-xs font-semibold text-gold-300 transition-colors hover:border-gold-500/60 hover:bg-gold-500/20"
+              >
+                <ExternalLink className="size-3.5" />
+                Edit in Central Hub
+              </a>
             </div>
+
+            <p className="rounded-xl border border-white/10 bg-ink-950/60 px-3 py-2 text-[11px] leading-relaxed text-slate-500">
+              Business name, contact details, category and location are owned by
+              Central Hub. Save changes there and Groups &amp; Circles updates
+              automatically — you cannot edit them here.
+            </p>
 
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="flex flex-col gap-1.5 text-xs">
                 <span className="font-semibold text-white">Business name</span>
                 <FieldHint>Shown on every group, invitation and circle you own.</FieldHint>
                 <input
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  placeholder="e.g. City Foods"
+                  value={profile?.business.name ?? ""}
+                  readOnly
+                  placeholder="Not set in Central Hub"
                   className={FIELD_CLASS}
                 />
               </label>
@@ -102,29 +73,28 @@ export default function BusinessSettingsPage() {
                 <span className="font-semibold text-white">Contact name</span>
                 <FieldHint>The person other members should ask for.</FieldHint>
                 <input
-                  value={contactName}
-                  onChange={(event) => setContactName(event.target.value)}
-                  placeholder="e.g. Jordan Blake"
+                  value={profile?.business.contactName ?? ""}
+                  readOnly
+                  placeholder="Not set in Central Hub"
                   className={FIELD_CLASS}
                 />
               </label>
               <label className="flex flex-col gap-1.5 text-xs">
                 <span className="font-semibold text-white">Email address</span>
-                <FieldHint>Sign-in email — managed by your account, not this form.</FieldHint>
+                <FieldHint>Sign-in email — owned by Central Hub.</FieldHint>
                 <input
                   value={profile?.business.email ?? ""}
                   readOnly
-                  className={`${FIELD_CLASS} cursor-not-allowed opacity-60`}
+                  className={FIELD_CLASS}
                 />
               </label>
               <label className="flex flex-col gap-1.5 text-xs">
                 <span className="font-semibold text-white">Phone</span>
                 <FieldHint>Optional contact number for your business.</FieldHint>
                 <input
-                  value={phone}
-                  onChange={(event) => setPhone(event.target.value)}
-                  inputMode="tel"
-                  placeholder="+44 7700 900000"
+                  value={profile?.business.phone ?? ""}
+                  readOnly
+                  placeholder="Not set in Central Hub"
                   className={FIELD_CLASS}
                 />
               </label>
@@ -132,9 +102,9 @@ export default function BusinessSettingsPage() {
                 <span className="font-semibold text-white">Category</span>
                 <FieldHint>How your business is classified in the directory.</FieldHint>
                 <input
-                  value={category}
-                  onChange={(event) => setCategory(event.target.value)}
-                  placeholder="e.g. Food & Beverage"
+                  value={profile?.business.category ?? ""}
+                  readOnly
+                  placeholder="Not set in Central Hub"
                   className={FIELD_CLASS}
                 />
               </label>
@@ -148,60 +118,38 @@ export default function BusinessSettingsPage() {
               <label className="flex flex-col gap-1.5 text-xs">
                 <span className="font-semibold text-white">City</span>
                 <FieldHint>Used for automatic grouping and local discovery.</FieldHint>
-                <select
-                  value={city}
-                  onChange={(event) => {
-                    setCity(event.target.value);
-                    setLocalArea("");
-                  }}
+                <input
+                  value={profile?.business.city ?? ""}
+                  readOnly
+                  placeholder="Not set in Central Hub"
                   className={FIELD_CLASS}
-                >
-                  <option value="">Choose a city…</option>
-                  {cityNames.map((entry) => (
-                    <option key={entry} value={entry}>
-                      {entry}
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
               <label className="flex flex-col gap-1.5 text-xs">
                 <span className="font-semibold text-white">Local area</span>
                 <FieldHint>Optional area within the city.</FieldHint>
-                <select
-                  value={localArea}
-                  onChange={(event) => setLocalArea(event.target.value)}
+                <input
+                  value={profile?.business.localArea ?? ""}
+                  readOnly
+                  placeholder="Not set in Central Hub"
                   className={FIELD_CLASS}
-                  disabled={areas.length === 0}
-                >
-                  <option value="">No local area</option>
-                  {areas.map((entry) => (
-                    <option key={entry} value={entry}>
-                      {entry}
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
             </div>
 
-            {error && (
-              <p className="rounded-xl border border-danger-500/30 bg-danger-500/10 px-3 py-2.5 text-xs text-danger-400">
-                {error}
-              </p>
-            )}
-
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-3">
               <p className="text-[11px] text-slate-500">
-                Saving updates your business record and the location used by grouping rules.
+                Need to change something? Update your Central Hub profile and the
+                change will arrive here automatically.
               </p>
-              <Button
-                variant="primary"
-                size="md"
-                onClick={save}
-                disabled={!name.trim() || saving}
+              <a
+                href={mcomProfileUrl()}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-300 transition-colors hover:border-gold-500/30 hover:bg-gold-500/10 hover:text-gold-300"
               >
-                <CheckCircle2 className="size-4" />
-                {saving ? "Saving…" : "Save changes"}
-              </Button>
+                <ExternalLink className="size-4" /> Open Central Hub profile
+              </a>
             </div>
           </CardBody>
         </Card>
@@ -336,8 +284,6 @@ export default function BusinessSettingsPage() {
           </Card>
         </div>
       </div>
-
-      {feedback && <Toast message={feedback} onDismiss={() => setFeedback(null)} />}
     </div>
   );
 }

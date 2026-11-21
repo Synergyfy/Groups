@@ -721,11 +721,6 @@ export const businessApi = {
   // Platform / account
   overview: () => apiRequest<BusinessOverviewResponse>("/business/overview"),
   profile: () => apiRequest<BusinessProfileView>("/business/profile"),
-  updateProfile: (body: Record<string, unknown>) =>
-    apiRequest<BusinessProfileView>("/business/profile", {
-      method: "PATCH",
-      body: JSON.stringify(body),
-    }),
   config: () => apiRequest<BusinessConfig>("/business/config"),
   plan: () =>
     apiRequest<BusinessPlanResponse>("/business/plan"),

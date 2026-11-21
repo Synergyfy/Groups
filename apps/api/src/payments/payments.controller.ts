@@ -10,7 +10,6 @@ import {
 import type { SessionUser } from "../auth/auth.types.js";
 import { CurrentUser } from "../auth/current-user.decorator.js";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard.js";
-import { BusinessOnly } from "../business/business-only.decorator.js";
 import { ConfirmPaymentDto } from "./dto/confirm-payment.dto.js";
 import { CreateContributionPaymentDto } from "./dto/create-contribution-payment.dto.js";
 import { CreatePlanPaymentDto } from "./dto/create-plan-payment.dto.js";
@@ -35,7 +34,6 @@ export class PaymentsController {
   }
 
   @Post("group/:groupId")
-  @BusinessOnly()
   createContributionPayment(
     @Param("groupId", ParseUUIDPipe) groupId: string,
     @Body() dto: CreateContributionPaymentDto,

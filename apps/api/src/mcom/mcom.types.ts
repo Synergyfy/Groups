@@ -20,3 +20,14 @@ export interface McomServiceEntry {
   allowedCallers?: string[];
   allowedAudiences?: string[];
 }
+
+/** A Central Hub rejected the canonical profile lookup. */
+export class McomProfileLookupError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "McomProfileLookupError";
+  }
+}

@@ -293,6 +293,10 @@ export interface Invitation {
   status: InvitationStatus;
   createdAt: string;
   respondedAt?: string;
+  /** Server-resolved target names for invitations that have not been opened. */
+  groupName?: string;
+  circleName?: string;
+  circleBusinessName?: string;
 }
 
 /**

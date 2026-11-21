@@ -6,7 +6,12 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import type { Group, GroupMember, User } from "../generated/prisma/client.js";
+import type {
+  Group,
+  GroupMember,
+  Prisma,
+  User,
+} from "../generated/prisma/client.js";
 import type { SessionUser } from "../auth/auth.types.js";
 import {
   matchesRequiredPlans,
@@ -17,6 +22,8 @@ import type { BusinessConfig } from "../business/business.types.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { contributionPeriodKey } from "../payments/payments.utils.js";
 import { fromMinorPence } from "../common/money.js";
+import { jsonObject } from "../admin/admin.mappers.js";
+import type { UpdateConsumerPreferencesDto } from "./dto/consumer.dto.js";
 
 @Injectable()
 export class ConsumerService {
@@ -28,19 +35,42 @@ export class ConsumerService {
     });
     if (!account) throw new NotFoundException("Consumer account not found");
 
-    return {
-      id: account.id,
-      email: account.email,
-      name: account.fullName ?? account.displayName ?? user.name,
-      firstName: account.firstName,
-      lastName: account.lastName,
-      avatarUrl: account.avatarUrl,
-      phone: account.phone,
-      address: account.address,
-      postcode: account.postcode,
-      country: account.country,
-      profile: account.customerProfile,
+    return this.profileFromAccount(account, user);
+  }
+
+  async updatePreferences(
+    user: SessionUser,
+    dto: UpdateConsumerPreferencesDto,
+  ) {
+    const account = await this.prisma.user.findUnique({
+      where: { id: user.id },
+    });
+    if (!account) throw new NotFoundException("Consumer account not found");
+
+    const existingProfile = jsonObject(account.customerProfile);
+    const existingPreferences = jsonObject(existingProfile.preferences);
+    const nextProfile = {
+      ...existingProfile,
+      preferences: {
+        ...existingPreferences,
+        ...(dto.emailUpdates !== undefined
+          ? { emailUpdates: dto.emailUpdates }
+          : {}),
+        ...(dto.localDiscovery !== undefined
+          ? { localDiscovery: dto.localDiscovery }
+          : {}),
+        ...(dto.profileVisible !== undefined
+          ? { profileVisible: dto.profileVisible }
+          : {}),
+      },
     };
+
+    const updated = await this.prisma.user.update({
+      where: { id: user.id },
+      data: { customerProfile: nextProfile as Prisma.InputJsonValue },
+    });
+
+    return this.profileFromAccount(updated, user);
   }
 
   async dashboard(user: SessionUser) {
@@ -165,6 +195,73 @@ export class ConsumerService {
       ...this.mapGroup(group),
       members: group.members,
       joined,
+    };
+  }
+
+  async groupActivity(user: SessionUser, id: string) {
+    const group = await this.prisma.group.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!group) throw new NotFoundException("Group not found");
+
+    const membership = await this.prisma.groupMember.findUnique({
+      where: { groupId_memberId: { groupId: id, memberId: user.id } },
+      select: { id: true },
+    });
+    if (!membership) {
+      throw new ForbiddenException("Join the group to view its activity.");
+    }
+
+    return this.prisma.groupActivity.findMany({
+      where: { groupId: id },
+      orderBy: { at: "desc" },
+      take: 50,
+    });
+  }
+
+  async circles(user: SessionUser) {
+    const circles = await this.prisma.circle.findMany({
+      where: { memberIds: { has: user.id } },
+      include: { business: { select: { id: true, name: true } } },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return circles.map((circle) => this.mapCircle(circle));
+  }
+
+  async circle(user: SessionUser, id: string) {
+    const circle = await this.prisma.circle.findUnique({
+      where: { id },
+      include: {
+        business: { select: { id: true, name: true } },
+        activities: { orderBy: { at: "desc" }, take: 50 },
+      },
+    });
+    if (!circle) throw new NotFoundException("Circle not found");
+    if (!circle.memberIds.includes(user.id)) {
+      throw new ForbiddenException("You are not a member of this circle.");
+    }
+
+    const members = await this.prisma.user.findMany({
+      where: { id: { in: circle.memberIds } },
+      select: {
+        id: true,
+        fullName: true,
+        displayName: true,
+        email: true,
+        avatarUrl: true,
+      },
+    });
+
+    return {
+      ...this.mapCircle(circle),
+      members: members.map((member) => ({
+        id: member.id,
+        name: member.fullName ?? member.displayName ?? member.email,
+        avatarUrl: member.avatarUrl,
+      })),
+      activities: circle.activities,
     };
   }
 
@@ -339,7 +436,7 @@ export class ConsumerService {
   }
 
   async invitations(user: SessionUser, status?: string) {
-    return this.prisma.invitation.findMany({
+    const invitations = await this.prisma.invitation.findMany({
       where: {
         kind: "invite",
         OR: [{ inviteeId: user.id }, { inviteeEmail: user.email }],
@@ -347,6 +444,80 @@ export class ConsumerService {
       },
       orderBy: { createdAt: "desc" },
     });
+
+    return this.withInvitationTargets(invitations);
+  }
+
+  async invitation(user: SessionUser, id: string) {
+    const invitation = await this.prisma.invitation.findFirst({
+      where: {
+        id,
+        kind: "invite",
+        OR: [{ inviteeId: user.id }, { inviteeEmail: user.email }],
+      },
+    });
+    if (!invitation) throw new NotFoundException("Invitation not found");
+
+    const [withTargets] = await this.withInvitationTargets([invitation]);
+    const group = invitation.groupId
+      ? await this.prisma.group.findUnique({
+          where: { id: invitation.groupId },
+        })
+      : null;
+
+    return {
+      ...withTargets,
+      group: group ? this.mapGroup(group) : null,
+    };
+  }
+
+  /**
+   * Public invitation preview used by the invite link before the visitor has
+   * signed in. Only non-sensitive group/circle metadata is returned.
+   */
+  async publicInvitation(id: string) {
+    const invitation = await this.prisma.invitation.findUnique({
+      where: { id },
+    });
+    if (!invitation) throw new NotFoundException("Invitation not found");
+
+    const group = invitation.groupId
+      ? await this.prisma.group.findUnique({
+          where: { id: invitation.groupId },
+        })
+      : null;
+    const circle = invitation.circleId
+      ? await this.prisma.circle.findUnique({
+          where: { id: invitation.circleId },
+          include: { business: { select: { id: true, name: true } } },
+        })
+      : null;
+
+    return {
+      id: invitation.id,
+      status: invitation.status,
+      kind: invitation.kind,
+      invitedById: invitation.invitedById,
+      invitedByName: invitation.invitedByName,
+      inviteeRole: invitation.inviteeRole,
+      createdAt: invitation.createdAt.toISOString(),
+      respondedAt: invitation.respondedAt?.toISOString() ?? null,
+      group: group ? this.mapGroup(group) : null,
+      circle: circle
+        ? {
+            id: circle.id,
+            name:
+              typeof jsonObject(circle.config).name === "string"
+                ? String(jsonObject(circle.config).name)
+                : `${circle.type} Circle`,
+            type: circle.type,
+            businessId: circle.businessId,
+            businessName: circle.business.name,
+            memberCount: circle.memberIds.length,
+            createdAt: circle.createdAt.toISOString(),
+          }
+        : null,
+    };
   }
 
   async respondInvitation(user: SessionUser, id: string, accept: boolean) {
@@ -424,6 +595,35 @@ export class ConsumerService {
       await this.addMember(user, group, account);
     }
 
+    if (accept && invitation.circleId) {
+      const circle = await this.prisma.circle.findUnique({
+        where: { id: invitation.circleId },
+      });
+      if (!circle) throw new NotFoundException("Circle not found");
+      if (circle.status !== "Active") {
+        throw new ConflictException({
+          code: "CIRCLE_NOT_JOINABLE",
+          message: `The circle is ${circle.status.toLowerCase()} and is not accepting members.`,
+        });
+      }
+      if (!circle.memberIds.includes(user.id)) {
+        await this.prisma.$transaction([
+          this.prisma.circle.update({
+            where: { id: circle.id },
+            data: { memberIds: { push: user.id } },
+          }),
+          this.prisma.circleActivity.create({
+            data: {
+              circleId: circle.id,
+              memberId: user.id,
+              kind: "join",
+              message: `${user.name} accepted the invitation and joined the circle`,
+            },
+          }),
+        ]);
+      }
+    }
+
     const updated = await this.prisma.invitation.update({
       where: { id },
       data: {
@@ -445,6 +645,67 @@ export class ConsumerService {
     }
 
     return updated;
+  }
+
+  private async withInvitationTargets<
+    T extends { groupId: string | null; circleId: string | null },
+  >(invitations: T[]) {
+    const groupIds = [
+      ...new Set(
+        invitations
+          .map((invitation) => invitation.groupId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const circleIds = [
+      ...new Set(
+        invitations
+          .map((invitation) => invitation.circleId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const [groups, circles] = await Promise.all([
+      groupIds.length
+        ? this.prisma.group.findMany({
+            where: { id: { in: groupIds } },
+            select: { id: true, name: true },
+          })
+        : [],
+      circleIds.length
+        ? this.prisma.circle.findMany({
+            where: { id: { in: circleIds } },
+            select: {
+              id: true,
+              type: true,
+              config: true,
+              business: { select: { name: true } },
+            },
+          })
+        : [],
+    ]);
+    const groupById = new Map(groups.map((group) => [group.id, group]));
+    const circleById = new Map(circles.map((circle) => [circle.id, circle]));
+
+    return invitations.map((invitation) => {
+      const group = invitation.groupId
+        ? groupById.get(invitation.groupId)
+        : undefined;
+      const circle = invitation.circleId
+        ? circleById.get(invitation.circleId)
+        : undefined;
+      const circleConfig = jsonObject(circle?.config);
+      return {
+        ...invitation,
+        groupName: group?.name ?? null,
+        circleName:
+          typeof circleConfig.name === "string" && circleConfig.name.length > 0
+            ? circleConfig.name
+            : circle
+              ? `${circle.type} Circle`
+              : null,
+        circleBusinessName: circle?.business.name ?? null,
+      };
+    });
   }
 
   private async loadConfig(): Promise<BusinessConfig> {
@@ -528,6 +789,58 @@ export class ConsumerService {
     await syncGroupActivationStatus(this.prisma, group.id);
   }
 
+  private profileFromAccount(account: User, user: SessionUser) {
+    const customer = jsonObject(account.customerProfile);
+    const preferences = jsonObject(customer.preferences);
+    return {
+      id: account.id,
+      email: account.email,
+      name: account.fullName ?? account.displayName ?? user.name,
+      firstName: account.firstName,
+      lastName: account.lastName,
+      avatarUrl: account.avatarUrl,
+      phone: account.phone,
+      address: account.address,
+      postcode: account.postcode,
+      city:
+        typeof customer.city === "string" && customer.city.length > 0
+          ? customer.city
+          : null,
+      country: account.country,
+      preferences: {
+        emailUpdates: preferences.emailUpdates !== false,
+        localDiscovery: preferences.localDiscovery !== false,
+        profileVisible: preferences.profileVisible !== false,
+      },
+      profile: account.customerProfile,
+    };
+  }
+
+  private mapCircle(circle: {
+    id: string;
+    type: string;
+    config: Prisma.JsonValue;
+    memberIds: string[];
+    createdAt: Date;
+    business?: { id: string; name: string } | null;
+  }) {
+    const config = jsonObject(circle.config);
+    return {
+      id: circle.id,
+      type: circle.type,
+      name:
+        typeof config.name === "string" && config.name.length > 0
+          ? config.name
+          : `${circle.type} Circle`,
+      config: circle.config,
+      memberIds: circle.memberIds,
+      memberCount: circle.memberIds.length,
+      businessId: circle.business?.id ?? null,
+      businessName: circle.business?.name ?? null,
+      createdAt: circle.createdAt.toISOString(),
+    };
+  }
+
   private mapGroup(group: {
     id: string;
     name: string;
@@ -539,9 +852,14 @@ export class ConsumerService {
     purpose: string;
     city: string | null;
     localArea: string | null;
+    ownerId: string | null;
+    ownerName: string;
+    requiredSize: number | null;
     memberCount: number;
     status: string;
     accessType: string;
+    directoryVisibility: string | null;
+    interactionLevel: string | null;
     requiredPlanIds: string[];
     pricing: string;
     contributionMinor: number | null;
@@ -559,9 +877,14 @@ export class ConsumerService {
       purpose: group.purpose,
       city: group.city,
       localArea: group.localArea,
+      ownerId: group.ownerId,
+      ownerName: group.ownerName,
+      requiredSize: group.requiredSize,
       memberCount: group.memberCount,
       status: group.status,
       accessType: group.accessType,
+      directoryVisibility: group.directoryVisibility,
+      interactionLevel: group.interactionLevel,
       pricing: group.pricing,
       contribution:
         group.contributionMinor != null

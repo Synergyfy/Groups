@@ -174,7 +174,7 @@ async function setup() {
       id: `smoke-plan-${run}`,
       variant: "Pro+",
       name: `Smoke Platinum ${run}`,
-      priceMonthly: 399,
+      priceMinor: 39900,
       status: "Active",
       groupQuota: 10,
       circleQuota: 2,
@@ -1029,9 +1029,9 @@ async function main() {
         category: "Professional Services",
       },
     });
-    expectStatus(result, 200, "update business profile");
-    eq(result.data.business.name, `Smoke A Renamed ${run}`, "business name updated");
-    eq(result.data.business.localArea, "Jewellery Quarter", "local area updated");
+    expectStatus(result, 409, "business profile edits are managed by Central Hub");
+    eq(result.data.code, "PROFILE_MANAGED_CENTRALLY", "profile edit error code");
+    ok(typeof result.data.editUrl === "string", "profile edit error includes a Central Hub link");
 
     result = await api("GET", "/business/plan", { token: f.tokenA });
     expectStatus(result, 200, "plan page");
