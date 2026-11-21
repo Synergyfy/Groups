@@ -1,6 +1,9 @@
 import { Module } from "@nestjs/common";
 import { AuthModule } from "../auth/auth.module.js";
+import { McomModule } from "../mcom/mcom.module.js";
+import { BusinessAccessGuard } from "./business-access.guard.js";
 import { BusinessContextService } from "./business-context.service.js";
+import { CentralAccessService } from "./central-access.service.js";
 import { BusinessRoleGuard } from "./business-role.guard.js";
 import { BusinessCirclesController } from "./circles/business-circles.controller.js";
 import { BusinessCirclesService } from "./circles/business-circles.service.js";
@@ -17,7 +20,7 @@ import {
 import { BusinessPlatformService } from "./platform/business-platform.service.js";
 
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, McomModule],
   controllers: [
     BusinessAccountController,
     BusinessPlatformController,
@@ -28,7 +31,9 @@ import { BusinessPlatformService } from "./platform/business-platform.service.js
   ],
   providers: [
     BusinessRoleGuard,
+    BusinessAccessGuard,
     BusinessContextService,
+    CentralAccessService,
     BusinessGroupsService,
     BusinessInvitationsService,
     BusinessNetworkService,

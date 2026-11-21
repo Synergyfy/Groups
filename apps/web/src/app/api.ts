@@ -63,6 +63,7 @@ export async function apiRequest<T>(
 ): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
+    cache: "no-store",
     credentials: "include",
     headers: {
       Accept: "application/json",

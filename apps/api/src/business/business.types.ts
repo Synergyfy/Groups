@@ -1,6 +1,7 @@
 import type {
   Business,
   BusinessPlan,
+  Partner,
   User,
 } from "../generated/prisma/client.js";
 
@@ -35,6 +36,8 @@ export interface GroupPaymentRules {
 export interface GroupCreationRules {
   allowedPlans: string[];
   allowedVariants: PlanVariant[];
+  /** Per plan+variant permission to create groups. */
+  planCreationRights: Record<string, Record<PlanVariant, boolean>>;
   restrictToPlatformGroup: boolean;
   platformGroupId: string | null;
   recruitmentTargets: Record<string, Record<PlanVariant, number>>;
@@ -115,6 +118,31 @@ export interface PlanAccessView {
   agreementAccepted: boolean;
   agreedAt?: string;
   accessExpiresAt?: string;
+  /** Where the access came from: local purchase or a Central Hub source. */
+  accessSource: CentralAccessSource;
+  externalPlanId?: string;
+  membershipName?: string;
+  accessReason?: string;
+  upgradeUrl?: string;
+  trialDaysRemaining?: number;
+  programmeTasks?: CentralProgrammeTask[];
+  quotas?: Record<string, unknown>;
+  limits?: Record<string, unknown>;
+  features?: string[];
+}
+
+export type CentralAccessSource =
+  | "local"
+  | "membership"
+  | "access_pass"
+  | "trial";
+
+export interface CentralProgrammeTask {
+  taskId: string;
+  title: string;
+  description: string;
+  deadlineDays: number;
+  status: string;
 }
 
 export interface BusinessContext {
@@ -122,7 +150,11 @@ export interface BusinessContext {
   business: Business;
   plan: BusinessPlan;
   config: BusinessConfig;
+  partner: Partner | null;
+  /** Present when Central Hub granted access or gave a denial reason. */
+  centralAccess?: import("../auth/entitlement-access.js").AccessDecision | null;
 }
+
 
 export interface GroupActivationView {
   target: number;

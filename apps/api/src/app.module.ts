@@ -10,6 +10,7 @@ import { HealthModule } from "./health/health.module.js";
 import { McomModule } from "./mcom/mcom.module.js";
 import { PaymentsModule } from "./payments/payments.module.js";
 import { PrismaModule } from "./prisma/prisma.module.js";
+import { ProfileSyncModule } from "./profile-sync/profile-sync.module.js";
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { PrismaModule } from "./prisma/prisma.module.js";
     BusinessModule,
     ConsumerModule,
     PaymentsModule,
+    ProfileSyncModule,
   ],
 })
 export class AppModule {}

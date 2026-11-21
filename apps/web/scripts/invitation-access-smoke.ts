@@ -82,13 +82,11 @@ const businessUser: UserEligibilityProfile = {
   sector: "Retail",
 };
 
-// Evaluate consumer vs B2B group
+// Evaluate consumer vs B2B group. The administrator publishes the group type
+// and join policy, so the consumer UI must not hide an admin-approved group.
 const consumerVsB2B = evaluateGroupEligibility(b2bGroup, consumerUser);
-assert(!consumerVsB2B.isEligible, "Consumer is NOT eligible for B2B business group");
-assert(
-  consumerVsB2B.matchReasons.some((r) => r.includes("business owners")),
-  "Ineligibility reason explains business owner requirement"
-);
+assert(consumerVsB2B.isEligible, "Consumer can see an admin-published B2B group");
+assert(consumerVsB2B.status === "can_join", "Consumer can join an open admin-approved group");
 
 // Evaluate consumer vs Community group
 const consumerVsComm = evaluateGroupEligibility(communityGroup, consumerUser);
@@ -146,9 +144,9 @@ const londonGroup: Group = {
   id: "grp-london",
   location: { city: "London" },
 };
-// Without invite, Birmingham user is not in location
+// Location is informational; the administrator still controls publication.
 const withoutInvite = evaluateGroupEligibility(londonGroup, businessUser);
-assert(!withoutInvite.isEligible, "Without direct invite, different city group is not recommended");
+assert(withoutInvite.isEligible, "Different-city admin-approved group remains discoverable");
 
 // With pending direct invitation, it becomes eligible
 const pendingInvite: Invitation = {
@@ -169,11 +167,56 @@ assert(withInvite.status === "invited", "Pending invitation recognized on group 
 
 console.log("\n--- 2. Store Actions & Membership Transitions ---");
 
-let state = createInitialAppState();
+const openStoreGroup: Group = {
+  id: "grp-london-sme",
+  name: "London SME Network",
+  type: "B2B",
+  source: "user-created",
+  purpose: "Open networking group",
+  ownerId: "owner-1",
+  ownerName: "Owner One",
+  memberIds: [],
+  status: "Active",
+  accessType: "open",
+  createdAt: "2026-01-01",
+};
+
+const requestStoreGroup: Group = {
+  ...openStoreGroup,
+  id: "grp-uk-business-exchange",
+  name: "UK Business Exchange",
+  accessType: "request",
+};
+
+const inviteStoreGroup: Group = {
+  ...openStoreGroup,
+  id: "grp-invite-store",
+  name: "Invite Store Group",
+  accessType: "invitation",
+};
+
+const storeInvitation: Invitation = {
+  id: "inv-store-pending",
+  groupId: inviteStoreGroup.id,
+  direction: "incoming",
+  kind: "invite",
+  inviteeId: "invited-user-id",
+  inviteeName: "Invited User",
+  invitedById: "owner-1",
+  invitedByName: "Owner One",
+  status: "pending",
+  createdAt: "2026-10-01",
+};
+
+let state = {
+  ...createInitialAppState(),
+  groups: [openStoreGroup, requestStoreGroup, inviteStoreGroup],
+  invitations: [storeInvitation],
+};
 const ACTOR = { id: "actor-new-member", name: "New Member" };
 
 // 1. Join open group
-const testGroupId = "grp-london-sme"; // open group
+const testGroupId = openStoreGroup.id; // open group
 state = appReducer(state, {
   type: "group/join",
   groupId: testGroupId,

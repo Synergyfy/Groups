@@ -21,23 +21,12 @@ import type {
   Invitation,
   PlanAccess,
   Plan,
-  PartnerRecord,
   PlatformAccount,
-  ProgrammeRecord,
-  CampaignRecord,
-  RelationshipRecord,
-  BusinessRecord,
-  AuditLogEntry,
-  LocationHierarchy,
 } from "../domain/types";
 import {
   adminApi,
   type AdminConfigResponse,
-  type AdminContentSection,
-  type AdminGroupReport,
   type AdminOverview,
-  type AdminPartnerGroups,
-  type AdminReportSchedule,
   type AdminSettingsReport,
   type AdminUser,
   type RewardDeal,
@@ -49,21 +38,11 @@ export interface AdminData {
   adminConfig: AdminConfig;
   circles: GroupCircle[];
   accounts: PlatformAccount[];
-  partners: PartnerRecord[];
-  businesses: BusinessRecord[];
-  programmes: ProgrammeRecord[];
-  campaigns: CampaignRecord[];
-  relationships: RelationshipRecord[];
   plans: Plan[];
   rewards: RewardDeal[];
-  locations: LocationHierarchy;
-  content: AdminContentSection[];
   users: AdminUser[];
-  auditLog: AuditLogEntry[];
   overview: AdminOverview | null;
-  report: AdminGroupReport | null;
   settingsReport: AdminSettingsReport | null;
-  reportSchedules: AdminReportSchedule[];
   planStats: {
     totalPlans: number;
     activePlans: number;
@@ -76,7 +55,6 @@ export interface AdminData {
     totalRedemptions: number;
     frontendDelivery: string;
   } | null;
-  partnerGroups: AdminPartnerGroups | null;
 }
 
 interface AdminDataContextValue {
@@ -108,6 +86,7 @@ const EMPTY_CONFIG: AdminConfig = {
   groupCreationRules: {
     allowedPlans: [],
     allowedVariants: [],
+    planCreationRights: {},
     restrictToPlatformGroup: false,
     platformGroupId: null,
     recruitmentTargets: {
@@ -214,47 +193,25 @@ async function loadAll(): Promise<AdminData> {
     groups,
     invitations,
     config,
-    businesses,
-    partners,
-    programmes,
-    campaigns,
-    relationships,
     plans,
     rewards,
-    locations,
-    content,
     users,
-    auditLog,
     overview,
-    report,
     settingsReport,
-    reportSchedules,
     planStats,
     rewardStats,
-    partnerGroups,
     circles,
   ] = await Promise.all([
     adminApi.groups(),
     adminApi.invitations(),
     adminApi.config(),
-    adminApi.businesses(),
-    adminApi.partners(),
-    adminApi.programmes(),
-    adminApi.campaigns(),
-    adminApi.relationships(),
     adminApi.plans(),
     adminApi.rewards(),
-    adminApi.locations(),
-    adminApi.content(),
     adminApi.users(),
-    adminApi.auditLog(),
     adminApi.overview(),
-    adminApi.report(),
     adminApi.settingsReport(),
-    adminApi.reportSchedules(),
     adminApi.planStats(),
     adminApi.rewardStats(),
-    adminApi.partnerGroups(),
     adminApi.circles(),
   ]);
 
@@ -266,24 +223,13 @@ async function loadAll(): Promise<AdminData> {
     accounts: users
       .filter((user) => user.role !== "business" && user.role !== "admin")
       .map(accountFromUser),
-    partners,
-    businesses,
-    programmes,
-    campaigns,
-    relationships,
     plans,
     rewards,
-    locations,
-    content,
     users,
-    auditLog,
     overview,
-    report,
     settingsReport,
-    reportSchedules,
     planStats,
     rewardStats,
-    partnerGroups,
   };
 }
 
@@ -363,15 +309,15 @@ export function AdminDataProvider({ children }: { children: ReactNode }) {
       circles: data.circles,
       circleActivities: [],
       activeCircleId: "",
-      adminConfig: { ...data.adminConfig, auditLog: data.auditLog },
+      adminConfig: data.adminConfig,
       plan: EMPTY_PLAN,
       networkContacts: [],
       accounts: data.accounts,
-      partners: data.partners,
-      businesses: data.businesses,
-      programmes: data.programmes,
-      campaigns: data.campaigns,
-      relationships: data.relationships,
+      partners: [],
+      businesses: [],
+      programmes: [],
+      campaigns: [],
+      relationships: [],
       businessProfile: null,
       businessStats: null,
     };
@@ -439,16 +385,6 @@ export function useAdminDirectoryEntry(): (id: string) => BusinessDirectoryEntry
   const { data } = useAdminData();
   return useMemo(() => {
     const index = new Map<string, BusinessDirectoryEntry>();
-    for (const business of data?.businesses ?? []) {
-      index.set(business.id, {
-        id: business.id,
-        name: business.name,
-        contactName: business.contactName,
-        city: business.city,
-        category: business.category,
-        joinedAt: business.joinedAt,
-      });
-    }
     for (const account of data?.accounts ?? []) {
       if (!index.has(account.id)) {
         index.set(account.id, {
@@ -716,130 +652,6 @@ async function handleAction(
         }));
         await adminApi.cancelInvitation(action.invitationId);
         await refresh();
-        return;
-      }
-
-      case "admin/partner-update": {
-        apply((current) => ({
-          ...current,
-          partners: current.partners.map((partner) =>
-            partner.id === action.partnerId
-              ? {
-                  ...partner,
-                  ...action.patch,
-                  id: partner.id,
-                  permissions: {
-                    ...partner.permissions,
-                    ...(action.patch.permissions ?? {}),
-                  },
-                }
-              : partner,
-          ),
-        }));
-        const updated = await adminApi.updatePartner(
-          action.partnerId,
-          action.patch as Record<string, unknown>,
-        );
-        apply((current) => ({
-          ...current,
-          partners: current.partners.map((partner) =>
-            partner.id === updated.id ? updated : partner,
-          ),
-        }));
-        return;
-      }
-
-      case "admin/business-update": {
-        apply((current) => ({
-          ...current,
-          businesses: current.businesses.map((business) =>
-            business.id === action.businessId
-              ? { ...business, ...action.patch, id: business.id }
-              : business,
-          ),
-        }));
-        const updated = await adminApi.updateBusiness(
-          action.businessId,
-          action.patch as Record<string, unknown>,
-        );
-        apply((current) => ({
-          ...current,
-          businesses: current.businesses.map((business) =>
-            business.id === updated.id ? updated : business,
-          ),
-        }));
-        return;
-      }
-
-      case "admin/programme-update": {
-        apply((current) => ({
-          ...current,
-          programmes: current.programmes.map((programme) =>
-            programme.id === action.programmeId
-              ? { ...programme, ...action.patch, id: programme.id }
-              : programme,
-          ),
-        }));
-        const updated = await adminApi.updateProgramme(
-          action.programmeId,
-          action.patch as Record<string, unknown>,
-        );
-        apply((current) => ({
-          ...current,
-          programmes: current.programmes.map((programme) =>
-            programme.id === updated.id ? updated : programme,
-          ),
-        }));
-        return;
-      }
-
-      case "admin/campaign-update": {
-        apply((current) => ({
-          ...current,
-          campaigns: current.campaigns.map((campaign) =>
-            campaign.id === action.campaignId
-              ? { ...campaign, ...action.patch, id: campaign.id }
-              : campaign,
-          ),
-        }));
-        const updated = await adminApi.updateCampaign(
-          action.campaignId,
-          action.patch as Record<string, unknown>,
-        );
-        apply((current) => ({
-          ...current,
-          campaigns: current.campaigns.map((campaign) =>
-            campaign.id === updated.id ? updated : campaign,
-          ),
-        }));
-        return;
-      }
-
-      case "admin/relationship-assign": {
-        const key =
-          action.kind === "account-manager"
-            ? "accountManagerId"
-            : action.kind === "agent"
-              ? "agentId"
-              : "consultantId";
-        apply((current) => ({
-          ...current,
-          groups: current.groups.map((group) =>
-            group.id === action.groupId
-              ? { ...group, [key]: action.relationshipId }
-              : group,
-          ),
-        }));
-        await adminApi.updateGroupRelationships(action.groupId, {
-          [key]: action.relationshipId ?? "",
-        });
-        const group = await adminApi.group(action.groupId);
-        apply((current) => ({
-          ...current,
-          groups: current.groups.map((entry) =>
-            entry.id === group.id ? group : entry,
-          ),
-        }));
         return;
       }
 

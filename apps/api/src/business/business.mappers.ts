@@ -26,6 +26,11 @@ export function mapBusinessPlan(
     agreementAccepted: plan.agreementAccepted,
     agreedAt: iso(plan.agreedAt),
     accessExpiresAt: iso(plan.accessExpiresAt),
+    accessSource: plan.accessSource,
+    externalPlanId: plan.externalPlanId ?? undefined,
+    membershipName: plan.membershipName ?? undefined,
+    accessReason: plan.accessReason ?? undefined,
+    upgradeUrl: plan.upgradeUrl ?? undefined,
   };
 }
 

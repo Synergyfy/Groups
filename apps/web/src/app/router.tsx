@@ -32,7 +32,6 @@ import JourneyPage from "../journey/JourneyPage";
 import AdminOverviewPage from "../features/admin/AdminOverviewPage";
 import AdminUsersPage from "../features/admin/AdminUsersPage";
 import AdminGroupsHubPage from "../features/admin/AdminGroupsHubPage";
-import AdminAccessRulesPage from "../features/admin/AdminAccessRulesPage";
 import AdminPlansPage from "../features/admin/AdminPlansPage";
 import AdminRewardsDealsPage from "../features/admin/AdminRewardsDealsPage";
 import AdminSettingsReportsPage from "../features/admin/AdminSettingsReportsPage";
@@ -42,24 +41,7 @@ import AdminGroupDetailsPage from "../features/admin/AdminGroupDetailsPage";
 import AdminGroupMembersPage from "../features/admin/AdminGroupMembersPage";
 import AdminGroupActivityPage from "../features/admin/AdminGroupActivityPage";
 import AdminGroupRelationshipsPage from "../features/admin/AdminGroupRelationshipsPage";
-import AutomaticGroupRulesPage from "../features/admin/AutomaticGroupRulesPage";
-import AdminGroupRulesPage from "../features/admin/AdminGroupRulesPage";
-import GroupTypeConfigPage from "../features/admin/GroupTypeConfigPage";
-import AdminReportsPage from "../features/admin/AdminReportsPage";
-import LocationRelationshipsPage from "../features/admin/LocationRelationshipsPage";
-import PartnerGroupsPage from "../features/admin/PartnerGroupsPage";
-import MandatoryCirclesPage from "../features/admin/MandatoryCirclesPage";
 import AdminInvitationsPage from "../features/admin/AdminInvitationsPage";
-import PublicContentAdminPage from "../features/public/PublicContentAdminPage";
-import AdminPendingReviewPage from "../features/admin/AdminPendingReviewPage";
-import AdminAuditLogPage from "../features/admin/AdminAuditLogPage";
-import AdminPartnersPage from "../features/admin/AdminPartnersPage";
-import AdminBusinessesPage from "../features/admin/AdminBusinessesPage";
-import AdminProgrammesPage from "../features/admin/AdminProgrammesPage";
-import AdminCampaignsPage from "../features/admin/AdminCampaignsPage";
-import AdminRelationshipsPage from "../features/admin/AdminRelationshipsPage";
-import AdminCircleConfigPage from "../features/admin/AdminCircleConfigPage";
-import AdminPermissionsPage from "../features/admin/AdminPermissionsPage";
 import LandingPage from "../features/public/LandingPage";
 import SignInPage from "../app/SignInPage";
 import AdminSignInPage from "../app/AdminSignInPage";
@@ -84,6 +66,9 @@ import ConsumerDashboardPage from "../features/consumer/ConsumerDashboardPage";
 import DedicatedConsumerMyGroupsPage from "../features/consumer/ConsumerMyGroupsPage";
 import DedicatedConsumerDiscoverGroupsPage from "../features/consumer/ConsumerDiscoverGroupsPage";
 import ConsumerInvitationsPage from "../features/consumer/ConsumerInvitationsPage";
+import ConsumerInvitationReviewPage from "../features/consumer/ConsumerInvitationReviewPage";
+import ConsumerGroupDetailPage from "../features/consumer/ConsumerGroupDetailPage";
+import ConsumerCircleDetailPage from "../features/consumer/ConsumerCircleDetailPage";
 import ConsumerAccountPage from "../features/consumer/ConsumerAccountPage";
 import { ConsumerDataProvider } from "../consumer/ConsumerDataProvider";
 import {
@@ -218,10 +203,6 @@ const adminRoutes = [
     element: <AdminGroupsHubPage />,
   },
   {
-    path: "access-rules",
-    element: <AdminAccessRulesPage />,
-  },
-  {
     path: "plans",
     element: <AdminPlansPage />,
   },
@@ -258,76 +239,12 @@ const adminRoutes = [
     element: <AdminGroupRelationshipsPage />,
   },
   {
-    path: "config/automatic",
-    element: <AutomaticGroupRulesPage />,
-  },
-  {
     path: "config/group-rules",
-    element: <AdminGroupRulesPage />,
-  },
-  {
-    path: "config/types",
-    element: <GroupTypeConfigPage />,
-  },
-  {
-    path: "locations",
-    element: <LocationRelationshipsPage />,
-  },
-  {
-    path: "partner-groups",
-    element: <PartnerGroupsPage />,
-  },
-  {
-    path: "mandatory-circles",
-    element: <MandatoryCirclesPage />,
+    element: <Navigate to="/admin/plans" replace />,
   },
   {
     path: "invitations",
     element: <AdminInvitationsPage />,
-  },
-  {
-    path: "pending-review",
-    element: <AdminPendingReviewPage />,
-  },
-  {
-    path: "audit-log",
-    element: <AdminAuditLogPage />,
-  },
-  {
-    path: "partners",
-    element: <AdminPartnersPage />,
-  },
-  {
-    path: "businesses",
-    element: <AdminBusinessesPage />,
-  },
-  {
-    path: "programmes",
-    element: <AdminProgrammesPage />,
-  },
-  {
-    path: "campaigns",
-    element: <AdminCampaignsPage />,
-  },
-  {
-    path: "relationships",
-    element: <AdminRelationshipsPage />,
-  },
-  {
-    path: "config/circles",
-    element: <AdminCircleConfigPage />,
-  },
-  {
-    path: "config/permissions",
-    element: <AdminPermissionsPage />,
-  },
-  {
-    path: "content",
-    element: <PublicContentAdminPage />,
-  },
-  {
-    path: "reports",
-    element: <AdminReportsPage />,
   },
 ];
 
@@ -450,9 +367,9 @@ export const routes: RouteObject[] = [
       { path: "my-groups", element: <DedicatedConsumerMyGroupsPage /> },
       { path: "discover", element: <DedicatedConsumerDiscoverGroupsPage /> },
       { path: "invitations", element: <ConsumerInvitationsPage /> },
-      { path: "invitations/:invitationId/review", element: <InvitationReviewPage /> },
-      { path: "groups/:groupId", element: <ParticipantGroupPage /> },
-      { path: "circles/:groupId", element: <ParticipantCircleDetailPage /> },
+      { path: "invitations/:invitationId/review", element: <ConsumerInvitationReviewPage /> },
+      { path: "groups/:groupId", element: <ConsumerGroupDetailPage /> },
+      { path: "circles/:groupId", element: <ConsumerCircleDetailPage /> },
       { path: "account", element: <ConsumerAccountPage /> },
       { path: "*", element: <NotFoundPage /> },
     ],

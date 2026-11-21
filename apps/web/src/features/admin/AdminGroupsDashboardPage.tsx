@@ -50,15 +50,6 @@ export default function AdminGroupsDashboardPage() {
   const byStage = toBars(tally(groups.map((group) => group.stage ?? "Unset")));
   const byStatus = toBars(tally(groups.map((group) => group.status)));
 
-  const programmeNames = new Map(state.programmes.map((entry) => [entry.id, entry.name]));
-  const byProgramme = toBars(
-    tally(
-      groups.map((group) =>
-        group.programmeId ? (programmeNames.get(group.programmeId) ?? group.programmeId) : "No programme"
-      )
-    )
-  );
-
   const rule = state.adminConfig.automaticGrouping;
 
   if (loading) {
@@ -204,12 +195,6 @@ export default function AdminGroupsDashboardPage() {
                 </dd>
               </div>
             </dl>
-            <Link
-              to="/admin/config/automatic"
-              className="mt-auto inline-flex items-center gap-1 text-xs font-medium text-gold-300 hover:text-gold-200"
-            >
-              Open Automatic Group Rules <ArrowRight className="size-3.5" />
-            </Link>
           </CardBody>
         </Card>
       </div>
@@ -276,15 +261,6 @@ export default function AdminGroupsDashboardPage() {
           </CardBody>
         </Card>
 
-        <Card>
-          <CardBody className="flex flex-col gap-3">
-              <div className="flex items-center gap-1.5">
-                <CardTitle>Groups by programme</CardTitle>
-                <TipIcon text="Groups with no programme assigned are counted as No programme." />
-              </div>
-            <BarChart data={byProgramme} accent="#fb7185" />
-          </CardBody>
-        </Card>
       </div>
     </div>
   );

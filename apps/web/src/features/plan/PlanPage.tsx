@@ -17,6 +17,11 @@ import { PLAN_VARIANTS, PLAN_VARIANT_ACCESS_DAYS, accessDaysLabel, planAccessLab
 import { useAppState } from "../../store/selectors";
 import { errorMessage } from "../../app/api";
 import { businessApi, useBusinessData } from "../../business/BusinessDataProvider";
+import {
+  creationRightsCombos,
+  planCanCreateGroups,
+  planRecruitmentTarget,
+} from "../groups/groupUtils";
 import PaymentDialog, {
   type PaymentTarget,
 } from "../payments/PaymentDialog";
@@ -38,9 +43,21 @@ export default function PlanPage() {
   const navigate = useNavigate();
   const business = useBusinessData();
   const rules = business.plan?.rules ?? state.adminConfig.groupCreationRules;
+  const [now] = useState(() => Date.now());
+  const accessExpired =
+    state.plan.status === "Expired" ||
+    (state.plan.accessExpiresAt
+      ? new Date(state.plan.accessExpiresAt).getTime() <= now
+      : false);
+  const hasActivePlan = state.plan.status === "Active" && !accessExpired;
+  const centralAccess =
+    state.plan.accessSource !== undefined &&
+    state.plan.accessSource !== "local";
   const entered =
-    state.plan.agreementAccepted &&
-    (!rules.requirePaidAccess || state.plan.paid);
+    hasActivePlan &&
+    (centralAccess ||
+      (state.plan.agreementAccepted &&
+        (!rules.requirePaidAccess || state.plan.paid)));
 
   const configuredPlans = useMemo(
     () => business.plan?.plans ?? [],
@@ -93,9 +110,12 @@ export default function PlanPage() {
   const selectedAccessDays = PLAN_VARIANT_ACCESS_DAYS[selectedVariant];
   const selectedAccessLabel = planAccessLabel(selectedVariant);
   const eligible = (plan: Plan) =>
-    rules.allowedPlans.includes(plan.name) && rules.allowedVariants.includes(plan.variant);
+    planCanCreateGroups(rules, plan.name, plan.variant);
+  const creationCombos = creationRightsCombos(rules);
 
-  const canSubmit = Boolean(selected) && agreed;
+  // While Central Hub is granting access it wins the priority order, so a local
+  // purchase would be overwritten on the next revalidation. Keep it disabled.
+  const canSubmit = Boolean(selected) && agreed && !centralAccess;
 
   const selectVariant = (next: string) => {
     const nextVariant = next as PlanVariant;
@@ -168,6 +188,97 @@ export default function PlanPage() {
             agreement to continue.
           </p>
         </header>
+
+        {centralAccess && hasActivePlan && (
+          <div className="rounded-2xl border border-sky-500/30 bg-sky-500/10 px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-semibold text-white">
+                {state.plan.accessSource === "membership"
+                  ? `Included in your ${state.plan.membershipName ?? "Central Hub"} membership`
+                  : state.plan.accessSource === "access_pass"
+                    ? `Central Hub access pass${
+                        state.plan.externalPlanId
+                          ? ` · ${state.plan.externalPlanId}`
+                          : ""
+                      }`
+                    : `Central Hub trial${
+                        state.plan.trialDaysRemaining !== undefined
+                          ? ` · ${state.plan.trialDaysRemaining} day${
+                              state.plan.trialDaysRemaining === 1 ? "" : "s"
+                            } left`
+                          : ""
+                      }`}
+              </p>
+              {state.plan.accessExpiresAt && (
+                <Badge variant="info">
+                  Expires {formatDate(state.plan.accessExpiresAt)}
+                </Badge>
+              )}
+            </div>
+            <p className="mt-1 text-[11px] leading-relaxed text-slate-300">
+              {state.plan.planName ?? "Central Hub plan"}
+              {state.plan.externalPlanId
+                ? ` · plan ${state.plan.externalPlanId}`
+                : ""}
+              . Your access is managed by Central Hub; local plan purchases are
+              disabled while this access is active.
+            </p>
+            {state.plan.programmeTasks && state.plan.programmeTasks.length > 0 && (
+              <ul className="mt-2 space-y-1">
+                {state.plan.programmeTasks.map((task) => (
+                  <li
+                    key={task.taskId}
+                    className="flex items-start gap-2 text-[11px] text-slate-300"
+                  >
+                    <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-sky-400" />
+                    <span>
+                      <span className="font-semibold text-white">
+                        {task.title}
+                      </span>
+                      {task.description ? ` — ${task.description}` : ""}
+                      {task.status ? ` (${task.status})` : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {!hasActivePlan &&
+          state.plan.upgradeUrl && (
+            <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3">
+              <p className="text-xs font-semibold text-white">
+                Central Hub access is not active
+              </p>
+              <p className="mt-0.5 text-[11px] leading-relaxed text-slate-300">
+                {state.plan.accessReason
+                  ? state.plan.accessReason.replaceAll("_", " ").toLowerCase()
+                  : "Your membership, pass or trial no longer grants access."}
+              </p>
+              <a
+                href={state.plan.upgradeUrl}
+                className="mt-2 inline-block rounded-xl border border-gold-500/30 bg-gold-500/10 px-3 py-1.5 text-[11px] font-semibold text-gold-200 hover:bg-gold-500/20"
+              >
+                Manage membership in Central Hub
+              </a>
+            </div>
+          )}
+
+        {!entered && (
+          <div className="rounded-2xl border border-gold-500/30 bg-gold-500/[0.08] px-4 py-3">
+            <p className="text-xs font-semibold text-white">
+              {hasActivePlan
+                ? "Complete access activation to continue"
+                : "Choose and activate a plan to continue"}
+            </p>
+            <p className="mt-0.5 text-[11px] leading-relaxed text-slate-300">
+              The rest of the business dashboard is locked until you have an active
+              plan{hasActivePlan ? "" : " and an accepted access agreement"}. If you
+              already paid, your plan may have expired — choose a plan to renew it.
+            </p>
+          </div>
+        )}
 
         {entered && (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-success-500/30 bg-success-500/10 px-4 py-3">
@@ -264,7 +375,7 @@ export default function PlanPage() {
               {variantPlans.map((plan) => {
                 const selectedCard = plan.id === selected?.id;
                 const canCreate = eligible(plan);
-                const target = rules.recruitmentTargets[plan.name]?.[plan.variant] ?? 0;
+                const target = planRecruitmentTarget(rules, plan.name, plan.variant);
                 const features = plan.features.filter((feature) => feature.trim().length > 0);
                 const planFeatures =
                   features.length > 0
@@ -371,8 +482,8 @@ export default function PlanPage() {
             <ul className="flex flex-col gap-2 text-xs leading-relaxed text-slate-300">
               {[
                 `Pay the £${selectedPrice} access fee before entering the dashboard. Payment and this agreement are required first — no exceptions.`,
-                rules.allowedPlans.length > 0 && rules.allowedVariants.length > 0
-                  ? `Only ${rules.allowedPlans.flatMap((name) => rules.allowedVariants.map((v) => `${name} ${v}`)).join(", ")} plans may create groups. Every other plan is placed into the platform group set by administrators.`
+                creationCombos.length > 0
+                  ? `Only ${creationCombos.map(({ planName, variant }) => `${planName} ${variant}`).join(", ")} plans may create groups. Every other plan is placed into the platform group set by administrators.`
                   : "No plan may currently create groups — every member is placed into the platform group set by administrators.",
                 "Groups stay non-functional until they reach the recruitment threshold set for your plan.",
                 "Head start groups are provided pre-populated but incomplete — you recruit the remaining members to activate them.",
@@ -439,4 +550,14 @@ export default function PlanPage() {
       />
     </div>
   );
+}
+
+function formatDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
 }

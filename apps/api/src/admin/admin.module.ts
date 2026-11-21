@@ -9,20 +9,9 @@ import {
 } from "./catalog/catalog.controller.js";
 import { AdminConfigService } from "./config/config.service.js";
 import {
-  AdminAccessRulesController,
   AdminConfigController,
-  AdminPermissionsController,
   AdminSettingsController,
 } from "./config/config.controller.js";
-import { AdminDirectoryService } from "./directory/directory.service.js";
-import {
-  AdminBusinessesController,
-  AdminCampaignsController,
-  AdminPartnerGroupsController,
-  AdminPartnersController,
-  AdminProgrammesController,
-  AdminRelationshipsController,
-} from "./directory/directory.controller.js";
 import { AdminGroupsService } from "./groups/groups.service.js";
 import {
   AdminCirclesController,
@@ -30,12 +19,7 @@ import {
 } from "./groups/groups.controller.js";
 import { AdminOperationsService } from "./operations/operations.service.js";
 import {
-  AdminAuditLogController,
-  AdminContentController,
   AdminInvitationsController,
-  AdminLocationsController,
-  AdminPendingReviewController,
-  AdminReportsController,
   AdminSettingsReportsController,
 } from "./operations/operations.controller.js";
 import { AdminOverviewService } from "./overview/overview.service.js";
@@ -50,24 +34,11 @@ import { AdminUsersController } from "./users/users.controller.js";
     AdminUsersController,
     AdminGroupsController,
     AdminCirclesController,
-    AdminBusinessesController,
-    AdminPartnersController,
-    AdminProgrammesController,
-    AdminCampaignsController,
-    AdminRelationshipsController,
-    AdminPartnerGroupsController,
     AdminConfigController,
-    AdminPermissionsController,
-    AdminAccessRulesController,
     AdminSettingsController,
     AdminPlansController,
     AdminRewardsDealsController,
     AdminInvitationsController,
-    AdminPendingReviewController,
-    AdminAuditLogController,
-    AdminContentController,
-    AdminLocationsController,
-    AdminReportsController,
     AdminSettingsReportsController,
   ],
   providers: [
@@ -76,7 +47,6 @@ import { AdminUsersController } from "./users/users.controller.js";
     AdminOverviewService,
     AdminUsersService,
     AdminGroupsService,
-    AdminDirectoryService,
     AdminConfigService,
     AdminCatalogService,
     AdminOperationsService,

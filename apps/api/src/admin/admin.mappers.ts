@@ -2,7 +2,6 @@ import type {
   AuditLog,
   Business,
   Campaign,
-  ContentSection,
   Group,
   GroupActivity,
   GroupCircle,
@@ -13,7 +12,6 @@ import type {
   PlatformAccount,
   Programme,
   Relationship,
-  ReportSchedule,
   RewardDeal,
 } from "../generated/prisma/client.js";
 import { fromMinorPence } from "../common/money.js";
@@ -299,29 +297,5 @@ export function mapAuditLog(entry: AuditLog) {
     targetName: entry.targetName,
     detail: entry.detail,
     at: iso(entry.at),
-  };
-}
-
-export function mapContentSection(section: ContentSection) {
-  return {
-    id: section.id,
-    label: section.label,
-    draft: jsonObject(section.draft),
-    published: jsonObject(section.published),
-    status: section.status,
-    publishedAt: iso(section.publishedAt),
-    updatedAt: iso(section.updatedAt),
-  };
-}
-
-export function mapReportSchedule(schedule: ReportSchedule) {
-  return {
-    id: schedule.id,
-    name: schedule.name,
-    type: schedule.type,
-    frequency: schedule.frequency,
-    recipients: schedule.recipients,
-    status: schedule.status,
-    lastRunAt: iso(schedule.lastRunAt),
   };
 }

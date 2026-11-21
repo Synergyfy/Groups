@@ -234,7 +234,7 @@ export function BusinessDataProvider({ children }: { children: ReactNode }) {
           locationsResult,
           journeyResult,
         ] = await Promise.all([
-          businessApi.dashboard(),
+          optional(businessApi.dashboard()),
           businessApi.config(),
           businessApi.plan(),
           businessApi.profile(),
@@ -272,11 +272,11 @@ export function BusinessDataProvider({ children }: { children: ReactNode }) {
         if (current !== requestId.current) return;
 
         const groupLists: Group[][] = [
-          dashboardResult.groups,
-          dashboardResult.created,
-          dashboardResult.joined,
-          dashboardResult.automatic,
-          dashboardResult.headStartGroups,
+          dashboardResult?.groups,
+          dashboardResult?.created,
+          dashboardResult?.joined,
+          dashboardResult?.automatic,
+          dashboardResult?.headStartGroups,
           exploreResult?.items,
           networkResult?.groups,
           communityResult?.groups,
@@ -288,14 +288,14 @@ export function BusinessDataProvider({ children }: { children: ReactNode }) {
 
         const invitationRows = new Map<string, Invitation>();
         for (const invitation of [
-          ...(dashboardResult.invitations ?? []),
+          ...(dashboardResult?.invitations ?? []),
           ...(invitationsResult?.items ?? []),
         ]) {
           invitationRows.set(invitation.id, invitation);
         }
 
         const activities = new Map<string, GroupActivity>();
-        for (const entry of dashboardResult.recentActivity ?? []) {
+        for (const entry of dashboardResult?.recentActivity ?? []) {
           activities.set(entry.id, entry);
         }
 
@@ -309,7 +309,15 @@ export function BusinessDataProvider({ children }: { children: ReactNode }) {
 
         const payload: BusinessHydratePayload = {
           profile: toProfile(profileView),
-          stats: dashboardResult.stats as BusinessStats,
+          stats: (dashboardResult?.stats ?? {
+            total: 0,
+            mine: 0,
+            owned: 0,
+            automatic: 0,
+            userCreated: 0,
+            pendingInvites: 0,
+            openRequests: 0,
+          }) as BusinessStats,
           groups,
           invitations: [...invitationRows.values()],
           groupActivities: stripGroupName([...activities.values()]),

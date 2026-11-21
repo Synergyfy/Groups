@@ -58,6 +58,7 @@ model User {
   consultantProfile       Json?        @map("consultant_profile")
   accountManagerProfile   Json?        @map("account_manager_profile")
   entitlement              Json?
+  entitlementCheckedAt    DateTime?    @map("entitlement_checked_at")
   lastLoginAt             DateTime?    @map("last_login_at")
   createdAt               DateTime     @default(now()) @map("created_at")
   updatedAt               DateTime     @updatedAt @map("updated_at")
@@ -145,6 +146,8 @@ model PlatformAccount {
 
 model Business {
   id               String   @id
+  /// The immutable Central Hub user id that owns this business profile.
+  mcomUserId       String?  @unique @map("mcom_user_id")
   name             String
   contactName      String   @map("contact_name")
   email            String   @unique
@@ -192,6 +195,15 @@ model BusinessPlan {
   agreementAccepted Boolean   @default(false) @map("agreement_accepted")
   agreedAt          DateTime? @map("agreed_at")
   accessExpiresAt   DateTime? @map("access_expires_at")
+  /// Where dashboard access comes from: local plan purchase, a Central Hub
+  /// membership, a Central Hub access pass, or a Central Hub trial window.
+  accessSource      String    @default("local") @map("access_source")
+  externalPlanId    String?   @map("external_plan_id")
+  membershipName    String?   @map("membership_name")
+  accessReason      String?   @map("access_reason")
+  upgradeUrl        String?   @map("upgrade_url")
+  programmeTasks    Json?     @map("programme_tasks")
+  centralQuotas     Json?     @map("central_quotas")
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
 
@@ -532,30 +544,26 @@ model LocationArea {
   @@map("location_areas")
 }
 
-model ContentSection {
-  id          String    @id
-  label       String
-  draft       Json
-  published   Json
-  status      String    @default("draft")
-  publishedAt DateTime? @map("published_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
+// ---------------------------------------------------------------------------
+// Central Hub profile sync
+// ---------------------------------------------------------------------------
 
-  @@map("content_sections")
-}
+/// Receipt log for `profile.updated` webhooks pushed by Central Hub. The event
+/// id is the dedupe key because Central Hub delivers at-least-once.
+model McomProfileEvent {
+  eventId     String    @id @map("event_id")
+  platform    String?
+  eventType   String    @map("event_type")
+  userId      String?   @map("user_id")
+  status      String    @default("processing")
+  attempts    Int       @default(1)
+  error       String?
+  receivedAt  DateTime  @default(now()) @map("received_at")
+  processedAt DateTime? @map("processed_at")
 
-model ReportSchedule {
-  id         String    @id
-  name       String
-  type       String
-  frequency  String    @default("monthly")
-  recipients String[]  @default([])
-  status     String    @default("Active")
-  lastRunAt  DateTime? @map("last_run_at")
-  createdAt  DateTime  @default(now()) @map("created_at")
-
-  @@index([createdAt])
-  @@map("report_schedules")
+  @@index([status])
+  @@index([receivedAt])
+  @@map("mcom_profile_events")
 }
 
 // ---------------------------------------------------------------------------

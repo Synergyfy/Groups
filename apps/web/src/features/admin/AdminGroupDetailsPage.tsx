@@ -50,14 +50,6 @@ const TAB_CLASS = {
 
 const ADMIN_ACTOR = { id: "admin", name: "Administrator" };
 
-function relationshipName(
-  relationships: { id: string; name: string }[],
-  id?: string,
-): string | undefined {
-  if (!id) return undefined;
-  return relationships.find((entry) => entry.id === id)?.name;
-}
-
 export default function AdminGroupDetailsPage() {
   const { groupId } = useParams();
   const group = useGroup(groupId);
@@ -77,7 +69,6 @@ export default function AdminGroupDetailsPage() {
   }
 
   const rule = state.adminConfig.automaticGrouping;
-  const programme = state.programmes.find((entry) => entry.id === group?.programmeId);
   const requiredPlanLabel =
     group?.requiredPlanIds && group.requiredPlanIds.length > 0
       ? group.requiredPlanIds
@@ -197,7 +188,6 @@ export default function AdminGroupDetailsPage() {
                     <InfoRow label="Created" value={group.createdAt.slice(0, 10)} />
                     <InfoRow label="Access" value={group.accessType} capitalize />
                     <InfoRow label="Stage" value={group.stage ?? "—"} />
-                    <InfoRow label="Programme" value={programme?.name ?? "No programme"} />
                     <InfoRow label="Pricing" value={group.pricing ?? "free"} capitalize />
                     <InfoRow label="Required plans" value={requiredPlanLabel} />
                     {group.contribution && <InfoRow label="Contribution" value={`£${group.contribution}`} />}
@@ -254,26 +244,6 @@ export default function AdminGroupDetailsPage() {
               </Card>
 
               <div className="grid gap-4 lg:grid-cols-2">
-                <Card>
-                  <CardBody className="flex flex-col gap-3">
-                    <div className="flex items-center gap-1.5">
-                      <CardTitle>Relationships</CardTitle>
-                      <TipIcon text="Not assigned means no one covers this group in that role yet." />
-                    </div>
-                    <ul className="flex flex-col gap-2 text-xs">
-                      <InfoRow label="Account manager" value={relationshipName(state.relationships, group.accountManagerId) ?? "Not assigned"} />
-                      <InfoRow label="Agent" value={relationshipName(state.relationships, group.agentId) ?? "Not assigned"} />
-                      <InfoRow label="Consultant" value={relationshipName(state.relationships, group.consultantId) ?? "Not assigned"} />
-                    </ul>
-                    <Link
-                      to={`/admin/groups/${group.id}/relationships`}
-                      className="mt-auto inline-flex items-center gap-1 text-xs font-medium text-gold-300 hover:text-gold-200"
-                    >
-                      Open the full relationship view <ArrowRight className="size-3.5" />
-                    </Link>
-                  </CardBody>
-                </Card>
-
                 <Card>
                   <CardBody className="flex flex-col gap-3">
                     <CardTitle>Location</CardTitle>
@@ -365,9 +335,9 @@ function PendingReviewBanner({ groupId, groupName }: { groupId: string; groupNam
     setBusy(true);
     try {
       if (approve) {
-        await adminApi.approvePending(groupId);
+        await adminApi.approveGroup(groupId);
       } else {
-        await adminApi.rejectPending(groupId);
+        await adminApi.closeGroup(groupId);
       }
       await refresh();
       setFeedback(`${groupName} ${approve ? "approved and activated" : "rejected"}`);

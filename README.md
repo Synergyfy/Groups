@@ -54,6 +54,12 @@ MCOM_WEBHOOK_SECRET="..."
 MCOM_PAY_ENABLED="true"
 MCOM_REDIRECT_URI="http://localhost:4088/auth/callback"
 MCOM_SCOPES="profile email business membership packages"
+MCOM_CENTRAL_AUDIENCE="mcom-central"
+MCOM_CENTRAL_READ_SCOPE="central:read"
+
+# Profile edits happen in Central Hub.
+MCOM_PROFILE_EDIT_URL="http://localhost:3000/dashboard/profile"
+VITE_MCOM_PROFILE_URL="http://localhost:3000/dashboard/profile"
 
 WEB_PUBLIC_URL="http://localhost:4088"
 VITE_STRIPE_PUBLISHABLE_KEY="pk_test_..."
@@ -126,10 +132,15 @@ root `.env` file (`WEB_PORT` and `API_PORT`).
 
 The SSO callback is handled by `/auth/callback` in the web app, which exchanges the code with the API at `POST /api/auth/mcom/callback`.
 
-### Development entitlement bypass
+### Entitlement enforcement
+
+Consumer, agent, consultant, account-manager and partner accounts use the free
+consumer dashboard. They still sign in through Central Hub, but they do **not**
+need a membership, access pass or trial. Central Hub entitlement is enforced
+only for `BUSINESS` workspaces.
 
 `MCOM_ENFORCE_ENTITLEMENTS` controls whether the API enforces Central Hub's
-`entitlement.access.hasAccess` verdict.
+`entitlement.access.hasAccess` verdict for business accounts.
 
 ```dotenv
 # Strict (production): reject users Central Hub says are not entitled
@@ -141,7 +152,98 @@ MCOM_ENFORCE_ENTITLEMENTS=false
 
 When set to `false`, the entitlement and white-label gates are skipped, but
 Central Hub administrators are still required to use `/admin/login`.
-The local `.env` currently uses `false`; `.env.example` defaults to `true`.
+`.env.example` defaults to `true`; keep it `true` in production.
+
+### Central Hub membership, access pass and trial access
+
+A business can reach this dashboard through any of the three Central Hub access
+models. Central Hub is the source of truth; the Groups app mirrors the verdict:
+
+| Access model | `accessSource` | Local plan treatment |
+| --- | --- | --- |
+| Membership bundling a Groups plan | `membership` | Active, paid; expiry follows the membership |
+| Central Hub access pass | `access_pass` | Active, paid; `accessExpiresAt` = pass expiry |
+| Dashboard access / trial | `trial` | Active, unpaid; `accessExpiresAt` = trial expiry |
+| Locally purchased plan | `local` | Existing plan/payment rules apply |
+
+- The SSO token response and `GET /api/v1/auth/sso/entitlement` are read through
+  `decideAccess()` (`apps/api/src/auth/entitlement-access.ts`), which applies
+  the published priority order and rejects expired plans even when
+  `access.hasAccess` is still cached as true.
+- `BusinessContextService.resolve()` provisions or revokes the local
+  `BusinessPlan` row (`accessSource`, `externalPlanId`, `membershipName`,
+  `accessExpiresAt`, `programmeTasks`, `centralQuotas`). `plan.planId` is mapped
+  to a published local plan when the IDs match, otherwise to the plan name.
+- The entitlement is revalidated at most every five minutes using
+  `MCOM_API_KEY` (`GET /api/v1/auth/sso/entitlement`). Set the key or background
+  revalidation is skipped.
+- `BusinessAccessGuard` and `BusinessLayout` treat a Central Hub grant as
+  covering the local access fee and agreement. Denials carry the Central Hub
+  `reason` and `upgradeUrl` so the UI can send the business back to
+  Central Hub.
+- Trial programme tasks returned in `trialContext.programmeTasks` are shown on
+  the plan page with the remaining days.
+- Local plan purchases are disabled while a Central Hub grant is active,
+  because Central Hub takes priority and would overwrite the local plan on the
+  next revalidation.
+
+Plan/access-pass IDs should be stable and published in the local catalogue
+(`/admin/plans`). A Central Hub plan whose ID matches a local plan inherits that
+plan's name, variant, quotas and group-creation rights.
+
+### Central Hub profile ownership
+
+Consumer and business profiles are **owned by Central Hub**. Local apps mirror
+the canonical record and cannot edit identity data:
+
+- `PATCH /api/consumer/profile` and `PATCH /api/business/profile` return `409`
+  with `code: "PROFILE_MANAGED_CENTRALLY"` and an `editUrl` pointing at Central
+  Hub.
+- Local-only consumer communication preferences remain editable through
+  `PATCH /api/consumer/preferences`.
+- The UI links every "edit profile" action to `VITE_MCOM_PROFILE_URL`
+  (`MCOM_PROFILE_EDIT_URL` on the API) instead of local forms.
+
+Central Hub pushes a signed `profile.updated` signal, and this app pulls the
+canonical profile over the M2M service mesh:
+
+```http
+POST http://localhost:4089/api/webhooks/profile-updated
+Content-Type: application/json
+X-Mcom-Webhook-Signature: sha256=<hex>
+
+{
+  "event": "profile.updated",
+  "platform": "mcom-group",
+  "timestamp": "2026-11-20T10:15:00.000Z",
+  "data": {
+    "eventId": "4f1c2e8a-8f2b-4a1e-9c3d-2b7e6a1d9f40",
+    "occurredAt": "2026-11-20T10:15:00.000Z",
+    "userId": "usr_123"
+  }
+}
+```
+
+The handler verifies the HMAC with `MCOM_WEBHOOK_SECRET` (falling back to
+`MCOM_HMAC_SECRET`), dedupes `data.eventId`, mints an RS256 service token for
+`mcom-central` with `central:read`, calls
+`GET /api/v1/ecosystem/profiles/:userId`, and upserts the local `User`,
+`Business`, group-member and invitation snapshots keyed on the immutable
+Central Hub user id. Delivery is at-least-once; failed pulls return `503` so
+Central Hub retries.
+
+Register the endpoint in **MCOM Console**:
+
+| Setting | Value |
+| --- | --- |
+| Roles | `BUSINESS`, `CUSTOMER` (roles this app serves) |
+| Profile Update Endpoint | `https://<this-app>/api/webhooks/profile-updated` |
+| Service Scopes | includes `central:read` |
+| Allowed Audiences | includes `mcom-central` |
+| Service Mesh Policy | Central allows this app as a caller |
+
+Saving the endpoint in Console provisions the B2B scope, audience and ingress
+grant automatically.
 
 ### Central Hub mesh smoke test
 
@@ -183,6 +285,7 @@ The API is a NestJS application using Prisma 7 with the PostgreSQL driver adapte
 | `GET`    | `/api/mcom/discovery`          | Central Hub discovery document          |
 | `GET`    | `/api/mcom/services`           | Ecosystem peer registry                 |
 | `GET`    | `/api/mcom/service/health`     | Inbound mesh-protected health endpoint  |
+| `POST`   | `/api/webhooks/profile-updated` | Signed Central Hub profile-change push |
 | `GET`    | `/api/groups`                  | List groups (`?visibility=PUBLIC`)      |
 | `GET`    | `/api/groups/:id`              | Get a group                             |
 | `POST`   | `/api/groups`                  | Create a group                          |
@@ -194,13 +297,21 @@ Prisma schema: `apps/api/prisma/schema.prisma`.
 ## Consumer API
 
 Consumer dashboard data is persisted in PostgreSQL and requires a signed-in
-`CUSTOMER` session.
+consumer-capable session (`CUSTOMER`, `AGENT`, `CONSULTANT`, `ACCOUNT_MANAGER`
+or `PARTNER`). No membership or access pass is required.
 
 | Area | Endpoints |
 | ---- | --------- |
-| Profile and dashboard | `GET /api/consumer/profile`, `GET /api/consumer/dashboard` |
-| Groups | `GET /api/consumer/groups`, `GET /api/consumer/groups/explore`, `GET /api/consumer/groups/:id`, `PATCH /api/consumer/groups/:id/join`, `DELETE /api/consumer/groups/:id/leave` |
-| Invitations | `GET /api/consumer/invitations`, `PATCH /api/consumer/invitations/:id/respond` |
+| Profile and dashboard | `GET /api/consumer/profile`, `PATCH /api/consumer/profile` (409 — edit in Central Hub), `PATCH /api/consumer/preferences`, `GET /api/consumer/dashboard` |
+| Groups | `GET /api/consumer/groups`, `GET /api/consumer/groups/explore`, `GET /api/consumer/groups/:id`, `GET/POST /api/consumer/groups/:id/activity`, `PATCH /api/consumer/groups/:id/join`, `DELETE /api/consumer/groups/:id/leave` |
+| Circles | `GET /api/consumer/circles`, `GET /api/consumer/circles/:id` |
+| Invitations | `GET /api/consumer/invitations`, `GET /api/consumer/invitations/:id`, `PATCH /api/consumer/invitations/:id/respond` |
+| Public invitation preview | `GET /api/invitations/public/:id` (no session required) |
+
+The consumer dashboard is free. Identity fields are owned by Central Hub, so
+`PATCH /api/consumer/profile` returns `409 PROFILE_MANAGED_CENTRALLY`. Local
+notification and discovery preferences are saved through
+`PATCH /api/consumer/preferences`.
 
 ## Admin console API
 
@@ -225,7 +336,7 @@ receive `401`, non-admin sessions `403`.
 | Moderation | `GET /api/admin/pending-review`, `POST /api/admin/pending-review/:id/approve\|reject` |
 | Audit log | `GET /api/admin/audit-log` |
 | Configuration | `GET/PATCH /api/admin/config`, plus `GET/PATCH /api/admin/config/automatic`, `GET/PATCH /api/admin/config/group-rules`, `GET/PUT /api/admin/config/types`, `GET/PUT /api/admin/config/circles`, `GET/PUT /api/admin/config/mandatory-circles`, `GET/PUT /api/admin/config/mandatory-groups`, `GET/PUT /api/admin/config/stages`, `GET/PATCH /api/admin/config/payment-rules` |
-| Permissions & access | `GET/PATCH /api/admin/permissions`, `GET/PATCH /api/admin/access-rules`, `GET/PATCH /api/admin/settings` |
+| Permissions & access | `GET/PATCH /api/admin/permissions`, `GET/PATCH /api/admin/settings` |
 | Locations | `GET /api/admin/locations`, `POST /api/admin/locations/cities`, `PATCH/DELETE /api/admin/locations/cities/:id`, `POST /api/admin/locations/cities/:cityId/areas`, `PATCH/DELETE /api/admin/locations/areas/:id` |
 | Content | `GET /api/admin/content`, `GET /api/admin/content/status`, `GET/PATCH /api/admin/content/:id`, `POST /api/admin/content/:id/publish`, `POST /api/admin/content/publish-all` |
 | Reports | `GET /api/admin/reports`, `GET/POST /api/admin/reports/schedules`, `PATCH/DELETE /api/admin/reports/schedules/:id`, `GET /api/admin/settings-reports` |

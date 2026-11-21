@@ -7,7 +7,6 @@ import {
   IsIn,
   IsInt,
   IsNumber,
-  IsObject,
   IsOptional,
   IsString,
   IsUUID,
@@ -114,7 +113,7 @@ export class CreateBusinessGroupDto {
   @IsString() @MaxLength(80) type!: string;
   @IsString() @MaxLength(2000) purpose!: string;
   @IsOptional() @IsString() @MaxLength(2000) description?: string;
-  @IsIn(ACCESS_TYPES) accessType!: string;
+  @IsOptional() @IsIn(ACCESS_TYPES) accessType?: string;
   @IsOptional() @IsIn(VISIBILITIES) visibility?: string;
   @IsOptional() @IsIn(INTERACTION_LEVELS) interactionLevel?: string;
   @IsOptional() @IsIn(PRICING_MODES) pricing?: string;
@@ -131,7 +130,8 @@ export class UpdateBusinessGroupDto {
   @IsOptional() @IsString() @MaxLength(120) name?: string;
   @IsOptional() @IsString() @MaxLength(2000) purpose?: string;
   @IsOptional() @IsString() @MaxLength(2000) description?: string;
-  @IsOptional() @IsIn(GROUP_STATUSES) status?: string;
+  /** Owners may close their group; activation status is server-managed. */
+  @IsOptional() @IsIn(["Closed"]) status?: string;
   @IsOptional() @IsIn(ACCESS_TYPES) accessType?: string;
   @IsOptional() @IsIn(VISIBILITIES) visibility?: string;
   @IsOptional() @IsIn(INTERACTION_LEVELS) interactionLevel?: string;
@@ -143,6 +143,10 @@ export class UpdateBusinessGroupDto {
   @IsOptional() @IsInt() @Min(0) requiredSize?: number;
   @IsOptional() @IsString() @MaxLength(80) stage?: string;
   @IsOptional() @IsArray() @IsString({ each: true }) campaignIds?: string[];
+}
+
+export class CreateGroupActivityDto {
+  @IsString() @MaxLength(2000) message!: string;
 }
 
 export class InviteEntryDto {
@@ -257,12 +261,4 @@ export class ActivatePlanDto {
   @IsBoolean() agreementAccepted!: boolean;
 }
 
-export class UpdateBusinessProfileDto {
-  @IsOptional() @IsString() @MaxLength(160) name?: string;
-  @IsOptional() @IsString() @MaxLength(160) contactName?: string;
-  @IsOptional() @IsString() @MaxLength(40) phone?: string;
-  @IsOptional() @IsString() @MaxLength(80) city?: string;
-  @IsOptional() @IsString() @MaxLength(80) localArea?: string;
-  @IsOptional() @IsString() @MaxLength(80) category?: string;
-  @IsOptional() @IsObject() businessProfile?: Record<string, unknown>;
-}
+

@@ -19,8 +19,9 @@ import {
   type UserEligibilityProfile,
   type EligibilityResult,
 } from "../groups/groupEligibility";
-import { readParticipantSession, writeAuthSession } from "../../app/authSession";
+import { readParticipantSession } from "../../app/authSession";
 import { ApiError, errorMessage } from "../../app/api";
+import { mcomProfileUrl } from "../../lib/mcomProfile";
 import PaymentDialog, {
   type PaymentTarget,
 } from "../payments/PaymentDialog";
@@ -30,19 +31,26 @@ export default function ConsumerDiscoverGroupsPage() {
     document.title = "CHS Groups | Discover Groups";
   }, []);
 
-  const { explore, groups, join, refresh } = useConsumerData();
+  const { profile, explore, groups, join, refresh } = useConsumerData();
 
-  // Location state (persisted to participant session)
   const initialSession = readParticipantSession();
-  const consumerId = initialSession?.role === "consumer" ? (initialSession.accountId || initialSession.email || "") : "";
-  const consumerName = (initialSession?.role === "consumer" && initialSession.name) ? initialSession.name : "John Doe";
+  const consumerId =
+    profile?.id ||
+    (initialSession?.role === "consumer"
+      ? initialSession.accountId || initialSession.email || ""
+      : "");
+  const consumerName =
+    profile?.name ||
+    (initialSession?.role === "consumer" ? initialSession.name : undefined) ||
+    "Member";
 
-  const [postcode, setPostcode] = useState(initialSession?.postcode || "B1 2AB");
-  const [city, setCity] = useState(
-    initialSession?.city || inferCityFromPostcode(initialSession?.postcode || "B1 2AB") || "Birmingham"
-  );
-  const [isEditingLocation, setIsEditingLocation] = useState(false);
-  const [tempPostcode, setTempPostcode] = useState(postcode);
+  // Location is owned by Central Hub; derive it from the mirrored profile.
+  const postcode = profile?.postcode || initialSession?.postcode || "";
+  const city =
+    profile?.city ||
+    initialSession?.city ||
+    inferCityFromPostcode(postcode) ||
+    "";
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFilter, setSelectedFilter] = useState<"all" | "local" | "events" | "national">("all");
@@ -51,24 +59,6 @@ export default function ConsumerDiscoverGroupsPage() {
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [paymentTarget, setPaymentTarget] = useState<PaymentTarget | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
-
-  const handleSaveLocation = (e: React.FormEvent) => {
-    e.preventDefault();
-    const cleanPostcode = tempPostcode.trim().toUpperCase() || "B1 2AB";
-    const inferred = inferCityFromPostcode(cleanPostcode) || "Birmingham";
-    setPostcode(cleanPostcode);
-    setCity(inferred);
-    setIsEditingLocation(false);
-
-    // Save to session storage
-    if (initialSession) {
-      writeAuthSession({
-        ...initialSession,
-        postcode: cleanPostcode,
-        city: inferred,
-      });
-    }
-  };
 
   const userProfile: UserEligibilityProfile = useMemo(() => {
     return {
@@ -80,10 +70,13 @@ export default function ConsumerDiscoverGroupsPage() {
     };
   }, [consumerId, consumerName, city, postcode]);
 
-  // Evaluate all groups against eligibility
+  // Evaluate all groups against eligibility. Joined groups win over the
+  // discovery copy so membership state is not lost.
   const evaluatedGroups = useMemo(() => {
-    return [...explore, ...groups].map((group) =>
-      evaluateGroupEligibility(group, userProfile, [])
+    const byId = new Map(explore.map((group) => [group.id, group]));
+    for (const group of groups) byId.set(group.id, group);
+    return [...byId.values()].map((group) =>
+      evaluateGroupEligibility(group, userProfile, []),
     );
   }, [explore, groups, userProfile]);
 
@@ -196,56 +189,30 @@ export default function ConsumerDiscoverGroupsPage() {
         {/* Location selector widget */}
         <div className="flex flex-col gap-1 rounded-xl border border-white/10 bg-ink-950/70 p-3 sm:min-w-[220px]">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] uppercase font-semibold text-slate-400">Your Location</span>
-            {!isEditingLocation ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setTempPostcode(postcode);
-                  setIsEditingLocation(true);
-                }}
-                className="text-[11px] font-semibold text-gold-400 hover:text-gold-300"
-              >
-                Change
-              </button>
-            ) : null}
+            <span className="text-[10px] uppercase font-semibold text-slate-400">
+              Your Location
+            </span>
+            <a
+              href={mcomProfileUrl()}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-[11px] font-semibold text-gold-400 hover:text-gold-300"
+            >
+              Edit <ExternalLink className="size-3" />
+            </a>
           </div>
 
-          {!isEditingLocation ? (
-            <div className="flex items-center gap-2 pt-0.5">
-              <MapPin className="size-4 text-gold-400 shrink-0" />
-              <div>
-                <p className="text-xs font-bold text-white">{city}</p>
-                <p className="text-[10px] text-slate-400">{postcode}</p>
-              </div>
+          <div className="flex items-center gap-2 pt-0.5">
+            <MapPin className="size-4 shrink-0 text-gold-400" />
+            <div>
+              <p className="text-xs font-bold text-white">
+                {city || "Not set"}
+              </p>
+              <p className="text-[10px] text-slate-400">
+                {postcode || "Update this in Central Hub"}
+              </p>
             </div>
-          ) : (
-            <form onSubmit={handleSaveLocation} className="mt-1 flex flex-col gap-2">
-              <input
-                type="text"
-                value={tempPostcode}
-                onChange={(e) => setTempPostcode(e.target.value)}
-                placeholder="e.g. B1 1AA, M1 1AE, SW1A 1AA"
-                className="rounded-lg border border-gold-500/40 bg-ink-900 px-2.5 py-1 text-xs text-white placeholder-slate-500 outline-none focus:ring-1 focus:ring-gold-500"
-                autoFocus
-              />
-              <div className="flex items-center justify-end gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setIsEditingLocation(false)}
-                  className="rounded-lg px-2 py-1 text-[10px] text-slate-400 hover:text-white"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="rounded-lg bg-gold-500 px-2.5 py-1 text-[10px] font-bold text-ink-950 hover:bg-gold-400"
-                >
-                  Save Postcode
-                </button>
-              </div>
-            </form>
-          )}
+          </div>
         </div>
       </div>
 
@@ -358,7 +325,8 @@ export default function ConsumerDiscoverGroupsPage() {
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {filteredResults.map((result) => {
             const { group, matchReasons, status } = result;
-            const isAlreadyMember = group.memberIds.includes(consumerId);
+            const isAlreadyMember =
+              Boolean(group.isMember) || group.memberIds.includes(consumerId);
             const isInvited = status === "invited";
             const hasRequested = requestedGroupId === group.id;
 
@@ -390,7 +358,10 @@ export default function ConsumerDiscoverGroupsPage() {
                         {group.name}
                       </h2>
                       <p className="mt-0.5 text-xs text-slate-500">
-                        By <span className="text-slate-300">{group.ownerName}</span>
+                        By{" "}
+                        <span className="text-slate-300">
+                          {group.ownerName || "Group owner"}
+                        </span>
                       </p>
                     </div>
                   </div>
@@ -412,7 +383,7 @@ export default function ConsumerDiscoverGroupsPage() {
                     <div className="flex items-center gap-3 text-[11px] text-slate-400">
                       <span className="inline-flex items-center gap-1">
                         <Users className="size-3.5 text-slate-500" />
-                        {group.memberIds.length} members
+                        {group.memberCount ?? group.memberIds.length} members
                       </span>
                       <span className="inline-flex items-center gap-1">
                         <Sparkles className="size-3.5 text-gold-400" />

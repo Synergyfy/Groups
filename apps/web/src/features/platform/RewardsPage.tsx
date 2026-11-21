@@ -1,10 +1,17 @@
+import { useState } from "react";
 import { Award, Sparkles } from "lucide-react";
 import Badge from "../../components/ui/Badge";
+import Button from "../../components/ui/Button";
 import Card, { CardBody, CardTitle } from "../../components/ui/Card";
 import LinkButton from "../../components/ui/LinkButton";
 import SectionHeader from "../../components/ui/SectionHeader";
 import StatCard from "../../components/ui/StatCard";
-import { useBusinessData } from "../../business/BusinessDataProvider";
+import Toast from "../../components/ui/Toast";
+import { errorMessage } from "../../app/api";
+import {
+  businessApi,
+  useBusinessData,
+} from "../../business/BusinessDataProvider";
 
 const TIER_VARIANT: Record<string, "gold" | "default" | "muted"> = {
   Platinum: "gold",
@@ -21,7 +28,22 @@ const STATUS_VARIANT: Record<string, "success" | "warning" | "muted"> = {
 };
 
 export default function RewardsPage() {
-  const { rewards, profile } = useBusinessData();
+  const { rewards, profile, refresh } = useBusinessData();
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [claiming, setClaiming] = useState<string | null>(null);
+
+  const claim = async (id: string) => {
+    setClaiming(id);
+    try {
+      const deal = await businessApi.claimReward(id);
+      await refresh();
+      setFeedback(`Claimed "${deal.title}".`);
+    } catch (cause) {
+      setFeedback(errorMessage(cause));
+    } finally {
+      setClaiming(null);
+    }
+  };
   const programmes = rewards?.programmes ?? [];
   const campaigns = rewards?.campaigns ?? [];
   const rewardDeals = rewards?.rewardDeals.items ?? [];
@@ -232,6 +254,14 @@ export default function RewardsPage() {
                     <Badge variant={deal.liveOnFrontend ? "success" : "muted"}>
                       {deal.status}
                     </Badge>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={claiming === deal.id}
+                      onClick={() => claim(deal.id)}
+                    >
+                      Claim
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -239,6 +269,10 @@ export default function RewardsPage() {
           )}
         </CardBody>
       </Card>
+
+      {feedback && (
+        <Toast message={feedback} onDismiss={() => setFeedback(null)} />
+      )}
     </div>
   );
 }

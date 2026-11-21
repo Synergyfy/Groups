@@ -16,6 +16,7 @@ import { BusinessContextService } from "../business-context.service.js";
 import {
   BusinessGroupQueryDto,
   CreateBusinessGroupDto,
+  CreateGroupActivityDto,
   InviteMembersDto,
   UpdateBusinessGroupDto,
 } from "../dto/business.dto.js";
@@ -116,6 +117,15 @@ export class BusinessGroupsController {
   @Get(":id/activity")
   async activity(@Param("id", ParseUUIDPipe) id: string, @CurrentUser() user: SessionUser) {
     return this.groups.getActivity(await this.context.resolve(user), id);
+  }
+
+  @Post(":id/activity")
+  async postActivity(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: CreateGroupActivityDto,
+    @CurrentUser() user: SessionUser,
+  ) {
+    return this.groups.postActivity(await this.context.resolve(user), id, dto);
   }
 
   @Get(":id/invitations")

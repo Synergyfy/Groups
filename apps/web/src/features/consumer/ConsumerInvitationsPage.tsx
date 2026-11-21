@@ -19,16 +19,26 @@ export default function ConsumerInvitationsPage() {
   const circleCount = pending.filter((inv) => inv.circleId).length;
   const groupCount = pending.length - circleCount;
 
-  const handleDecline = (invitation: Invitation) => {
-    void respond(invitation.id, false);
-    setFeedback(`Declined invitation.`);
-    setAcceptedCircleId(null);
+  const handleDecline = async (invitation: Invitation) => {
+    try {
+      await respond(invitation.id, false);
+      setFeedback("Declined invitation.");
+      setAcceptedCircleId(null);
+    } catch {
+      setFeedback("Could not decline the invitation. Please try again.");
+    }
   };
 
-  const handleAcceptCircle = (invitation: Invitation) => {
-    void respond(invitation.id, true);
-    setFeedback(`Joined circle successfully!`);
-    setAcceptedCircleId(invitation.circleId ?? null);
+  const handleAcceptCircle = async (invitation: Invitation) => {
+    try {
+      await respond(invitation.id, true);
+      setFeedback(
+        `Joined ${invitation.circleName || "the circle"} successfully!`,
+      );
+      setAcceptedCircleId(invitation.circleId ?? null);
+    } catch {
+      setFeedback("Could not join the circle. Please try again.");
+    }
   };
 
   return (
@@ -161,7 +171,7 @@ function PendingCircleInvitation({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-1.5">
             <p className="text-sm font-semibold text-white">
-              {"Central Circle"}
+              {invitation.circleName || "Circle invitation"}
             </p>
             <Badge variant="gold">Circle</Badge>
           </div>
@@ -208,7 +218,7 @@ function PendingGroupInvitation({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-1.5">
             <p className="text-sm font-semibold text-white">
-              {group?.name ?? invitation.groupId ?? "Group invitation"}
+              {group?.name ?? invitation.groupName ?? "Group invitation"}
             </p>
             <Badge variant="info">Group</Badge>
           </div>
@@ -229,7 +239,7 @@ function PendingGroupInvitation({
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Badge variant="info">{group.type}</Badge>
           <span className="inline-flex items-center gap-1 text-[10px] text-slate-500">
-            <Users className="size-3" /> {group.memberIds.length} members
+            <Users className="size-3" /> {group.memberCount ?? group.memberIds.length} members
           </span>
           <span className="text-[10px] text-slate-500">
             {group.pricing === "paid" ? "Paid group" : "Free to join"}

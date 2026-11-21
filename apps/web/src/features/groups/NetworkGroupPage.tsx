@@ -1,4 +1,3 @@
-import { Link } from "react-router-dom";
 import { CheckCircle2, Cog, Cpu, Info, Sparkles, UserRound } from "lucide-react";
 import Badge from "../../components/ui/Badge";
 import Card, { CardBody, CardTitle } from "../../components/ui/Card";
@@ -201,11 +200,7 @@ export default function NetworkGroupPage() {
               <RuleRow label="Allow combining" value={rules.allowCombine ? "Yes" : "No"} />
             </ul>
             <p className="text-[11px] leading-relaxed text-slate-500">
-              Read-only for members. Administrators edit these rules under{" "}
-              <Link to="/admin/config/automatic" className="text-gold-300 hover:text-gold-200">
-                Admin → Automatic Group Rules
-              </Link>
-              .
+              Read-only for members. Automatic grouping is configured by platform administrators.
             </p>
             <LinkButton
               to="/business/groups/explore"

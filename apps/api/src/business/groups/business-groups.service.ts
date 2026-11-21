@@ -31,15 +31,26 @@ import { fromMinorPence, toMinorPence } from "../../common/money.js";
 import {
   accessQuotas,
   activationFor,
+  applicableMandatoryCircles,
   automaticProgressFor,
   canCreateGroups,
   creationRightsLabel,
+  unsatisfiedMandatoryCircles,
   groupStatsFor,
   joinPlanFor,
   matchesRequiredPlans,
   planForOwner,
   normalizeVariant,
+  recruitmentTargetFor,
 } from "../business.rules.js";
+import { syncGroupActivationStatus } from "../group-activation.js";
+import {
+  assertCampaignsAvailable,
+  assertLocation,
+  assertPartnerPermission,
+  assertStageLabel,
+  partnerPermissionsFor,
+} from "../business.validation.js";
 import { isUuid } from "../business.utils.js";
 import type {
   BusinessContext,
@@ -50,6 +61,7 @@ import type {
 import type {
   BusinessGroupQueryDto,
   CreateBusinessGroupDto,
+  CreateGroupActivityDto,
   InviteMembersDto,
   UpdateBusinessGroupDto,
 } from "../dto/business.dto.js";
@@ -147,6 +159,7 @@ export class BusinessGroupsService {
 
   async getMineSections(ctx: BusinessContext) {
     const businessId = ctx.business.id;
+    await this.ensurePlatformMembership(ctx);
     const myGroups = await this.prisma.group.findMany({
       where: {
         OR: [
@@ -329,7 +342,7 @@ export class BusinessGroupsService {
     const groups = await this.prisma.group.findMany({
       where: {
         ownerId: { not: ctx.business.id },
-        status: { not: "Closed" },
+        status: { in: ["Active", "Recruiting"] },
         NOT: { members: { some: { memberId: ctx.business.id } } },
         OR: [
           { directoryVisibility: null },
@@ -340,7 +353,27 @@ export class BusinessGroupsService {
       orderBy: { createdAt: "desc" },
     });
 
+    const ownerIds = [
+      ...new Set(
+        groups
+          .map((group) => group.ownerId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const owners = ownerIds.length
+      ? await this.prisma.business.findMany({
+          where: { id: { in: ownerIds } },
+          select: { id: true, status: true, verified: true },
+        })
+      : [];
+    const hiddenOwners = new Set(
+      owners
+        .filter((owner) => owner.status !== "Active" || !owner.verified)
+        .map((owner) => owner.id),
+    );
+
     const filtered = groups.filter((group) => {
+      if (group.ownerId && hiddenOwners.has(group.ownerId)) return false;
       if (query.type && group.type !== query.type) return false;
       if (query.city && group.city !== query.city) return false;
       if (query.localArea && group.localArea !== query.localArea) return false;
@@ -474,6 +507,16 @@ export class BusinessGroupsService {
     const group = await this.findGroup(groupId);
     this.assertCanView(group, ctx.business.id);
 
+    const isMember =
+      group.ownerId === ctx.business.id ||
+      (group.members?.some(
+        (member) => member.memberId === ctx.business.id,
+      ) ??
+        false);
+    if (!isMember && !["Active", "Recruiting"].includes(group.status)) {
+      throw new NotFoundException("Group not found");
+    }
+
     const [owner, programme, campaigns, relationships, activity, pending] =
       await Promise.all([
         group.ownerId
@@ -514,6 +557,14 @@ export class BusinessGroupsService {
           },
         }),
       ]);
+
+    if (
+      !isMember &&
+      owner &&
+      (owner.status !== "Active" || !owner.verified)
+    ) {
+      throw new NotFoundException("Group not found");
+    }
 
     const pendingRequest =
       pending.find((entry) => entry.kind === "request") ?? null;
@@ -609,6 +660,44 @@ export class BusinessGroupsService {
     return activity.map(mapGroupActivity);
   }
 
+  async postActivity(
+    ctx: BusinessContext,
+    groupId: string,
+    dto: CreateGroupActivityDto,
+  ) {
+    const group = await this.findGroup(groupId);
+    const isMember =
+      group.ownerId === ctx.business.id ||
+      (group.members?.some(
+        (member) => member.memberId === ctx.business.id,
+      ) ??
+        false);
+    if (!isMember) {
+      throw new ForbiddenException("Only group members can post activity.");
+    }
+    if (!["Active", "Recruiting"].includes(group.status)) {
+      throw new ConflictException(
+        "This group is not accepting activity right now.",
+      );
+    }
+    if ((group.interactionLevel ?? "message") === "read") {
+      throw new ForbiddenException({
+        code: "GROUP_READ_ONLY",
+        message: "This group is configured as read-only.",
+      });
+    }
+
+    const activity = await this.prisma.groupActivity.create({
+      data: {
+        groupId,
+        actorName: ctx.business.name,
+        kind: "update",
+        message: dto.message.trim(),
+      },
+    });
+    return mapGroupActivity(activity);
+  }
+
   async getGroupInvitations(ctx: BusinessContext, groupId: string) {
     const group = await this.findGroup(groupId);
     this.assertOwner(group, ctx.business.id);
@@ -634,8 +723,70 @@ export class BusinessGroupsService {
       });
     }
 
+    const partnerPermissions = partnerPermissionsFor(
+      ctx.partner,
+      ctx.config.partnerDefaults,
+    );
+    assertPartnerPermission(
+      partnerPermissions,
+      "canCreateGroups",
+      "Your partner permissions do not allow creating groups.",
+    );
+    if (dto.type === "Partner" && !ctx.business.isPartner) {
+      throw new ForbiddenException(
+        "Only partner businesses can create Partner groups.",
+      );
+    }
+
+    const settings = ctx.config.platformSettings as {
+      defaultRequiredSize?: number;
+      defaultPricing?: string;
+      defaultVisibility?: string;
+    };
+    const pricing =
+      dto.pricing ??
+      (settings.defaultPricing === "paid" ? "paid" : "free");
+    const visibility =
+      dto.visibility ??
+      (settings.defaultVisibility === "members" ? "members" : "directory");
+    const requiredSize =
+      dto.requiredSize ?? Number(settings.defaultRequiredSize ?? 0);
+    const accessType = dto.accessType ?? this.defaultAccessType(ctx);
+
+    assertPartnerPermission(
+      partnerPermissions,
+      pricing === "paid" ? "canRunPaidGroups" : "canRunFreeGroups",
+      `Your partner permissions do not allow ${pricing} groups.`,
+    );
+    if (pricing === "paid" || dto.contribution !== undefined) {
+      assertPartnerPermission(
+        partnerPermissions,
+        "canSetContributionAmounts",
+        "Your partner permissions do not allow setting contribution amounts.",
+      );
+    }
+
+    assertStageLabel(dto.stage, ctx.config.stageLabels);
+    await assertLocation(this.prisma, dto.city, dto.localArea);
+    await assertCampaignsAvailable(this.prisma, dto.campaignIds);
+
     this.assertGroupType(ctx, dto.type);
-    this.assertPaymentRules(ctx, dto.pricing, dto.contribution);
+    this.assertPaymentRules(ctx, pricing, dto.contribution);
+
+    const creationRules = ctx.config.groupCreationRules;
+    const recruitmentTarget = Math.max(
+      recruitmentTargetFor(
+        creationRules,
+        ctx.plan.planName,
+        normalizeVariant(ctx.plan.variant),
+      ),
+      Math.max(0, requiredSize),
+    );
+    // The owner is the first member, so a target of 0 or 1 is already met.
+    const initialStatus =
+      !creationRules.activationEnabled || recruitmentTarget <= 1
+        ? "Active"
+        : "Recruiting";
 
     const owned = await this.prisma.group.findMany({
       where: { ownerId: ctx.business.id },
@@ -658,10 +809,37 @@ export class BusinessGroupsService {
       });
     }
 
+    const mandatoryCircles = applicableMandatoryCircles(
+      ctx.config.mandatoryCircles,
+      ctx.plan.paid,
+    );
+    if (mandatoryCircles.length > 0) {
+      const circles = await this.prisma.circle.findMany({
+        where: { businessId: ctx.business.id },
+        select: { type: true, memberIds: true },
+      });
+      const missingCircles = unsatisfiedMandatoryCircles(
+        mandatoryCircles,
+        circles,
+      );
+      if (missingCircles.length > 0) {
+        throw new ConflictException({
+          code: "MANDATORY_CIRCLES_REQUIRED",
+          message: `Set up the required circles first: ${missingCircles
+            .map((entry) => entry.rule.circleType)
+            .join(", ")}`,
+          requiredCircles: missingCircles.map((entry) => ({
+            type: entry.rule.circleType,
+            current: entry.current,
+            required: entry.required,
+          })),
+        });
+      }
+    }
+
     const mandatoryRule = ctx.config.mandatoryGroups.find(
       (rule) => rule.type === dto.type,
     );
-    const pricing = dto.pricing ?? "free";
     if (mandatoryRule?.pricing === "paid" && pricing !== "paid") {
       throw new BadRequestException(
         `The ${dto.type} group is configured as a paid group.`,
@@ -673,7 +851,10 @@ export class BusinessGroupsService {
       );
     }
 
-    const quota = await this.groupQuota(ctx);
+    const planQuota = await this.groupQuota(ctx);
+    const quota = partnerPermissions
+      ? Math.min(planQuota, partnerPermissions.maxGroups)
+      : planQuota;
     if (owned.length >= quota) {
       throw new ForbiddenException({
         code: "GROUP_QUOTA_REACHED",
@@ -697,11 +878,11 @@ export class BusinessGroupsService {
           memberCount: 1,
           city: dto.city,
           localArea: dto.localArea,
-          requiredSize: dto.requiredSize,
+          requiredSize,
           stage: dto.stage,
-          status: "Recruiting",
-          accessType: dto.accessType,
-          directoryVisibility: dto.visibility ?? "directory",
+          status: initialStatus,
+          accessType,
+          directoryVisibility: visibility,
           interactionLevel: dto.interactionLevel ?? "message",
           pricing,
           contributionMinor:
@@ -771,6 +952,55 @@ export class BusinessGroupsService {
     const group = await this.findGroup(groupId);
     this.assertOwner(group, ctx.business.id);
 
+    const partnerPermissions = partnerPermissionsFor(
+      ctx.partner,
+      ctx.config.partnerDefaults,
+    );
+    if (dto.pricing !== undefined) {
+      assertPartnerPermission(
+        partnerPermissions,
+        dto.pricing === "paid" ? "canRunPaidGroups" : "canRunFreeGroups",
+        `Your partner permissions do not allow ${dto.pricing} groups.`,
+      );
+    }
+    if (dto.contribution !== undefined || dto.pricing === "paid") {
+      assertPartnerPermission(
+        partnerPermissions,
+        "canSetContributionAmounts",
+        "Your partner permissions do not allow setting contribution amounts.",
+      );
+    }
+    assertStageLabel(dto.stage, ctx.config.stageLabels);
+    if (dto.city !== undefined || dto.localArea !== undefined) {
+      await assertLocation(
+        this.prisma,
+        dto.city ?? group.city,
+        dto.localArea ?? group.localArea,
+      );
+    }
+    await assertCampaignsAvailable(this.prisma, dto.campaignIds);
+
+    const currentVisibility =
+      group.directoryVisibility ??
+      (group.visibility === "PRIVATE" ? "members" : "directory");
+    const changesOperation =
+      (dto.status !== undefined && dto.status !== "Closed") ||
+      (dto.accessType !== undefined && dto.accessType !== group.accessType) ||
+      (dto.visibility !== undefined && dto.visibility !== currentVisibility) ||
+      (dto.interactionLevel !== undefined &&
+        dto.interactionLevel !== group.interactionLevel) ||
+      (dto.pricing !== undefined && dto.pricing !== group.pricing) ||
+      (dto.contribution !== undefined &&
+        toMinorPence(dto.contribution) !== group.contributionMinor) ||
+      (dto.contributionFrequency !== undefined &&
+        dto.contributionFrequency !== group.contributionFrequency) ||
+      (dto.campaignIds !== undefined &&
+        dto.campaignIds.join(",") !== group.campaignIds.join(","));
+
+    if (changesOperation && dto.status !== "Closed") {
+      this.assertGroupOperational(group, ctx);
+    }
+
     if (dto.pricing === "paid") {
       this.assertPaymentRules(
         ctx,
@@ -795,7 +1025,16 @@ export class BusinessGroupsService {
     if (dto.name !== undefined) data.name = dto.name;
     if (dto.purpose !== undefined) data.purpose = dto.purpose;
     if (dto.description !== undefined) data.description = dto.description;
-    if (dto.status !== undefined) data.status = dto.status;
+    if (dto.status !== undefined) {
+      // Owners may close their own group, but only the activation sync (or an
+      // administrator) may mark it Active again.
+      if (dto.status !== "Closed") {
+        throw new BadRequestException(
+          "Only closing a group is allowed from the business dashboard.",
+        );
+      }
+      data.status = "Closed";
+    }
     if (dto.accessType !== undefined) data.accessType = dto.accessType;
     if (dto.visibility !== undefined) {
       data.directoryVisibility = dto.visibility;
@@ -860,11 +1099,22 @@ export class BusinessGroupsService {
     if (group.members?.some((member) => member.memberId === ctx.business.id)) {
       throw new ConflictException("You are already a member of this group");
     }
-    if (group.status === "Closed" || group.status === "Suspended") {
+    if (!["Active", "Recruiting"].includes(group.status)) {
       throw new ConflictException({
         code: "GROUP_NOT_JOINABLE",
         message: `The group is ${group.status.toLowerCase()} and is not accepting members.`,
       });
+    }
+    if (group.ownerId) {
+      const owner = await this.prisma.business.findUnique({
+        where: { id: group.ownerId },
+        select: { status: true, verified: true },
+      });
+      if (owner && (owner.status !== "Active" || !owner.verified)) {
+        throw new ForbiddenException(
+          "This group is not currently available.",
+        );
+      }
     }
     const typeConfig = ctx.config.groupTypes.find(
       (entry) => entry.type === group.type,
@@ -904,7 +1154,7 @@ export class BusinessGroupsService {
     }
 
     if (group.accessType === "open") {
-      const updated = await this.prisma.$transaction(async (tx) => {
+      await this.prisma.$transaction(async (tx) => {
         await tx.groupMember.create({
           data: {
             groupId,
@@ -944,12 +1194,18 @@ export class BusinessGroupsService {
         });
         return result;
       });
-      const ownerPlan = (await this.ownerPlanMap([updated], ctx)).get(
-        updated.ownerId ?? "",
+      await syncGroupActivationStatus(
+        this.prisma,
+        groupId,
+        ctx.config.groupCreationRules,
+      );
+      const refreshed = await this.findGroup(groupId);
+      const ownerPlan = (await this.ownerPlanMap([refreshed], ctx)).get(
+        refreshed.ownerId ?? "",
       );
       return {
         status: "joined" as const,
-        group: this.decorateGroup(updated, ctx, ownerPlan),
+        group: this.decorateGroup(refreshed, ctx, ownerPlan),
       };
     }
 
@@ -1050,6 +1306,11 @@ export class BusinessGroupsService {
       });
     });
 
+    await syncGroupActivationStatus(
+      this.prisma,
+      groupId,
+      ctx.config.groupCreationRules,
+    );
     return { ok: true };
   }
 
@@ -1060,6 +1321,11 @@ export class BusinessGroupsService {
   ) {
     const group = await this.findGroup(groupId);
     this.assertOwner(group, ctx.business.id);
+    assertPartnerPermission(
+      partnerPermissionsFor(ctx.partner, ctx.config.partnerDefaults),
+      "canRemoveMembers",
+      "Your partner permissions do not allow removing members.",
+    );
     if (memberId === ctx.business.id || memberId === group.ownerId) {
       throw new BadRequestException("The group owner cannot be removed");
     }
@@ -1095,6 +1361,11 @@ export class BusinessGroupsService {
       });
     });
 
+    await syncGroupActivationStatus(
+      this.prisma,
+      groupId,
+      ctx.config.groupCreationRules,
+    );
     return { ok: true };
   }
 
@@ -1104,7 +1375,31 @@ export class BusinessGroupsService {
     dto: InviteMembersDto,
   ) {
     const group = await this.findGroup(groupId);
-    this.assertOwner(group, ctx.business.id);
+    const invitingPolicy = String(
+      ctx.config.accessRules.invitingPolicy ?? "owners-only",
+    );
+    const isOwner = group.ownerId === ctx.business.id;
+    const isMember =
+      group.members?.some(
+        (member) => member.memberId === ctx.business.id,
+      ) ?? false;
+    if (!isOwner && (invitingPolicy === "owners-only" || !isMember)) {
+      throw new ForbiddenException(
+        "Only the group owner can invite members.",
+      );
+    }
+    assertPartnerPermission(
+      partnerPermissionsFor(ctx.partner, ctx.config.partnerDefaults),
+      "canInviteMembers",
+      "Your partner permissions do not allow inviting members.",
+    );
+
+    const settings = ctx.config.platformSettings as {
+      defaultGreeting?: string;
+      smsFallback?: boolean;
+    };
+    const greeting = settings.defaultGreeting?.trim();
+    const smsFallback = settings.smsFallback !== false;
 
     const created: Invitation[] = [];
     let skipped = 0;
@@ -1114,6 +1409,11 @@ export class BusinessGroupsService {
         if (!entry.inviteeId && !entry.inviteeEmail && !entry.inviteePhone) {
           throw new BadRequestException(
             `Invitation for ${entry.inviteeName} needs an invitee, email or phone number`,
+          );
+        }
+        if (!entry.inviteeEmail && entry.inviteePhone && !smsFallback) {
+          throw new BadRequestException(
+            "SMS fallback is disabled, so phone-only invitations cannot be sent.",
           );
         }
         const emailInvitee = entry.inviteeEmail
@@ -1176,7 +1476,9 @@ export class BusinessGroupsService {
             groupId,
             actorName: ctx.business.name,
             kind: "invite",
-            message: `${ctx.business.name} invited ${entry.inviteeName}`,
+            message: greeting
+              ? `${ctx.business.name} invited ${entry.inviteeName}: ${greeting}`
+              : `${ctx.business.name} invited ${entry.inviteeName}`,
           },
         });
       }
@@ -1349,6 +1651,108 @@ export class BusinessGroupsService {
     );
   }
 
+  /**
+   * Adds a business that cannot create its own groups to the platform group
+   * chosen by the administrator. Runs on dashboard entry and is idempotent.
+   */
+  private async ensurePlatformMembership(ctx: BusinessContext): Promise<void> {
+    const rules = ctx.config.groupCreationRules;
+    const platformGroupId = rules.platformGroupId;
+    const accessExpired = Boolean(
+      ctx.plan.accessExpiresAt &&
+        ctx.plan.accessExpiresAt.getTime() <= Date.now(),
+    );
+    const central = ctx.plan.accessSource !== "local";
+    if (
+      (!central && !ctx.plan.agreementAccepted) ||
+      (!central && rules.requirePaidAccess && (!ctx.plan.paid || accessExpired)) ||
+      !rules.restrictToPlatformGroup ||
+      !platformGroupId ||
+      !isUuid(platformGroupId) ||
+      canCreateGroups(ctx.plan, rules)
+    ) {
+      return;
+    }
+
+    const group = await this.prisma.group.findUnique({
+      where: { id: platformGroupId },
+      select: {
+        id: true,
+        name: true,
+        ownerId: true,
+        status: true,
+        pricing: true,
+      },
+    });
+    if (
+      !group ||
+      group.ownerId === ctx.business.id ||
+      group.status === "Closed" ||
+      group.status === "Suspended" ||
+      group.pricing === "paid"
+    ) {
+      return;
+    }
+
+    const existing = await this.prisma.groupMember.findUnique({
+      where: {
+        groupId_memberId: {
+          groupId: group.id,
+          memberId: ctx.business.id,
+        },
+      },
+      select: { id: true },
+    });
+    if (existing) return;
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        const raced = await tx.groupMember.findUnique({
+          where: {
+            groupId_memberId: {
+              groupId: group.id,
+              memberId: ctx.business.id,
+            },
+          },
+          select: { id: true },
+        });
+        if (raced) return;
+
+        await tx.groupMember.create({
+          data: {
+            groupId: group.id,
+            memberId: ctx.business.id,
+            fullName: ctx.business.contactName,
+            businessName: ctx.business.name,
+            category: ctx.business.category,
+            location: ctx.business.city,
+            status: "active",
+            role: "peripheral",
+            tier: ctx.business.tier,
+            contributionStatus: "n/a",
+          },
+        });
+        await tx.group.update({
+          where: { id: group.id },
+          data: { memberCount: { increment: 1 } },
+        });
+        await tx.groupActivity.create({
+          data: {
+            groupId: group.id,
+            actorName: "Platform",
+            kind: "join",
+            message: `${ctx.business.name} was placed into ${group.name}`,
+          },
+        });
+      });
+      await syncGroupActivationStatus(this.prisma, group.id, rules);
+    } catch (error) {
+      // A concurrent first dashboard load may have inserted the membership
+      // already; the unique (groupId, memberId) constraint makes that harmless.
+      if ((error as { code?: string }).code !== "P2002") throw error;
+    }
+  }
+
   private async findGroup(groupId: string): Promise<GroupWithMembers> {
     const group = await this.prisma.group.findUnique({
       where: { id: groupId },
@@ -1374,6 +1778,44 @@ export class BusinessGroupsService {
     if (group.ownerId !== businessId) {
       throw new ForbiddenException("Only the group owner can do this");
     }
+  }
+
+  /**
+   * Blocks operational changes while a user-created group is still below the
+   * recruitment target configured for the owner's plan. Recruiting itself
+   * (joining and inviting) stays open.
+   */
+  private assertGroupOperational(group: GroupWithMembers, ctx: BusinessContext) {
+    if (
+      group.source !== "user-created" ||
+      group.status !== "Recruiting" ||
+      !ctx.config.groupCreationRules.activationEnabled
+    ) {
+      return;
+    }
+
+    const activation = activationFor(
+      group,
+      ctx.plan.planName,
+      normalizeVariant(ctx.plan.variant),
+      ctx.config.groupCreationRules,
+    );
+    throw new ConflictException({
+      code: "GROUP_NOT_ACTIVE",
+      message: `This group is still recruiting (${activation.current} of ${activation.target} members). It can operate once it reaches its recruitment target.`,
+      target: activation.target,
+      current: activation.current,
+      remaining: activation.remaining,
+    });
+  }
+
+  private defaultAccessType(ctx: BusinessContext): string {
+    const policy = String(
+      ctx.config.accessRules.joiningPolicy ?? "invitation-first",
+    );
+    if (policy === "open") return "open";
+    if (policy === "approval") return "request";
+    return "invitation";
   }
 
   private assertGroupType(ctx: BusinessContext, type: string) {
@@ -1420,7 +1862,9 @@ export class BusinessGroupsService {
             status: "Active",
           },
         });
-    if (plan && plan.groupQuota > 0) return plan.groupQuota;
+    // A published plan's quota is authoritative, including an explicit 0.
+    // Only fall back when the business is not attached to a published plan.
+    if (plan) return Math.max(0, plan.groupQuota);
     return accessQuotas(ctx.config, ctx.plan).groups;
   }
 }

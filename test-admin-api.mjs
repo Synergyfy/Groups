@@ -107,13 +107,6 @@ async function testReads() {
 
   await ok("GET", "/admin/users");
   await ok("GET", "/admin/users/registrations");
-  await ok("GET", "/admin/businesses");
-  await ok("GET", "/admin/partners");
-  await ok("GET", "/admin/programmes");
-  await ok("GET", "/admin/campaigns");
-  await ok("GET", "/admin/relationships");
-  const partnerGroups = await ok("GET", "/admin/partner-groups");
-  check("partner groups report", Boolean(partnerGroups?.metrics));
 
   await ok("GET", "/admin/groups");
   const dashboard = await ok("GET", "/admin/groups/dashboard");
@@ -130,32 +123,8 @@ async function testConfig() {
   const config = await ok("GET", "/admin/config");
   check("config payload", Boolean(config?.automaticGrouping));
 
-  await ok("GET", "/admin/config/automatic");
   await ok("GET", "/admin/config/group-rules");
-  await ok("GET", "/admin/config/types");
-  await ok("GET", "/admin/config/stages");
-  await ok("GET", "/admin/config/payment-rules");
-  await ok("GET", "/admin/config/circles");
-  await ok("GET", "/admin/config/mandatory-circles");
-  await ok("GET", "/admin/config/mandatory-groups");
-
-  const permissions = await ok("GET", "/admin/permissions");
-  check("permissions payload", Boolean(permissions?.partnerDefaults));
-  await ok("GET", "/admin/access-rules");
   await ok("GET", "/admin/settings");
-
-  const updated = await ok(
-    "PATCH",
-    "/admin/config/automatic",
-    { allowCombine: true },
-    "PATCH /admin/config/automatic",
-  );
-  check(
-    "config patch applied",
-    updated?.automaticGrouping?.allowCombine === true,
-    JSON.stringify(updated?.automaticGrouping),
-  );
-  await ok("PATCH", "/admin/config/automatic", { allowCombine: false });
 
   const rejected = await request("PATCH", "/admin/config", { nope: true });
   check(
@@ -165,87 +134,7 @@ async function testConfig() {
   );
 }
 
-async function testBusinessesAndUsers() {
-  const business = await ok(
-    "POST",
-    "/admin/businesses",
-    {
-      name: `Smoke Business ${suffix}`,
-      contactName: "Smoke Tester",
-      email: `smoke-${suffix}@example.com`,
-      city: "Birmingham",
-      category: "Testing",
-      tier: "Bronze",
-    },
-    "POST /admin/businesses",
-  );
-  created.businessId = business.id;
-  check("business created", Boolean(business.id));
-
-  await ok("GET", `/admin/businesses/${created.businessId}`);
-  await ok("PATCH", `/admin/businesses/${created.businessId}`, {
-    status: "Active",
-    verified: true,
-  });
-  await ok("POST", `/admin/businesses/${created.businessId}/verify`);
-  await ok("GET", `/admin/users/${created.businessId}`);
-  await ok("POST", `/admin/users/${created.businessId}/suspend`);
-  await ok("POST", `/admin/users/${created.businessId}/activate`);
-  await ok("PATCH", `/admin/users/${created.businessId}`, {
-    status: "Active",
-    verified: true,
-  });
-}
-
-async function testProgrammesCampaignsRelationships() {
-  const programme = await ok(
-    "POST",
-    "/admin/programmes",
-    { name: `Smoke Programme ${suffix}`, tier: "Silver", monthlyFee: 10 },
-    "POST /admin/programmes",
-  );
-  created.programmeId = programme.id;
-  await ok("PATCH", `/admin/programmes/${created.programmeId}`, {
-    monthlyFee: 12,
-  });
-
-  const campaign = await ok(
-    "POST",
-    "/admin/campaigns",
-    { name: `Smoke Campaign ${suffix}`, status: "Draft" },
-    "POST /admin/campaigns",
-  );
-  created.campaignId = campaign.id;
-  await ok("PATCH", `/admin/campaigns/${created.campaignId}`, {
-    status: "Active",
-  });
-
-  created.relationshipIds = [];
-  for (const [kind, role] of [
-    ["account-manager", "Account Manager"],
-    ["agent", "Supporting Agent"],
-    ["consultant", "Consultant"],
-  ]) {
-    const relationship = await ok(
-      "POST",
-      "/admin/relationships",
-      {
-        kind,
-        name: `Smoke ${kind} ${suffix}`,
-        role,
-        email: `${kind}-${suffix}@example.com`,
-      },
-      `POST /admin/relationships (${kind})`,
-    );
-    created.relationshipIds.push(relationship.id);
-    await ok("PATCH", `/admin/relationships/${relationship.id}`, {
-      activeGroups: 2,
-    });
-  }
-}
-
 async function testGroups() {
-  const relationships = created.relationshipIds;
   const group = await ok(
     "POST",
     "/admin/groups",
@@ -254,7 +143,6 @@ async function testGroups() {
       type: "B2B",
       source: "user-created",
       purpose: "Created by the admin smoke test",
-      ownerId: created.businessId,
       ownerName: `Smoke Business ${suffix}`,
       city: "Birmingham",
       localArea: "Birmingham City Centre",
@@ -262,11 +150,6 @@ async function testGroups() {
       pricing: "paid",
       contribution: 25,
       contributionFrequency: "monthly",
-      programmeId: created.programmeId,
-      campaignIds: [created.campaignId],
-      accountManagerId: relationships[0],
-      agentId: relationships[1],
-      consultantId: relationships[2],
     },
     "POST /admin/groups",
   );
@@ -316,13 +199,6 @@ async function testGroups() {
   check("contribution ledger uses stored status", contribution?.collected === 25);
   check("contribution has no fabricated outstanding", contribution?.outstanding === 0);
 
-  const rel = await ok(
-    "GET",
-    `/admin/groups/${created.groupId}/relationships`,
-  );
-  check("group relationships resolved", Boolean(rel?.accountManager));
-  check("group owner resolved", Boolean(rel?.owner));
-
   await ok("GET", `/admin/groups/${created.groupId}/activity`);
   await ok("GET", `/admin/groups/${created.groupId}/circles`);
   await ok("GET", `/admin/groups/${created.groupId}/invitations`);
@@ -347,9 +223,9 @@ async function testGroups() {
   created.rejectGroupId = rejectGroup.id;
   const rejected = await ok(
     "POST",
-    `/admin/pending-review/${created.rejectGroupId}/reject`,
+    `/admin/groups/${created.rejectGroupId}/close`,
   );
-  check("pending review reject closes group", rejected?.status === "Closed");
+  check("reject closes group", rejected?.status === "Closed");
 
   const approveGroup = await ok(
     "POST",
@@ -366,9 +242,9 @@ async function testGroups() {
   created.approveGroupId = approveGroup.id;
   const approved = await ok(
     "POST",
-    `/admin/pending-review/${created.approveGroupId}/approve`,
+    `/admin/groups/${created.approveGroupId}/approve`,
   );
-  check("pending review approve activates group", approved?.status === "Active");
+  check("approve activates group", approved?.status === "Active");
 
   await ok("DELETE", `/admin/groups/${created.groupId}/members/smoke-member-${suffix}`);
   await ok("DELETE", `/admin/groups/${created.groupId}`);
@@ -455,65 +331,6 @@ async function testMembershipsAndRewards() {
 async function testOperations() {
   await ok("GET", "/admin/invitations");
   await ok("GET", "/admin/invitations/counts");
-  await ok("GET", "/admin/pending-review");
-  await ok("GET", "/admin/audit-log");
-  await ok("GET", "/admin/audit-log?action=config-updated");
-  await ok("GET", "/admin/audit-log?targetType=group&search=Smoke");
-
-  const content = await ok("GET", "/admin/content");
-  check("content sections", isArray(content) && content.length > 0);
-  await ok("GET", "/admin/content/status");
-  await ok("GET", "/admin/content/hero");
-  await ok("PATCH", "/admin/content/hero", {
-    draft: { headline: "Smoke headline" },
-  });
-  await ok("POST", "/admin/content/hero/publish");
-  await ok("POST", "/admin/content/publish-all");
-
-  const locations = await ok("GET", "/admin/locations");
-  check("locations hierarchy", isArray(locations?.cities));
-
-  const city = await ok(
-    "POST",
-    "/admin/locations/cities",
-    { name: `Smoke City ${suffix}` },
-    "POST /admin/locations/cities",
-  );
-  created.cityId = city.id;
-  await ok("PATCH", `/admin/locations/cities/${created.cityId}`, {
-    name: `Smoke City ${suffix} updated`,
-  });
-
-  const area = await ok(
-    "POST",
-    `/admin/locations/cities/${created.cityId}/areas`,
-    { name: "Smoke Area" },
-    "POST /admin/locations/cities/:id/areas",
-  );
-  created.areaId = area.id;
-  await ok("PATCH", `/admin/locations/areas/${created.areaId}`, {
-    name: "Smoke Area updated",
-  });
-  await ok("DELETE", `/admin/locations/areas/${created.areaId}`);
-  created.areaId = null;
-  await ok("DELETE", `/admin/locations/cities/${created.cityId}`);
-  created.cityId = null;
-
-  const report = await ok("GET", "/admin/reports");
-  check("group report stats", Boolean(report?.stats));
-  const schedules = await ok("GET", "/admin/reports/schedules");
-  check("report schedules", isArray(schedules));
-
-  const schedule = await ok(
-    "POST",
-    "/admin/reports/schedules",
-    { name: `Smoke Report ${suffix}`, type: "groups", frequency: "weekly" },
-    "POST /admin/reports/schedules",
-  );
-  created.scheduleId = schedule.id;
-  await ok("PATCH", `/admin/reports/schedules/${created.scheduleId}`, {
-    status: "Paused",
-  });
 
   const settings = await ok("GET", "/admin/settings-reports");
   check("settings & reports payload", Boolean(settings?.stats));
@@ -529,26 +346,13 @@ async function testOperations() {
 
 async function cleanup() {
   const entries = [
-    ["reports/schedules", created.scheduleId],
     ["groups", created.groupId],
     ["groups", created.rejectGroupId],
     ["groups", created.approveGroupId],
-    ["businesses", created.businessId],
-    ["programmes", created.programmeId],
-    ["campaigns", created.campaignId],
     ["rewards-deals", created.rewardId],
   ];
   for (const [resource, id] of entries) {
     if (id) await request("DELETE", `/admin/${resource}/${id}`);
-  }
-  for (const id of created.relationshipIds ?? []) {
-    await request("DELETE", `/admin/relationships/${id}`);
-  }
-  if (created.cityId) {
-    await request("DELETE", `/admin/locations/cities/${created.cityId}`);
-  }
-  if (created.areaId) {
-    await request("DELETE", `/admin/locations/areas/${created.areaId}`);
   }
   for (const id of created.planIds ?? []) {
     await request("DELETE", `/admin/plans/${id}`);
@@ -566,8 +370,6 @@ async function main() {
   await testAuthGuard();
   await testReads();
   await testConfig();
-  await testBusinessesAndUsers();
-  await testProgrammesCampaignsRelationships();
   await testGroups();
   await testMembershipsAndRewards();
   await testOperations();

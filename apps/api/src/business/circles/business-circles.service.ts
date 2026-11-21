@@ -17,7 +17,14 @@ import type {
   CircleTypeConfigEntry,
 } from "../business.types.js";
 import { mapCircle, mapCircleActivity } from "../business.mappers.js";
-import { accessQuotas } from "../business.rules.js";
+import {
+  accessQuotas,
+  applicableMandatoryCircles,
+} from "../business.rules.js";
+import {
+  assertPartnerPermission,
+  partnerPermissionsFor,
+} from "../business.validation.js";
 import type {
   AddCircleMemberDto,
   BusinessCircleQueryDto,
@@ -34,12 +41,13 @@ export class BusinessCirclesService {
   ) {}
 
   async list(ctx: BusinessContext, query: BusinessCircleQueryDto) {
+    await this.ensureMandatoryCircles(ctx);
     const params = pageParams(query.page, query.limit, 25);
     const circles = await this.prisma.circle.findMany({
       where: {
         businessId: ctx.business.id,
         ...(query.type ? { type: query.type } : {}),
-        ...(query.status ? { status: query.status } : {}),
+        status: query.status ?? "Active",
       },
       include: { _count: { select: { activities: true } } },
       orderBy: { createdAt: "desc" },
@@ -167,6 +175,11 @@ export class BusinessCirclesService {
   }
 
   async create(ctx: BusinessContext, dto: CreateCircleDto) {
+    assertPartnerPermission(
+      partnerPermissionsFor(ctx.partner, ctx.config.partnerDefaults),
+      "canCreateCircles",
+      "Your partner permissions do not allow creating circles.",
+    );
     const typeConfig = this.requireType(ctx, dto.type);
     const sourceLists = await this.resolveLists(ctx, dto.sourceListIds ?? []);
     const memberIds = await this.resolveMemberIds(
@@ -205,6 +218,11 @@ export class BusinessCirclesService {
   }
 
   async update(ctx: BusinessContext, circleId: string, dto: UpdateCircleDto) {
+    assertPartnerPermission(
+      partnerPermissionsFor(ctx.partner, ctx.config.partnerDefaults),
+      "canCreateCircles",
+      "Your partner permissions do not allow managing circles.",
+    );
     const circle = await this.findCircle(ctx, circleId);
     const typeConfig = this.requireType(ctx, circle.type, true);
 
@@ -384,6 +402,14 @@ export class BusinessCirclesService {
     if (lists.length !== unique.length) {
       throw new NotFoundException("One or more source lists were not found.");
     }
+    const inactive = lists.filter((list) => list.status !== "Active");
+    if (inactive.length > 0) {
+      throw new BadRequestException(
+        `Inactive lists cannot be used as circle sources: ${inactive
+          .map((list) => list.name)
+          .join(", ")}`,
+      );
+    }
     return lists;
   }
 
@@ -395,7 +421,11 @@ export class BusinessCirclesService {
     const ids = new Set(explicit);
     if (sourceListIds.length > 0) {
       const contacts = await this.prisma.networkContact.findMany({
-        where: { businessId: ctx.business.id, listId: { in: sourceListIds } },
+        where: {
+          businessId: ctx.business.id,
+          listId: { in: sourceListIds },
+          confirmation: "confirmed",
+        },
         select: { id: true },
       });
       for (const contact of contacts) ids.add(contact.id);
@@ -464,7 +494,7 @@ export class BusinessCirclesService {
       this.prisma.circle.count({ where: { businessId: ctx.business.id } }),
       this.circleQuota(ctx),
     ]);
-    if (quota > 0 && count >= quota) {
+    if (count >= quota) {
       throw new ForbiddenException({
         code: "CIRCLE_QUOTA_REACHED",
         message: `Your plan allows ${quota} circles.`,
@@ -484,22 +514,98 @@ export class BusinessCirclesService {
             status: "Active",
           },
         });
-    if (plan && plan.circleQuota > 0) return plan.circleQuota;
-    return accessQuotas(ctx.config, ctx.plan).circles;
+    // A published plan's quota is authoritative, including an explicit 0.
+    const planQuota = plan
+      ? Math.max(0, plan.circleQuota)
+      : accessQuotas(ctx.config, ctx.plan).circles;
+    const partner = partnerPermissionsFor(
+      ctx.partner,
+      ctx.config.partnerDefaults,
+    );
+    return partner
+      ? Math.min(planQuota, partner.maxCircles)
+      : planQuota;
+  }
+
+  /**
+   * Creates mandatory circles that the administrator marked "auto-enforce"
+   * once the business has enough confirmed network contacts to satisfy the
+   * configured minimum. Required but non-auto rules are left to the business.
+   */
+  private async ensureMandatoryCircles(ctx: BusinessContext): Promise<void> {
+    const applicable = applicableMandatoryCircles(
+      ctx.config.mandatoryCircles,
+      ctx.plan.paid,
+    ).filter((rule) => rule.autoEnforce);
+    if (applicable.length === 0) return;
+
+    const existing = await this.prisma.circle.findMany({
+      where: { businessId: ctx.business.id },
+      select: { type: true },
+    });
+    const missing = applicable.filter(
+      (rule) => !existing.some((circle) => circle.type === rule.circleType),
+    );
+    if (missing.length === 0) return;
+
+    const contacts = await this.prisma.networkContact.findMany({
+      where: {
+        businessId: ctx.business.id,
+        confirmation: "confirmed",
+      },
+      select: { id: true },
+      take: 100,
+    });
+
+    for (const rule of missing) {
+      const typeConfig = ctx.config.circleTypes.find(
+        (entry) => entry.type === rule.circleType,
+      );
+      if (!typeConfig || !typeConfig.enabled) continue;
+      const needed = Math.max(0, rule.minMemberCount);
+      if (contacts.length < needed) continue;
+
+      const circle = await this.prisma.circle.create({
+        data: {
+          businessId: ctx.business.id,
+          type: rule.circleType,
+          config: {
+            name: rule.circleType,
+            description: "Auto-enforced mandatory circle",
+            duration: typeConfig.allowedDurations[0] ?? 90,
+            visibility: "private",
+            interactionLevel: "message",
+          },
+          memberIds: contacts.slice(0, needed).map((contact) => contact.id),
+          sourceListIds: [],
+          status: "Active",
+        },
+      });
+      await this.prisma.circleActivity.create({
+        data: {
+          circleId: circle.id,
+          kind: "update",
+          message: "Mandatory circle created automatically",
+        },
+      });
+    }
   }
 
   private mandatoryStatuses(ctx: BusinessContext, circles: Circle[]) {
-    return ctx.config.mandatoryCircles
-      .filter((rule) => rule.required)
-      .map((rule) => {
-        const circle = circles.find((entry) => entry.type === rule.circleType);
-        return {
-          ...rule,
-          satisfied: Boolean(circle),
-          circleId: circle?.id,
-          current: circle?.memberIds.length ?? 0,
-        };
-      });
+    return applicableMandatoryCircles(
+      ctx.config.mandatoryCircles,
+      ctx.plan.paid,
+    ).map((rule) => {
+      const circle = circles.find((entry) => entry.type === rule.circleType);
+      return {
+        ...rule,
+        satisfied:
+          Boolean(circle) &&
+          (circle?.memberIds.length ?? 0) >= rule.minMemberCount,
+        circleId: circle?.id,
+        current: circle?.memberIds.length ?? 0,
+      };
+    });
   }
 
   private configJson(dto: CreateCircleDto, typeConfig: CircleTypeConfigEntry) {

@@ -269,6 +269,7 @@ function defaultPlanAccess(): PlanAccess {
     accessFee: 0,
     accessFeeMinor: 0,
     agreementAccepted: false,
+    accessSource: "local",
   };
 }
 
@@ -292,6 +293,7 @@ export function createInitialAppState(): AppState {
       groupCreationRules: {
         allowedPlans: [],
         allowedVariants: [],
+        planCreationRights: {},
         restrictToPlatformGroup: false,
         platformGroupId: null,
         recruitmentTargets: {
@@ -420,6 +422,12 @@ function activatePlan(
       accessFeeMinor: action.accessFeeMinor ?? Math.round(action.accessFee * 100),
       agreementAccepted: true,
       agreedAt: nowIso(),
+      accessSource: "local",
+      externalPlanId: undefined,
+      membershipName: undefined,
+      accessReason: undefined,
+      upgradeUrl: undefined,
+      programmeTasks: undefined,
     },
   };
 }
@@ -735,6 +743,13 @@ function updateAdminConfig(state: AppState, patch: AdminConfigPatch): AppState {
           allowedVariants: [
             ...(patch.groupCreationRules?.allowedVariants ?? current.allowedVariants),
           ],
+          planCreationRights: Object.fromEntries(
+            Object.entries(
+              patch.groupCreationRules?.planCreationRights ??
+                current.planCreationRights ??
+                {},
+            ).map(([planName, variants]) => [planName, { ...variants }]),
+          ),
           recruitmentTargets: Object.fromEntries(
             Object.entries(targets).map(([planName, variantTargets]) => [
               planName,

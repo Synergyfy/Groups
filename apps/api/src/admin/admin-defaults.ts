@@ -29,8 +29,11 @@ export const DEFAULT_PAYMENT_RULES = {
 export const DEFAULT_GROUP_CREATION_RULES = {
   allowedPlans: ["Platinum"],
   allowedVariants: ["Pro+"],
+  planCreationRights: {
+    Platinum: { Standard: false, Pro: false, "Pro+": true },
+  },
   restrictToPlatformGroup: true,
-  platformGroupId: "grp-local-partners",
+  platformGroupId: null,
   recruitmentTargets: {
     Bronze: { Standard: 6, Pro: 5, "Pro+": 4 },
     Silver: { Standard: 5, Pro: 4, "Pro+": 3 },
@@ -222,15 +225,3 @@ export const DEFAULT_PLATFORM_SETTINGS = {
   notifyOnNewRegistration: true,
   notifyOnModerationQueue: true,
 };
-
-export const DEFAULT_CONTENT_SECTIONS = [
-  { id: "hero", label: "Homepage Hero" },
-  { id: "cta", label: "Primary & Secondary CTAs" },
-  { id: "product", label: "Product Introduction" },
-  { id: "group-types", label: "Group Type Descriptions" },
-  { id: "how-it-works", label: "How It Works Steps" },
-  { id: "connected-products", label: "Connected Products" },
-  { id: "faqs", label: "FAQs" },
-  { id: "notices", label: "Public Notices & Announcements" },
-  { id: "navigation", label: "Navigation Visibility" },
-];

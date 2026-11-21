@@ -24,6 +24,7 @@ import type { BusinessInvitationQueryDto } from "../dto/business.dto.js";
 import { pageParams, pageResult } from "../business.utils.js";
 import { contributionPeriodKey } from "../../payments/payments.utils.js";
 import { fromMinorPence } from "../../common/money.js";
+import { syncGroupActivationStatus } from "../group-activation.js";
 
 interface InvitationWithTarget {
   invitation: Invitation;
@@ -117,11 +118,24 @@ export class BusinessInvitationsService {
     }
 
     const memberId = this.memberIdFor(ctx, invitation);
-    if (
-      accept &&
-      invitation.kind === "invite" &&
-      target.group?.pricing === "paid"
-    ) {
+    if (accept && target.group) {
+      if (!["Active", "Recruiting"].includes(target.group.status)) {
+        throw new ConflictException({
+          code: "GROUP_NOT_JOINABLE",
+          message: `The group is ${target.group.status.toLowerCase()} and is not accepting members.`,
+        });
+      }
+      const typeConfig = ctx.config.groupTypes.find(
+        (entry) => entry.type === target.group!.type,
+      );
+      if (typeConfig && (!typeConfig.enabled || !typeConfig.allowJoin)) {
+        throw new ForbiddenException(
+          "Joining is disabled for this group type",
+        );
+      }
+    }
+
+    if (accept && target.group?.pricing === "paid") {
       const periodKey = contributionPeriodKey(
         target.group.contributionFrequency,
       );
@@ -159,6 +173,13 @@ export class BusinessInvitationsService {
         await this.addGroupMember(ctx, target.group, memberId, invitation);
       } else if (target.circle) {
         await this.addCircleMember(ctx, target.circle, memberId, invitation);
+      }
+      if (target.group) {
+        await syncGroupActivationStatus(
+          this.prisma,
+          target.group.id,
+          ctx.config.groupCreationRules,
+        );
       }
     }
 
