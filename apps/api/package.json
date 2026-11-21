@@ -19,9 +19,9 @@
     "db:deploy": "prisma migrate deploy",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
+    "db:seed:plans": "tsx prisma/seed-plans.ts",
     "db:sync-activation": "tsx prisma/sync-activation.ts",
-    "db:studio": "prisma studio",
-    "db:seed:plans": "tsx prisma/seed-plans.ts"
+    "db:studio": "prisma studio"
   },
   "dependencies": {
     "@nestjs/common": "^12.4.2",
