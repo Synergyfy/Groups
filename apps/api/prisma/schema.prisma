@@ -198,6 +198,12 @@ model BusinessPlan {
   /// Where dashboard access comes from: local plan purchase, a Central Hub
   /// membership, a Central Hub access pass, or a Central Hub trial window.
   accessSource      String    @default("local") @map("access_source")
+  /// Which source the business wants to use when both a local purchase and a
+  /// Central Hub membership/pass cover the same account: "local" or "central".
+  accessPreference  String    @default("local") @map("access_preference")
+  /// Snapshot of the locally purchased plan, kept so it can be reactivated
+  /// after the business temporarily switches to its Central Hub membership.
+  localAccess       Json?     @map("local_access")
   externalPlanId    String?   @map("external_plan_id")
   membershipName    String?   @map("membership_name")
   accessReason      String?   @map("access_reason")

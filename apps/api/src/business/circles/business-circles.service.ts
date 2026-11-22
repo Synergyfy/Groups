@@ -557,7 +557,14 @@ export class BusinessCirclesService {
       take: 100,
     });
 
+    // Mandatory circles are still circles. Do not auto-create past the plan
+    // (or partner) quota; the unsatisfied mandatory rule remains visible so the
+    // business can upgrade or tidy existing circles first.
+    const quota = await this.circleQuota(ctx);
+    let current = existing.length;
+
     for (const rule of missing) {
+      if (current >= quota) break;
       const typeConfig = ctx.config.circleTypes.find(
         (entry) => entry.type === rule.circleType,
       );
@@ -588,6 +595,7 @@ export class BusinessCirclesService {
           message: "Mandatory circle created automatically",
         },
       });
+      current += 1;
     }
   }
 

@@ -22,6 +22,7 @@ import {
 } from "../admin/admin-defaults.js";
 import { jsonObject } from "../admin/admin.mappers.js";
 import type {
+  AccessPreference,
   AutomaticGroupConfig,
   BusinessConfig,
   CentralProgrammeTask,
@@ -32,6 +33,7 @@ import type {
   GroupThreshold,
   GroupTypeConfig,
   JoinPlanView,
+  LocalPlanAccessSnapshot,
   MandatoryCircleRule,
   MandatoryGroupRule,
   PlanAccessView,
@@ -60,8 +62,15 @@ export function normalizeTier(value: string | null | undefined): Tier {
 }
 
 export function normalizeVariant(value: string | null | undefined): PlanVariant {
-  const normalized = (value ?? "").toLowerCase();
-  if (normalized.includes("pro+") || normalized.includes("pro plus")) {
+  const normalized = (value ?? "")
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
+  if (
+    normalized.includes("pro+") ||
+    normalized.includes("pro plus") ||
+    normalized.includes("proplus")
+  ) {
     return "Pro+";
   }
   if (normalized.includes("pro")) {
@@ -426,6 +435,12 @@ function numberOrNull(value: unknown): number | null {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
+function isoOrNull(value: unknown): string | null {
+  if (typeof value !== "string" || value.trim().length === 0) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
 export interface PlanQuotas {
   groups: number;
   circles: number;
@@ -500,27 +515,100 @@ export function isPlanActive(
   return !plan.accessExpiresAt || plan.accessExpiresAt.getTime() > now;
 }
 
+type LocalPlanRow = Pick<
+  BusinessPlan,
+  | "localAccess"
+  | "accessSource"
+  | "planId"
+  | "planName"
+  | "variant"
+  | "status"
+  | "paid"
+  | "accessDays"
+  | "accessFeeMinor"
+  | "agreementAccepted"
+  | "agreedAt"
+  | "accessExpiresAt"
+>;
+
 /**
- * A plan the business bought directly in this app. While it is active it
- * outranks any Central Hub membership/access-pass/trial grant, so the local
- * plan stays in place until it expires. Central Hub access is then used as the
- * fallback by the {@link BusinessContextService}.
+ * The stored snapshot of a plan bought directly in this app. Rows written
+ * before access switching existed fall back to the effective plan columns.
  */
-export function hasActiveLocalPlan(
-  plan:
-    | Pick<
-        BusinessPlan,
-        "accessSource" | "status" | "paid" | "accessExpiresAt"
-      >
-    | null
-    | undefined,
+export function localPlanSnapshot(
+  plan: LocalPlanRow | null | undefined,
+): LocalPlanAccessSnapshot | null {
+  if (!plan) return null;
+  const stored = jsonObject(plan.localAccess);
+  if (Object.keys(stored).length > 0) {
+    return {
+      planId: typeof stored.planId === "string" ? stored.planId : null,
+      planName:
+        typeof stored.planName === "string" ? stored.planName : plan.planName,
+      variant: normalizeVariant(
+        typeof stored.variant === "string" ? stored.variant : plan.variant,
+      ),
+      status:
+        typeof stored.status === "string" ? stored.status : plan.status,
+      paid: stored.paid === true,
+      accessDays: Number.isFinite(Number(stored.accessDays))
+        ? Number(stored.accessDays)
+        : plan.accessDays,
+      accessFeeMinor: Number.isFinite(Number(stored.accessFeeMinor))
+        ? Number(stored.accessFeeMinor)
+        : plan.accessFeeMinor,
+      agreementAccepted:
+        stored.agreementAccepted === true || plan.agreementAccepted,
+      agreedAt: isoOrNull(stored.agreedAt),
+      accessExpiresAt: isoOrNull(stored.accessExpiresAt),
+    };
+  }
+
+  if (plan.accessSource !== "local") return null;
+  return {
+    planId: plan.planId ?? null,
+    planName: plan.planName,
+    variant: normalizeVariant(plan.variant),
+    status: plan.status,
+    paid: plan.paid,
+    accessDays: plan.accessDays,
+    accessFeeMinor: plan.accessFeeMinor,
+    agreementAccepted: plan.agreementAccepted,
+    agreedAt: plan.agreedAt?.toISOString() ?? null,
+    accessExpiresAt: plan.accessExpiresAt?.toISOString() ?? null,
+  };
+}
+
+export function isLocalSnapshotActive(
+  snapshot: LocalPlanAccessSnapshot | null,
   now: number = Date.now(),
 ): boolean {
-  if (!plan || plan.accessSource !== "local") return false;
+  if (!snapshot) return false;
   // Only a plan that was actually purchased/activated counts; an unpaid
   // pending row must not block a Central Hub grant.
-  if (!plan.paid) return false;
-  return isPlanActive(plan, now);
+  if (!snapshot.paid || snapshot.status !== "Active") return false;
+  return (
+    !snapshot.accessExpiresAt ||
+    new Date(snapshot.accessExpiresAt).getTime() > now
+  );
+}
+
+export function accessPreferenceFor(
+  plan: Pick<BusinessPlan, "accessPreference"> | null | undefined,
+): AccessPreference {
+  return plan?.accessPreference === "central" ? "central" : "local";
+}
+
+/**
+ * A plan the business bought directly in this app. It is used whenever the
+ * business prefers its local purchase, or as the fallback when Central Hub
+ * access is not available.
+ */
+export function hasActiveLocalPlan(
+  plan: LocalPlanRow | null | undefined,
+  now: number = Date.now(),
+): boolean {
+  return isLocalSnapshotActive(localPlanSnapshot(plan), now);
 }
 
 export function canCreateGroups(

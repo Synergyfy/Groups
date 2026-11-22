@@ -393,7 +393,24 @@ export class MembershipSyncService {
         where: { id: externalPlanId },
         select,
       });
-      if (byId) return byId;
+      if (byId) {
+        // External plans are exposed to MCOM at family level, so the id
+        // normally belongs to the Standard variant. Prefer the sibling that
+        // matches the membership tier when the event carries one.
+        const hinted = variantHint ? normalizeVariant(variantHint) : null;
+        if (!hinted || normalizeVariant(byId.variant) === hinted) {
+          return byId;
+        }
+        const sibling = await this.prisma.plan.findFirst({
+          where: {
+            name: { equals: byId.name, mode: "insensitive" },
+            variant: hinted,
+            status: "Active",
+          },
+          select,
+        });
+        return sibling ?? byId;
+      }
     }
 
     const variants = variantHint
