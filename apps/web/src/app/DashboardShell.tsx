@@ -24,7 +24,7 @@ interface DashboardShellProps {
   sectionLabel: string;
   nav: NavSection[];
   bottomNav?: BottomNavItem[];
-  /** Admin dashboards span the viewport so the sidebar sits flush left. */
+  /** Dashboards span the viewport so the sidebar sits flush against the left edge. */
   wide?: boolean;
 }
 

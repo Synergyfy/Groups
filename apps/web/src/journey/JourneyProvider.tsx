@@ -1,19 +1,20 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { JourneyContext, type JourneyContextValue } from "./context";
-
-interface JourneyStorage {
-  visited: string[];
-  manual: string[];
-  seenTours: string[];
-}
+import {
+  EMPTY_JOURNEY,
+  clearJourneyStorage,
+  readJourneyStorage,
+  writeJourneyStorage,
+  type JourneyStorage,
+} from "./journeyStorage";
 
 export default function JourneyProvider({ children }: { children: ReactNode }) {
-  const [storage, setStorage] = useState<JourneyStorage>({
-    visited: [],
-    manual: [],
-    seenTours: [],
-  });
+  const [storage, setStorage] = useState<JourneyStorage>(readJourneyStorage);
   const [activeTour, setActiveTour] = useState<string | null>(null);
+
+  useEffect(() => {
+    writeJourneyStorage(storage);
+  }, [storage]);
 
   const value = useMemo<JourneyContextValue>(
     () => ({
@@ -47,7 +48,8 @@ export default function JourneyProvider({ children }: { children: ReactNode }) {
       startTour: (id) => setActiveTour(id),
       stopTour: () => setActiveTour(null),
       resetJourney: () => {
-        setStorage({ visited: [], manual: [], seenTours: [] });
+        setStorage(EMPTY_JOURNEY);
+        clearJourneyStorage();
         setActiveTour(null);
       },
     }),

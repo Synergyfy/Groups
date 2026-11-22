@@ -13,6 +13,7 @@ import {
 } from "../generated/prisma/client.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { jsonObject } from "../admin/admin.mappers.js";
+import { hasActiveLocalPlan } from "../business/business.rules.js";
 import { McomService } from "../mcom/mcom.service.js";
 import { decideAccess } from "./entitlement-access.js";
 import { normalizeRole, toUserRole } from "./roles.js";
@@ -114,7 +115,7 @@ export class AuthService {
       );
     }
 
-    this.enforceAccess(profile, entitlement);
+    await this.enforceAccess(profile, entitlement);
 
     const localUser = await this.upsertUser(profile, entitlement);
     const user = this.toSessionUser(localUser);
@@ -243,10 +244,10 @@ export class AuthService {
     }
   }
 
-  private enforceAccess(
+  private async enforceAccess(
     profile: McomProfile,
     entitlement: McomEntitlement | null,
-  ): void {
+  ): Promise<void> {
     const role = normalizeRole(profile.role ?? profile.profileType);
 
     if (role === "ADMIN") {
@@ -308,6 +309,18 @@ export class AuthService {
 
     const decision = decideAccess(entitlement);
     if (!decision.allowed) {
+      // A plan bought directly in this app outranks the Central Hub verdict.
+      // Let the business sign in so its still-valid local plan can be used;
+      // the dashboard falls back to Central Hub once that plan expires.
+      if (await this.hasActiveLocalPlanFor(profile)) {
+        this.logger.log(
+          `Allowing ${profile.email} to sign in on an active local plan (Central Hub: ${
+            decision.reason ?? "NO_ACTIVE_ENTITLEMENT"
+          }).`,
+        );
+        return;
+      }
+
       const reason = decision.reason ?? "NO_ACTIVE_ENTITLEMENT";
       this.logger.warn(
         `Access denied for ${profile.email}: ${reason}`,
@@ -320,6 +333,37 @@ export class AuthService {
         upgradeUrl: decision.upgradeUrl ?? null,
       });
     }
+  }
+
+  /**
+   * Whether this Central Hub user already owns an active plan purchased
+   * directly in this app. Sign-in enforcement cannot rely on the single
+   * `BusinessPlan` winner alone at this point (the user row may not be
+   * provisioned yet), so resolve the business by its immutable Central Hub id
+   * or email and inspect its plan.
+   */
+  private async hasActiveLocalPlanFor(profile: McomProfile): Promise<boolean> {
+    const centralId = profile.id ?? profile.sub ?? null;
+    const email = profile.email.trim().toLowerCase();
+    const business = await this.prisma.business.findFirst({
+      where: {
+        OR: [
+          ...(centralId ? [{ mcomUserId: centralId }] : []),
+          { email },
+        ],
+      },
+      select: {
+        plan: {
+          select: {
+            accessSource: true,
+            status: true,
+            paid: true,
+            accessExpiresAt: true,
+          },
+        },
+      },
+    });
+    return hasActiveLocalPlan(business?.plan ?? null);
   }
 
   private async upsertUser(
