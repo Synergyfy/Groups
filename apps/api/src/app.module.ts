@@ -8,6 +8,7 @@ import { ConsumerModule } from "./consumer/consumer.module.js";
 import { GroupsModule } from "./groups/groups.module.js";
 import { HealthModule } from "./health/health.module.js";
 import { McomModule } from "./mcom/mcom.module.js";
+import { MembershipSyncModule } from "./membership-sync/membership-sync.module.js";
 import { PaymentsModule } from "./payments/payments.module.js";
 import { PrismaModule } from "./prisma/prisma.module.js";
 import { ProfileSyncModule } from "./profile-sync/profile-sync.module.js";
@@ -31,6 +32,7 @@ import { ProfileSyncModule } from "./profile-sync/profile-sync.module.js";
     ConsumerModule,
     PaymentsModule,
     ProfileSyncModule,
+    MembershipSyncModule,
   ],
 })
 export class AppModule {}

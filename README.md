@@ -285,6 +285,87 @@ Register the endpoint in **MCOM Console**:
 Saving the endpoint in Console provisions the B2B scope, audience and ingress
 grant automatically.
 
+### Central Hub membership synchronization
+
+When a business buys a Central Hub membership that bundles Groups & Circles,
+Central Hub provisions the matching platform package and pushes a signed
+`membership.updated` event. This app activates the local plan that grants
+dashboard access until the membership expires.
+
+```http
+POST http://localhost:4089/api/webhooks/membership-updated
+Content-Type: application/json
+X-Mcom-Webhook-Signature: sha256=<hex>
+
+{
+  "event": "membership.updated",
+  "platform": "mcom-group",
+  "timestamp": "2026-11-22T10:15:00.000Z",
+  "data": {
+    "eventId": "8f2c1e9a-3b4d-4c5e-9f6a-1d2b3c4e5f60",
+    "occurredAt": "2026-11-22T10:15:00.000Z",
+    "userId": "usr_123",
+    "businessId": "biz_123",
+    "membership": {
+      "planId": "plan_gold",
+      "planName": "Gold",
+      "tier": "Pro+",
+      "level": "Gold",
+      "status": "active",
+      "billingCycle": "Annually",
+      "amount": 249,
+      "currency": "GBP",
+      "startsAt": null,
+      "expiresAt": "2027-11-22T00:00:00.000Z"
+    },
+    "package": {
+      "platform": "Groups & Circles",
+      "packageName": "Groups Pro+",
+      "externalPlanId": "gold-pro-plus",
+      "status": "active",
+      "limits": { "groups": 100, "circles": 40 },
+      "expiresAt": "2027-11-22T00:00:00.000Z"
+    }
+  }
+}
+```
+
+How it is applied:
+
+1. The HMAC is verified with `MCOM_WEBHOOK_SECRET` (falling back to
+   `MCOM_HMAC_SECRET`). Unsigned or mis-signed calls are rejected.
+2. The event is deduped on `data.eventId` in `mcom_membership_events`.
+3. The local user is resolved by the immutable Central Hub user id. If the
+   business has never signed in, the canonical profile is pulled over the
+   service mesh and provisioned first.
+4. `package.externalPlanId` is matched to the local plan catalogue
+   (`Plan.id`). If it does not match, `package.packageName` then
+   `membership.planName` are matched by name and variant.
+5. `active` activates the business's `BusinessPlan` with
+   `accessSource = "membership"`, `paid = true` and
+   `accessExpiresAt = membership.expiresAt || package.expiresAt`.
+   `expired`, `cancelled` and `inactive` revoke it.
+6. `package.limits` is stored as the Central quota override, so group/circle
+   caps published by Central Hub are honoured.
+
+**Important:** set the package's **External Plan ID** in Central Hub Console to
+the exact `Plan.id` published in **Admin → Plans** here. That is what makes
+plan-gated groups (`requiredPlanIds`) unlock automatically.
+
+Register the endpoint in **MCOM Console → this app → Configuration**:
+
+| Setting | Value |
+| --- | --- |
+| Membership Synchronization | Enabled |
+| Membership Update Endpoint | `https://<this-app>/api/webhooks/membership-updated` |
+| Roles | `BUSINESS` |
+| Webhook Secret | same value as `MCOM_WEBHOOK_SECRET` |
+
+For local development the endpoint is
+`http://localhost:4089/api/webhooks/membership-updated` (or
+`http://localhost:4088/api/webhooks/membership-updated` through the Vite
+proxy).
+
 ### Central Hub mesh smoke test
 
 ```bash
@@ -326,6 +407,7 @@ The API is a NestJS application using Prisma 7 with the PostgreSQL driver adapte
 | `GET`    | `/api/mcom/services`           | Ecosystem peer registry                 |
 | `GET`    | `/api/mcom/service/health`     | Inbound mesh-protected health endpoint  |
 | `POST`   | `/api/webhooks/profile-updated` | Signed Central Hub profile-change push |
+| `POST`   | `/api/webhooks/membership-updated` | Signed Central Hub membership-change push |
 | `GET`    | `/api/groups`                  | List groups (`?visibility=PUBLIC`)      |
 | `GET`    | `/api/groups/:id`              | Get a group                             |
 | `POST`   | `/api/groups`                  | Create a group                          |

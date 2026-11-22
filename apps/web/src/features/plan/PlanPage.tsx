@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Check,
@@ -84,6 +84,9 @@ export default function PlanPage() {
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [paymentOpen, setPaymentOpen] = useState(false);
+  const plansRef = useRef<HTMLElement>(null);
+  const scrollToPlans = () =>
+    plansRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   const variantPlans = useMemo(
     () =>
@@ -113,9 +116,12 @@ export default function PlanPage() {
     planCanCreateGroups(rules, plan.name, plan.variant);
   const creationCombos = creationRightsCombos(rules);
 
-  // While Central Hub is granting access it wins the priority order, so a local
-  // purchase would be overwritten on the next revalidation. Keep it disabled.
-  const canSubmit = Boolean(selected) && agreed && !centralAccess;
+  // While an active Central Hub grant is in force it wins the priority order, so
+  // a local purchase would be overwritten on the next revalidation. Keep it
+  // disabled only while that access is actually active — once it lapses the
+  // business must be able to buy a plan directly here instead.
+  const centralActive = centralAccess && hasActivePlan;
+  const canSubmit = Boolean(selected) && agreed && !centralActive;
 
   const selectVariant = (next: string) => {
     const nextVariant = next as PlanVariant;
@@ -245,25 +251,35 @@ export default function PlanPage() {
           </div>
         )}
 
-        {!hasActivePlan &&
-          state.plan.upgradeUrl && (
-            <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3">
-              <p className="text-xs font-semibold text-white">
-                Central Hub access is not active
-              </p>
-              <p className="mt-0.5 text-[11px] leading-relaxed text-slate-300">
-                {state.plan.accessReason
-                  ? state.plan.accessReason.replaceAll("_", " ").toLowerCase()
-                  : "Your membership, pass or trial no longer grants access."}
-              </p>
-              <a
-                href={state.plan.upgradeUrl}
-                className="mt-2 inline-block rounded-xl border border-gold-500/30 bg-gold-500/10 px-3 py-1.5 text-[11px] font-semibold text-gold-200 hover:bg-gold-500/20"
-              >
-                Manage membership in Central Hub
-              </a>
+        {!hasActivePlan && (centralAccess || state.plan.upgradeUrl) && (
+          <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3">
+            <p className="text-xs font-semibold text-white">
+              Central Hub access is not active
+            </p>
+            <p className="mt-0.5 text-[11px] leading-relaxed text-slate-300">
+              {state.plan.accessReason
+                ? state.plan.accessReason.replaceAll("_", " ").toLowerCase()
+                : "Your membership, pass or trial no longer grants access."}
+              {state.plan.upgradeUrl
+                ? " Renew it in Central Hub, or buy a plan directly here in Groups."
+                : " Buy a plan directly here in Groups to continue."}
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {state.plan.upgradeUrl && (
+                <a
+                  href={state.plan.upgradeUrl}
+                  className="inline-block rounded-xl border border-gold-500/30 bg-gold-500/10 px-3 py-1.5 text-[11px] font-semibold text-gold-200 hover:bg-gold-500/20"
+                >
+                  Manage membership in Central Hub
+                </a>
+              )}
+              <Button variant="primary" size="sm" onClick={scrollToPlans}>
+                <Crown className="size-3.5" />
+                Buy a plan in Groups
+              </Button>
             </div>
-          )}
+          </div>
+        )}
 
         {!entered && (
           <div className="rounded-2xl border border-gold-500/30 bg-gold-500/[0.08] px-4 py-3">
@@ -327,7 +343,7 @@ export default function PlanPage() {
         </Card>
 
         {/* --- Plan picker ------------------------------------------------ */}
-        <section className="flex flex-col gap-3">
+        <section ref={plansRef} className="flex scroll-mt-24 flex-col gap-3">
           <div className="flex flex-wrap items-end justify-between gap-2">
             <div>
               <h2 className="text-sm font-semibold text-white">Choose your plan</h2>

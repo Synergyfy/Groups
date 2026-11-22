@@ -1,12 +1,9 @@
 import {
-  BadRequestException,
   Injectable,
   Logger,
   ServiceUnavailableException,
-  UnauthorizedException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { createHmac, timingSafeEqual } from "node:crypto";
 import { jsonObject } from "../admin/admin.mappers.js";
 import type { McomProfile } from "../auth/auth.types.js";
 import { toUserRole } from "../auth/roles.js";
@@ -18,6 +15,7 @@ import {
 import type { User } from "../generated/prisma/client.js";
 import { McomService } from "../mcom/mcom.service.js";
 import { McomProfileLookupError } from "../mcom/mcom.types.js";
+import { verifyMcomWebhookSignature } from "../mcom/webhook-signature.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import type { ProfileUpdatedWebhookDto } from "./dto/profile-updated.dto.js";
 
@@ -42,7 +40,6 @@ export class ProfileSyncService {
     payload: ProfileUpdatedWebhookDto,
   ) {
     this.verifySignature(rawBody, signature);
-
     const eventId = payload.data.eventId;
     const userId = payload.data.userId;
     const claimed = await this.claimEvent(
@@ -109,37 +106,23 @@ export class ProfileSyncService {
     rawBody: string | Buffer,
     signature: string | undefined,
   ): void {
-    const secret =
-      this.config.get<string>("MCOM_WEBHOOK_SECRET", "").trim() ||
-      this.config.get<string>("MCOM_HMAC_SECRET", "").trim();
+    verifyMcomWebhookSignature(
+      this.config,
+      rawBody,
+      signature,
+      this.logger,
+    );
+  }
 
-    if (!secret) {
-      this.logger.error(
-        "MCOM_WEBHOOK_SECRET and MCOM_HMAC_SECRET are not configured.",
-      );
-      throw new ServiceUnavailableException(
-        "Webhook secret is not configured.",
-      );
-    }
-
-    if (!signature) {
-      throw new BadRequestException(
-        "Missing X-Mcom-Webhook-Signature header.",
-      );
-    }
-
-    const expected = `sha256=${createHmac("sha256", secret)
-      .update(rawBody)
-      .digest("hex")}`;
-    const received = signature.startsWith("sha256=")
-      ? signature
-      : `sha256=${signature}`;
-    const a = Buffer.from(expected);
-    const b = Buffer.from(received);
-
-    if (a.length !== b.length || !timingSafeEqual(a, b)) {
-      throw new UnauthorizedException("Invalid webhook signature.");
-    }
+  /**
+   * Pull and persist the canonical Central Hub profile for one user without a
+   * webhook envelope. Shared with the membership sync so a membership can be
+   * applied even before the business has ever signed in here.
+   */
+  async syncCentralUser(userId: string): Promise<User> {
+    const profile = await this.mcom.getEcosystemProfile(userId);
+    const centralId = profile.id ?? profile.sub ?? userId;
+    return this.syncProfile(profile, centralId);
   }
 
   /**
