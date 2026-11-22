@@ -7,5 +7,6 @@ import { ProfileSyncService } from "./profile-sync.service.js";
   imports: [McomModule],
   controllers: [ProfileWebhookController],
   providers: [ProfileSyncService],
+  exports: [ProfileSyncService],
 })
 export class ProfileSyncModule {}

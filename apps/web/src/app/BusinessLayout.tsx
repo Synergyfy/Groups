@@ -143,6 +143,7 @@ export default function BusinessLayout() {
       sectionLabel={entered ? "Business Dashboard" : "Plan"}
       nav={entered ? BUSINESS_NAV : PLAN_ONLY_NAV}
       bottomNav={entered ? BUSINESS_BOTTOM_NAV : undefined}
+      wide
     />
   );
 }
