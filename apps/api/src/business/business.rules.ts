@@ -500,6 +500,29 @@ export function isPlanActive(
   return !plan.accessExpiresAt || plan.accessExpiresAt.getTime() > now;
 }
 
+/**
+ * A plan the business bought directly in this app. While it is active it
+ * outranks any Central Hub membership/access-pass/trial grant, so the local
+ * plan stays in place until it expires. Central Hub access is then used as the
+ * fallback by the {@link BusinessContextService}.
+ */
+export function hasActiveLocalPlan(
+  plan:
+    | Pick<
+        BusinessPlan,
+        "accessSource" | "status" | "paid" | "accessExpiresAt"
+      >
+    | null
+    | undefined,
+  now: number = Date.now(),
+): boolean {
+  if (!plan || plan.accessSource !== "local") return false;
+  // Only a plan that was actually purchased/activated counts; an unpaid
+  // pending row must not block a Central Hub grant.
+  if (!plan.paid) return false;
+  return isPlanActive(plan, now);
+}
+
 export function canCreateGroups(
   plan: BusinessPlan,
   rules: GroupCreationRules,

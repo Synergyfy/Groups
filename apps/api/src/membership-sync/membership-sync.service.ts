@@ -7,6 +7,7 @@ import { ConfigService } from "@nestjs/config";
 import { randomUUID } from "node:crypto";
 import { jsonObject } from "../admin/admin.mappers.js";
 import {
+  hasActiveLocalPlan,
   normalizeTier,
   normalizeVariant,
   planAccessDays,
@@ -212,27 +213,41 @@ export class MembershipSyncService {
     let revoked = false;
 
     if (isActive) {
-      plan = await this.activatePlan({
-        business,
-        existing,
-        catalogue,
-        planName,
-        variant,
+      if (existing && hasActiveLocalPlan(existing)) {
+        // The business bought a plan directly in this app, and it is still
+        // valid. That plan is superior to the membership package, so keep it
+        // in place. The membership details below are still mirrored onto the
+        // user row and the next entitlement revalidation applies them as soon
+        // as the local plan expires.
+        plan = existing;
+      } else {
+        plan = await this.activatePlan({
+          business,
+          existing,
+          catalogue,
+          planName,
+          variant,
+          externalPlanId,
+          membershipName: firstNonEmpty(
+            membership?.level,
+            membership?.tier,
+            membershipPlanName,
+          ),
+          expiresAt,
+          limits: pkg?.limits,
+        });
+      }
+    } else if (
+      existing &&
+      existing.accessSource !== "local" &&
+      this.planMatchesEvent(existing, {
         externalPlanId,
-        membershipName: firstNonEmpty(
-          membership?.level,
-          membership?.tier,
-          membershipPlanName,
-        ),
-        expiresAt,
-        limits: pkg?.limits,
-      });
-    } else if (existing && this.planMatchesEvent(existing, {
-      externalPlanId,
-      planName,
-    })) {
-      // Revoke only the plan this event refers to. A late expiry for an old
-      // package must not remove a newer active membership.
+        planName,
+      })
+    ) {
+      // Revoke only the Central Hub plan this event refers to. A late expiry
+      // for an old package must not remove a newer membership — and must never
+      // revoke a locally purchased plan.
       plan = await this.prisma.businessPlan.update({
         where: { businessId: business.id },
         data: {

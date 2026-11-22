@@ -116,12 +116,11 @@ export default function PlanPage() {
     planCanCreateGroups(rules, plan.name, plan.variant);
   const creationCombos = creationRightsCombos(rules);
 
-  // While an active Central Hub grant is in force it wins the priority order, so
-  // a local purchase would be overwritten on the next revalidation. Keep it
-  // disabled only while that access is actually active — once it lapses the
-  // business must be able to buy a plan directly here instead.
-  const centralActive = centralAccess && hasActivePlan;
-  const canSubmit = Boolean(selected) && agreed && !centralActive;
+  // A plan bought directly here is superior to a Central Hub membership/pass,
+  // so the business can always upgrade or renew locally. The local plan then
+  // stays in force until it expires, after which Central Hub access resumes if
+  // it is still active.
+  const canSubmit = Boolean(selected) && agreed;
 
   const selectVariant = (next: string) => {
     const nextVariant = next as PlanVariant;
@@ -226,8 +225,9 @@ export default function PlanPage() {
               {state.plan.externalPlanId
                 ? ` · plan ${state.plan.externalPlanId}`
                 : ""}
-              . Your access is managed by Central Hub; local plan purchases are
-              disabled while this access is active.
+              . Central Hub keeps this access active. You can still buy a plan
+              directly here — a locally purchased plan takes priority until it
+              expires, then this Central Hub access resumes.
             </p>
             {state.plan.programmeTasks && state.plan.programmeTasks.length > 0 && (
               <ul className="mt-2 space-y-1">
