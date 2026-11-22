@@ -196,15 +196,26 @@ Central Hub administrators are still required to use `/admin/login`.
 
 ### Central Hub membership, access pass and trial access
 
-A business can reach this dashboard through any of the three Central Hub access
-models. Central Hub is the source of truth; the Groups app mirrors the verdict:
+A business can reach this dashboard in exactly three ways, in this priority
+order:
+
+1. A plan purchased directly in this app (`local`).
+2. A Central Hub membership that bundles a Groups plan (`membership`) or an
+   access pass (`access_pass`).
+3. An active Central Hub trial (`trial`).
+
+A locally purchased plan is **superior** to Central Hub access. Central Hub can
+still notify this app that a membership includes a Groups plan, but while the
+local plan is active it remains the entitlement in force. When the local plan
+expires, the cached Central Hub verdict is revalidated and automatically takes
+over if the membership/pass/trial is still active.
 
 | Access model | `accessSource` | Local plan treatment |
 | --- | --- | --- |
 | Membership bundling a Groups plan | `membership` | Active, paid; expiry follows the membership |
 | Central Hub access pass | `access_pass` | Active, paid; `accessExpiresAt` = pass expiry |
 | Dashboard access / trial | `trial` | Active, unpaid; `accessExpiresAt` = trial expiry |
-| Locally purchased plan | `local` | Existing plan/payment rules apply |
+| Locally purchased plan | `local` | Outranks the three Central Hub models while active |
 
 - The SSO token response and `GET /api/v1/auth/sso/entitlement` are read through
   `decideAccess()` (`apps/api/src/auth/entitlement-access.ts`), which applies
@@ -223,9 +234,11 @@ models. Central Hub is the source of truth; the Groups app mirrors the verdict:
   Central Hub.
 - Trial programme tasks returned in `trialContext.programmeTasks` are shown on
   the plan page with the remaining days.
-- Local plan purchases are disabled while a Central Hub grant is active,
-  because Central Hub takes priority and would overwrite the local plan on the
-  next revalidation.
+- A business can buy or renew a local plan even while a Central Hub grant is
+  active. The local plan takes priority until it expires; the Central Hub grant
+  is kept in the cached entitlement and resumes automatically afterwards.
+  Sign-in enforcement also accepts a valid local plan when Central Hub reports
+  no active entitlement.
 
 Plan/access-pass IDs should be stable and published in the local catalogue
 (`/admin/plans`). A Central Hub plan whose ID matches a local plan inherits that
@@ -343,8 +356,12 @@ How it is applied:
    `membership.planName` are matched by name and variant.
 5. `active` activates the business's `BusinessPlan` with
    `accessSource = "membership"`, `paid = true` and
-   `accessExpiresAt = membership.expiresAt || package.expiresAt`.
-   `expired`, `cancelled` and `inactive` revoke it.
+   `accessExpiresAt = membership.expiresAt || package.expiresAt` **unless the
+   business already has an active locally purchased plan**. In that case the
+   local plan stays in force and the membership is recorded on the user mirror;
+   revalidation applies it automatically when the local plan expires.
+   `expired`, `cancelled` and `inactive` revoke the Central Hub-sourced plan,
+   never a locally purchased one.
 6. `package.limits` is stored as the Central quota override, so group/circle
    caps published by Central Hub are honoured.
 

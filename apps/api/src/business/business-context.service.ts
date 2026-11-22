@@ -16,7 +16,13 @@ import type { SessionUser } from "../auth/auth.types.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { toMinorPence } from "../common/money.js";
 import { CentralAccessService } from "./central-access.service.js";
-import { toBusinessConfig, normalizeTier, normalizeVariant, planAccessDays } from "./business.rules.js";
+import {
+  hasActiveLocalPlan,
+  normalizeTier,
+  normalizeVariant,
+  planAccessDays,
+  toBusinessConfig,
+} from "./business.rules.js";
 import type { BusinessContext, BusinessConfig } from "./business.types.js";
 
 function firstNonEmpty(...values: unknown[]): string | null {
@@ -282,9 +288,17 @@ export class BusinessContextService {
       where: { businessId: business.id },
     });
 
-    // Central Hub access (membership, access pass or trial) takes priority over
-    // any local plan. Provision the local row so the rest of the dashboard —
-    // quotas, group creation and the API guard — keeps working unchanged.
+    // A plan purchased directly in this app is the superior entitlement. Keep
+    // it until it actually expires, even when Central Hub also reports an
+    // active membership/pass/trial. The Central Hub verdict stays cached on the
+    // user row, so it becomes the fallback on the first request after expiry.
+    if (existing && hasActiveLocalPlan(existing)) {
+      return existing;
+    }
+
+    // No active local purchase: mirror Central Hub access (membership, access
+    // pass or trial) onto the local row so quotas, group creation and the API
+    // guard keep working unchanged.
     if (centralDecision?.allowed && centralDecision.source !== "none") {
       return this.applyCentralAccess(
         user,
