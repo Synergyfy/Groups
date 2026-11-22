@@ -145,6 +145,50 @@ export interface CentralProgrammeTask {
   status: string;
 }
 
+/** The two access sources a business may choose between, when both exist. */
+export type AccessPreference = "local" | "central";
+
+export interface PlanAccessOptionView {
+  source: AccessPreference;
+  /** The plan/variant this source grants. */
+  planName: string;
+  variant: PlanVariant;
+  accessSource: CentralAccessSource;
+  accessDays: number;
+  accessFee: number;
+  accessExpiresAt?: string;
+  /** True while this source is actually gating the dashboard. */
+  active: boolean;
+  /** False when the plan has expired or is otherwise unusable. */
+  available: boolean;
+  membershipName?: string;
+  externalPlanId?: string;
+  tasks?: CentralProgrammeTask[];
+  quotas?: Record<string, unknown>;
+  limits?: Record<string, unknown>;
+  features?: string[];
+}
+
+export interface PlanAccessOptionsView {
+  preference: AccessPreference;
+  local: PlanAccessOptionView | null;
+  central: PlanAccessOptionView | null;
+}
+
+/** Snapshot of a plan bought directly in this app. */
+export interface LocalPlanAccessSnapshot {
+  planId: string | null;
+  planName: string;
+  variant: PlanVariant;
+  status: string;
+  paid: boolean;
+  accessDays: number;
+  accessFeeMinor: number;
+  agreementAccepted: boolean;
+  agreedAt: string | null;
+  accessExpiresAt: string | null;
+}
+
 export interface BusinessContext {
   user: User;
   business: Business;

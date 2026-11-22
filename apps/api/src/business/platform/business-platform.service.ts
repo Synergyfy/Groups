@@ -40,6 +40,7 @@ import type {
   BusinessCampaignsQueryDto,
   BusinessDirectoryQueryDto,
   BusinessRewardsQueryDto,
+  SelectPlanAccessSourceDto,
 } from "../dto/business.dto.js";
 import {
   pageParams,
@@ -203,6 +204,29 @@ export class BusinessPlatformService {
       quotas: { groups: groupQuota, circles: circleQuota },
       mandatoryGroups: ctx.config.mandatoryGroups,
       mandatoryCircles: ctx.config.mandatoryCircles,
+      accessOptions: await this.context.accessOptions(ctx),
+    };
+  }
+
+  async selectAccessSource(
+    ctx: BusinessContext,
+    dto: SelectPlanAccessSourceDto,
+  ) {
+    const activated = await this.context.switchAccessSource(
+      ctx,
+      dto.source,
+    );
+    return {
+      plan: mapBusinessPlan(activated),
+      access: toPlanAccess(activated),
+      canCreateGroups: canCreateGroups(
+        activated,
+        ctx.config.groupCreationRules,
+      ),
+      accessOptions: await this.context.accessOptions({
+        ...ctx,
+        plan: activated,
+      }),
     };
   }
 

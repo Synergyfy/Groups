@@ -100,8 +100,7 @@ export default function SignInPage() {
                   : "Continue with MCOM Central Hub"}
               </p>
               <p className="mt-0.5 text-[11px] leading-relaxed text-slate-400">
-                Single sign-on for business, consumer, agent and partner
-                accounts.
+                Single sign-on for business and consumer accounts.
               </p>
             </div>
             <ArrowRight className="size-4 shrink-0 text-gold-400 transition-all group-hover:translate-x-0.5" />

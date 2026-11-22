@@ -27,6 +27,21 @@ export async function activatePlanTx(
     select: { planId: true },
   });
 
+  // Keep a snapshot of the locally purchased plan so the business can switch
+  // back to it after temporarily using a Central Hub membership.
+  const localAccess = {
+    planId: input.planId,
+    planName: input.planName,
+    variant: input.variant,
+    status: "Active",
+    paid: true,
+    accessDays: input.accessDays,
+    accessFeeMinor: input.accessFeeMinor,
+    agreementAccepted: input.agreementAccepted,
+    agreedAt: input.agreedAt.toISOString(),
+    accessExpiresAt: input.accessExpiresAt.toISOString(),
+  } as unknown as Prisma.InputJsonValue;
+
   const updated = await tx.businessPlan.upsert({
     where: { businessId: input.businessId },
     update: {
@@ -41,6 +56,9 @@ export async function activatePlanTx(
       agreedAt: input.agreedAt,
       accessExpiresAt: input.accessExpiresAt,
       accessSource: "local",
+      // Buying a plan here makes it the active source again.
+      accessPreference: "local",
+      localAccess,
       externalPlanId: null,
       membershipName: null,
       accessReason: null,
@@ -60,6 +78,8 @@ export async function activatePlanTx(
       agreementAccepted: input.agreementAccepted,
       agreedAt: input.agreedAt,
       accessExpiresAt: input.accessExpiresAt,
+      accessPreference: "local",
+      localAccess,
     },
   });
 

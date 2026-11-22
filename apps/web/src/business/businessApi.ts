@@ -417,6 +417,30 @@ export interface BusinessProgrammesResponse {
   stats: { total: number; active: number; currentPlan: string };
 }
 
+export interface PlanAccessOptionView {
+  source: "local" | "central";
+  planName: string;
+  variant: PlanVariant;
+  accessSource: "local" | "membership" | "access_pass" | "trial";
+  accessDays: number;
+  accessFee: number;
+  accessExpiresAt?: string;
+  active: boolean;
+  available: boolean;
+  membershipName?: string;
+  externalPlanId?: string;
+  tasks?: PlanAccess["programmeTasks"];
+  quotas?: Record<string, unknown>;
+  limits?: Record<string, unknown>;
+  features?: string[];
+}
+
+export interface PlanAccessOptionsView {
+  preference: "local" | "central";
+  local: PlanAccessOptionView | null;
+  central: PlanAccessOptionView | null;
+}
+
 export interface BusinessPlanResponse {
   plan: BusinessPlanView;
   access: PlanAccess;
@@ -428,6 +452,7 @@ export interface BusinessPlanResponse {
   quotas: { groups: number; circles: number };
   mandatoryGroups: AdminConfig["mandatoryGroups"];
   mandatoryCircles: AdminConfig["mandatoryCircles"];
+  accessOptions: PlanAccessOptionsView;
 }
 
 export interface BusinessJourneyResponse {
@@ -732,6 +757,16 @@ export const businessApi = {
     }>("/business/plan/activate", {
       method: "POST",
       body: JSON.stringify(body),
+    }),
+  selectAccessSource: (source: "local" | "central") =>
+    apiRequest<{
+      plan: BusinessPlanView;
+      access: PlanAccess;
+      canCreateGroups: boolean;
+      accessOptions: PlanAccessOptionsView;
+    }>("/business/plan/access-source", {
+      method: "POST",
+      body: JSON.stringify({ source }),
     }),
   journey: () => apiRequest<BusinessJourneyResponse>("/business/journey"),
   directory: (params: {

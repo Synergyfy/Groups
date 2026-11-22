@@ -20,6 +20,10 @@ import { PrismaService } from "../../prisma/prisma.service.js";
 import { BusinessContextService } from "../business-context.service.js";
 import type { BusinessContext } from "../business.types.js";
 import { mapCircle as mapBusinessCircle } from "../business.mappers.js";
+import {
+  isPlanActive,
+  matchesRequiredPlans,
+} from "../business.rules.js";
 import type { BusinessInvitationQueryDto } from "../dto/business.dto.js";
 import { pageParams, pageResult } from "../business.utils.js";
 import { contributionPeriodKey } from "../../payments/payments.utils.js";
@@ -133,6 +137,10 @@ export class BusinessInvitationsService {
           "Joining is disabled for this group type",
         );
       }
+      // The owner may be accepting somebody else's request (or an invitee may
+      // be accepting their own invitation), so check the plan of the business
+      // actually being added — not just the responder's plan.
+      await this.assertMemberPlanEligibility(target.group, memberId);
     }
 
     if (accept && target.group?.pricing === "paid") {
@@ -581,6 +589,58 @@ export class BusinessInvitationsService {
 
   private memberIdFor(ctx: BusinessContext, invitation: Invitation) {
     return invitation.inviteeId ?? ctx.business.id;
+  }
+
+  /**
+   * Enforce a group's `requiredPlanIds` gate at the point the member is added.
+   * The join-request and consumer flows already check this; invitation
+   * acceptance previously inserted the member without checking their plan,
+   * which let a plan-gated group be bypassed.
+   */
+  private async assertMemberPlanEligibility(
+    group: Pick<Group, "requiredPlanIds">,
+    memberId: string,
+  ): Promise<void> {
+    if (group.requiredPlanIds.length === 0) return;
+
+    const [plans, memberPlan] = await Promise.all([
+      this.prisma.plan.findMany({
+        where: { id: { in: group.requiredPlanIds } },
+        select: { id: true, name: true, variant: true },
+      }),
+      this.prisma.businessPlan.findUnique({
+        where: { businessId: memberId },
+        select: {
+          planId: true,
+          planName: true,
+          variant: true,
+          status: true,
+          paid: true,
+          accessExpiresAt: true,
+        },
+      }),
+    ]);
+
+    const eligible = matchesRequiredPlans(
+      group.requiredPlanIds,
+      plans,
+      memberPlan
+        ? {
+            planId: memberPlan.planId,
+            planName: memberPlan.planName,
+            variant: memberPlan.variant,
+            active: isPlanActive(memberPlan),
+          }
+        : null,
+    );
+
+    if (!eligible) {
+      throw new ForbiddenException({
+        code: "PLAN_REQUIRED",
+        message:
+          "This group is only open to members on selected plans. The invitee's plan does not qualify.",
+      });
+    }
   }
 
   private async addGroupMember(

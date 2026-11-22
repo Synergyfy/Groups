@@ -261,4 +261,10 @@ export class ActivatePlanDto {
   @IsBoolean() agreementAccepted!: boolean;
 }
 
+/** Which covering entitlement should gate the dashboard. */
+export class SelectPlanAccessSourceDto {
+  @IsIn(["local", "central"])
+  source!: "local" | "central";
+}
+
 

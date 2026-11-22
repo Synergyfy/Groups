@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  ArrowLeftRight,
   Check,
   CheckCircle2,
   Crown,
@@ -17,6 +18,7 @@ import { PLAN_VARIANTS, PLAN_VARIANT_ACCESS_DAYS, accessDaysLabel, planAccessLab
 import { useAppState } from "../../store/selectors";
 import { errorMessage } from "../../app/api";
 import { businessApi, useBusinessData } from "../../business/BusinessDataProvider";
+import type { PlanAccessOptionView } from "../../business/businessApi";
 import {
   creationRightsCombos,
   planCanCreateGroups,
@@ -82,9 +84,16 @@ export default function PlanPage() {
   );
   const [agreed, setAgreed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [switchingSource, setSwitchingSource] = useState<
+    "local" | "central" | null
+  >(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const plansRef = useRef<HTMLElement>(null);
+  const accessOptions = business.plan?.accessOptions;
+  const canSwitchAccess = Boolean(
+    accessOptions?.local && accessOptions?.central
+  );
   const scrollToPlans = () =>
     plansRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 
@@ -116,10 +125,8 @@ export default function PlanPage() {
     planCanCreateGroups(rules, plan.name, plan.variant);
   const creationCombos = creationRightsCombos(rules);
 
-  // A plan bought directly here is superior to a Central Hub membership/pass,
-  // so the business can always upgrade or renew locally. The local plan then
-  // stays in force until it expires, after which Central Hub access resumes if
-  // it is still active.
+  // A business with both a local purchase and a Central Hub membership can
+  // choose which one is active; buying a plan here always switches back to it.
   const canSubmit = Boolean(selected) && agreed;
 
   const selectVariant = (next: string) => {
@@ -134,6 +141,20 @@ export default function PlanPage() {
   const completePlan = async () => {
     await business.refresh();
     navigate("/business/groups", { replace: true });
+  };
+
+  const switchAccess = async (source: "local" | "central") => {
+    if (switchingSource) return;
+    setSwitchingSource(source);
+    setFeedback(null);
+    try {
+      await businessApi.selectAccessSource(source);
+      await business.refresh();
+    } catch (cause) {
+      setFeedback(errorMessage(cause));
+    } finally {
+      setSwitchingSource(null);
+    }
   };
 
   const submit = async () => {
@@ -194,6 +215,68 @@ export default function PlanPage() {
           </p>
         </header>
 
+        {canSwitchAccess && accessOptions && (
+          <Card>
+            <CardBody className="flex flex-col gap-3">
+              <div className="flex items-start gap-2.5">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-gold-500/40 bg-gold-500/10 text-gold-400">
+                  <ArrowLeftRight className="size-4" />
+                </span>
+                <div>
+                  <CardTitle>Choose your active access</CardTitle>
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-slate-400">
+                    You have both a plan bought in Groups and a plan from your
+                    Central Hub membership. The active one sets your group
+                    limits and group-creation rights — switch at any time.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid gap-2 sm:grid-cols-2">
+                {accessOptions.local && (
+                  <AccessOptionCard
+                    option={accessOptions.local}
+                    title="Plan bought in Groups"
+                    subtitle={[
+                      `£${accessOptions.local.accessFee} access fee`,
+                      accessOptions.local.accessExpiresAt
+                        ? `active until ${formatDate(
+                            accessOptions.local.accessExpiresAt
+                          )}`
+                        : "no expiry",
+                    ].join(" · ")}
+                    switching={switchingSource}
+                    onUse={switchAccess}
+                  />
+                )}
+                {accessOptions.central && (
+                  <AccessOptionCard
+                    option={accessOptions.central}
+                    title={
+                      accessOptions.central.membershipName
+                        ? `${accessOptions.central.membershipName} membership`
+                        : accessOptions.central.accessSource === "access_pass"
+                          ? "Central Hub access pass"
+                          : accessOptions.central.accessSource === "trial"
+                            ? "Central Hub trial"
+                            : "Central Hub plan"
+                    }
+                    subtitle={
+                      accessOptions.central.accessExpiresAt
+                        ? `Included in Central Hub · active until ${formatDate(
+                            accessOptions.central.accessExpiresAt
+                          )}`
+                        : "Included in Central Hub · no expiry"
+                    }
+                    switching={switchingSource}
+                    onUse={switchAccess}
+                  />
+                )}
+              </div>
+            </CardBody>
+          </Card>
+        )}
+
         {centralAccess && hasActivePlan && (
           <div className="rounded-2xl border border-sky-500/30 bg-sky-500/10 px-4 py-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -226,8 +309,7 @@ export default function PlanPage() {
                 ? ` · plan ${state.plan.externalPlanId}`
                 : ""}
               . Central Hub keeps this access active. You can still buy a plan
-              directly here — a locally purchased plan takes priority until it
-              expires, then this Central Hub access resumes.
+              directly here and choose which one drives the dashboard.
             </p>
             {state.plan.programmeTasks && state.plan.programmeTasks.length > 0 && (
               <ul className="mt-2 space-y-1">
@@ -564,6 +646,65 @@ export default function PlanPage() {
         onClose={() => setPaymentOpen(false)}
         target={paymentTarget}
       />
+    </div>
+  );
+}
+
+function AccessOptionCard({
+  option,
+  title,
+  subtitle,
+  switching,
+  onUse,
+}: {
+  option: PlanAccessOptionView;
+  title: string;
+  subtitle: string;
+  switching: "local" | "central" | null;
+  onUse: (source: "local" | "central") => void;
+}) {
+  const isSwitching = switching === option.source;
+  const useLabel =
+    option.source === "local"
+      ? "Use local plan"
+      : option.accessSource === "access_pass"
+        ? "Use access pass"
+        : option.accessSource === "trial"
+          ? "Use trial"
+          : "Use membership";
+  return (
+    <div
+      className={`flex flex-col gap-2 rounded-xl border p-3 ${
+        option.active
+          ? "border-success-500/40 bg-success-500/[0.06]"
+          : "border-white/10 bg-ink-950/60"
+      }`}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-semibold text-white">{title}</p>
+        {option.active ? (
+          <Badge variant="success">Active</Badge>
+        ) : (
+          <Badge variant={option.available ? "info" : "muted"}>
+            {option.available ? "Available" : "Expired"}
+          </Badge>
+        )}
+      </div>
+      <p className="text-[11px] font-medium text-slate-300">
+        {option.planName} · {option.variant} ·{" "}
+        {accessDaysLabel(option.accessDays)} access
+      </p>
+      <p className="text-[11px] leading-relaxed text-slate-400">{subtitle}</p>
+      {!option.active && (
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={!option.available || switching !== null}
+          onClick={() => onUse(option.source)}
+        >
+          {isSwitching ? "Switching…" : useLabel}
+        </Button>
+      )}
     </div>
   );
 }

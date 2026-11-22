@@ -258,9 +258,19 @@ export class AuthService {
       });
     }
 
-    // Consumer, agent, consultant, account-manager and partner dashboards are
-    // free. Only business workspaces need a Central Hub membership, access pass
-    // or trial.
+    // Groups & Circles only serves business and consumer accounts. Central Hub
+    // may still issue sessions for agent, consultant, account-manager and
+    // partner roles, but those roles have no workspace here.
+    if (role !== "BUSINESS" && role !== "CUSTOMER") {
+      throw new ForbiddenException({
+        code: "ACCOUNT_TYPE_NOT_SUPPORTED",
+        message:
+          "Groups & Circles is available to business and consumer accounts only. Sign in with a business or consumer Central Hub account.",
+      });
+    }
+
+    // Consumer dashboards are free. Only business workspaces need a Central Hub
+    // membership, access pass or trial.
     if (role !== "BUSINESS") {
       return;
     }
@@ -355,9 +365,17 @@ export class AuthService {
       select: {
         plan: {
           select: {
+            localAccess: true,
             accessSource: true,
+            planId: true,
+            planName: true,
+            variant: true,
             status: true,
             paid: true,
+            accessDays: true,
+            accessFeeMinor: true,
+            agreementAccepted: true,
+            agreedAt: true,
             accessExpiresAt: true,
           },
         },

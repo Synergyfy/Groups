@@ -1682,6 +1682,7 @@ export class BusinessGroupsService {
         ownerId: true,
         status: true,
         pricing: true,
+        requiredPlanIds: true,
       },
     });
     if (
@@ -1692,6 +1693,26 @@ export class BusinessGroupsService {
       group.pricing === "paid"
     ) {
       return;
+    }
+
+    // A platform group can still be plan-gated. Do not auto-place a business
+    // into a group whose required plans it does not hold.
+    if (group.requiredPlanIds.length > 0) {
+      const plans = await this.prisma.plan.findMany({
+        where: { id: { in: group.requiredPlanIds } },
+        select: { id: true, name: true, variant: true },
+      });
+      const eligible = matchesRequiredPlans(
+        group.requiredPlanIds,
+        plans,
+        {
+          planId: ctx.plan.planId,
+          planName: ctx.plan.planName,
+          variant: ctx.plan.variant,
+          active: ctx.plan.paid || ctx.plan.status === "Active",
+        },
+      );
+      if (!eligible) return;
     }
 
     const existing = await this.prisma.groupMember.findUnique({

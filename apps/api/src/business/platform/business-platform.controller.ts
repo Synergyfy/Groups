@@ -20,6 +20,7 @@ import {
   BusinessCampaignsQueryDto,
   BusinessDirectoryQueryDto,
   BusinessRewardsQueryDto,
+  SelectPlanAccessSourceDto,
 } from "../dto/business.dto.js";
 import { BusinessPlatformService } from "./business-platform.service.js";
 
@@ -72,6 +73,18 @@ export class BusinessAccountController {
     @CurrentUser() user: SessionUser,
   ) {
     return this.platform.activatePlan(
+      await this.context.resolve(user),
+      dto,
+    );
+  }
+
+  @Post("plan/access-source")
+  @AllowLockedBusinessAccess()
+  async selectAccessSource(
+    @Body() dto: SelectPlanAccessSourceDto,
+    @CurrentUser() user: SessionUser,
+  ) {
+    return this.platform.selectAccessSource(
       await this.context.resolve(user),
       dto,
     );

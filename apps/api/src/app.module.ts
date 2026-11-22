@@ -12,6 +12,7 @@ import { MembershipSyncModule } from "./membership-sync/membership-sync.module.j
 import { PaymentsModule } from "./payments/payments.module.js";
 import { PrismaModule } from "./prisma/prisma.module.js";
 import { ProfileSyncModule } from "./profile-sync/profile-sync.module.js";
+import { SystemModule } from "./system/system.module.js";
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { ProfileSyncModule } from "./profile-sync/profile-sync.module.js";
     PaymentsModule,
     ProfileSyncModule,
     MembershipSyncModule,
+    SystemModule,
   ],
 })
 export class AppModule {}

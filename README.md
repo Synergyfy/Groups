@@ -244,6 +244,22 @@ Plan/access-pass IDs should be stable and published in the local catalogue
 (`/admin/plans`). A Central Hub plan whose ID matches a local plan inherits that
 plan's name, variant, quotas and group-creation rights.
 
+### Plan limits and capabilities
+
+Plan values are enforced on the server, not only hidden in the UI:
+
+| Plan configuration | Where it is enforced |
+| --- | --- |
+| `groupQuota` / `circleQuota` | Creating groups and circles; automatic mandatory circles also stop at the quota. |
+| Plan creation rights (`planCreationRights`) | `POST /api/business/groups` rejects plans that may not create groups. |
+| Recruitment targets | Group activation thresholds are derived from the plan/variant matrix. |
+| `requiredPlanIds` on a group | Business joins, consumer joins/acceptance, group-contribution payments, business invitation acceptance and platform-group auto-placement. |
+| `revenueSharePercent` | Applied when a plan payment is settled. |
+| `features` | Descriptive copy shown on plan cards; these strings are not capability flags. |
+
+Quotas and capabilities are evaluated against the effective plan (local
+purchase while valid, otherwise the Central Hub membership/pass/trial).
+
 ### Central Hub profile ownership
 
 Consumer and business profiles are **owned by Central Hub**. Local apps mirror
@@ -427,9 +443,13 @@ The API is a NestJS application using Prisma 7 with the PostgreSQL driver adapte
 | `POST`   | `/api/webhooks/membership-updated` | Signed Central Hub membership-change push |
 | `GET`    | `/api/groups`                  | List groups (`?visibility=PUBLIC`)      |
 | `GET`    | `/api/groups/:id`              | Get a group                             |
-| `POST`   | `/api/groups`                  | Create a group                          |
-| `PATCH`  | `/api/groups/:id`              | Update a group                          |
-| `DELETE` | `/api/groups/:id`              | Delete a group                          |
+| `POST`   | `/api/groups`                  | Create a group (admin only)             |
+| `PATCH`  | `/api/groups/:id`              | Update a group (admin only)             |
+| `DELETE` | `/api/groups/:id`              | Delete a group (admin only)             |
+
+Business group creation and updates use `/api/business/groups`, where plan
+creation rights, group/circle quotas and plan-gated group membership are
+enforced.
 
 Prisma schema: `apps/api/prisma/schema.prisma`.
 
