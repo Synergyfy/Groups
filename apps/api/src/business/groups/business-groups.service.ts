@@ -7,6 +7,7 @@ import {
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import type {
+  Business,
   Group,
   GroupMember,
   Invitation,
@@ -171,6 +172,7 @@ export class BusinessGroupsService {
   async getMineSections(ctx: BusinessContext) {
     const businessId = ctx.business.id;
     await this.ensurePlatformMembership(ctx);
+    await this.ensureAutomaticNetworkMembership(ctx);
     const myGroups = await this.prisma.group.findMany({
       where: {
         OR: [
@@ -453,6 +455,7 @@ export class BusinessGroupsService {
   }
 
   async getNetwork(ctx: BusinessContext) {
+    await this.ensureAutomaticNetworkMembership(ctx);
     const automaticGroup = await this.prisma.group.findFirst({
       where: {
         source: "automatic",
@@ -1809,6 +1812,136 @@ export class BusinessGroupsService {
     }
   }
 
+  /**
+   * Places a business in the automatic network group for its location.
+   *
+   * Automatic groups are system-owned and location-based: a business is
+   * assigned once (never twice), fills the oldest group for its level until
+   * the configured threshold is reached, and then a new group is started.
+   * A transaction-scoped advisory lock serialises concurrent first requests
+   * (the dashboard and network endpoints load in parallel).
+   */
+  private async ensureAutomaticNetworkMembership(
+    ctx: BusinessContext,
+  ): Promise<void> {
+    const config = ctx.config.automaticGrouping;
+    if (!config.enabled) return;
+
+    const level = automaticNetworkLevel(ctx.business, config.scope);
+    if (!level) return;
+
+    const existing = await this.prisma.groupMember.findFirst({
+      where: {
+        memberId: ctx.business.id,
+        group: { source: "automatic", type: "Network" },
+      },
+      select: { id: true },
+    });
+    if (existing) return;
+
+    const threshold = Math.max(1, Number(config.threshold) || 1);
+    const baseName = automaticNetworkName(ctx.business, level);
+    const lockKey = `automatic-network:${baseName}`.toLowerCase();
+    const where = automaticNetworkWhere(ctx.business, level);
+
+    await this.prisma.$transaction(async (tx) => {
+      // `IS NULL` gives Prisma a serializable boolean while still taking the
+      // transaction-scoped lock (the function itself returns void).
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey})::bigint) IS NULL AS locked`;
+
+      // Another request may have assigned the business while we waited.
+      const alreadyAssigned = await tx.groupMember.findFirst({
+        where: {
+          memberId: ctx.business.id,
+          group: { source: "automatic", type: "Network" },
+        },
+        select: { id: true },
+      });
+      if (alreadyAssigned) return;
+
+      const candidates = await tx.group.findMany({
+        where: {
+          source: "automatic",
+          type: "Network",
+          ...where,
+        },
+        include: { members: { select: { id: true } } },
+        orderBy: { createdAt: "asc" },
+      });
+      const open = candidates.find(
+        (group) => group.members.length < threshold,
+      );
+
+      if (open) {
+        await tx.groupMember.create({
+          data: automaticNetworkMemberData(ctx.business, open.id),
+        });
+        await tx.group.update({
+          where: { id: open.id },
+          data: { memberCount: { increment: 1 } },
+        });
+        await tx.groupActivity.create({
+          data: {
+            groupId: open.id,
+            actorName: "System",
+            kind: "join",
+            message: `${ctx.business.name} was assigned to ${open.name} by automatic grouping`,
+          },
+        });
+        return;
+      }
+
+      const name =
+        candidates.length === 0
+          ? baseName
+          : `${baseName} ${candidates.length + 1}`;
+      const slug = await this.context.uniqueSlug(name);
+      const label = automaticNetworkLabel(ctx.business, level);
+
+      const created = await tx.group.create({
+        data: {
+          name,
+          slug,
+          description: `Automatic network group for businesses trading in ${label}.`,
+          type: "Network",
+          source: "automatic",
+          headStart: false,
+          purpose: `System-created network of businesses trading in ${label}. Membership is assigned automatically and cannot be edited.`,
+          ownerId: "system",
+          ownerName: "System",
+          memberCount: 1,
+          city: ctx.business.city,
+          localArea: ctx.business.localArea,
+          highStreet: ctx.business.highStreet,
+          localMallName: ctx.business.localMallName,
+          cityId: ctx.business.cityId,
+          boroughId: ctx.business.boroughId,
+          highStreetId: ctx.business.highStreetId,
+          localMallId: ctx.business.localMallId,
+          requiredSize: threshold,
+          status: "Active",
+          accessType: "open",
+          directoryVisibility: "members",
+          interactionLevel: "message",
+          pricing: "free",
+          visibility: "PRIVATE",
+        },
+      });
+
+      await tx.groupMember.create({
+        data: automaticNetworkMemberData(ctx.business, created.id, "member"),
+      });
+      await tx.groupActivity.create({
+        data: {
+          groupId: created.id,
+          actorName: "System",
+          kind: "created",
+          message: `${created.name} created and ${ctx.business.name} assigned automatically`,
+        },
+      });
+    });
+  }
+
   private async findGroup(groupId: string): Promise<GroupWithMembers> {
     const group = await this.prisma.group.findUnique({
       where: { id: groupId },
@@ -1923,4 +2056,112 @@ export class BusinessGroupsService {
     if (plan) return Math.max(0, plan.groupQuota);
     return accessQuotas(ctx.config, ctx.plan).groups;
   }
+}
+
+type AutomaticNetworkLevel = "city" | "borough" | "highStreet" | "localMall";
+
+/**
+ * The location level an automatic group is built from. The configured scope
+ * can narrow it (city / high street / local mall); otherwise businesses are
+ * grouped by city + borough ("local area"), which is what the dashboard copy
+ * promises. Missing finer levels fall back to the borough.
+ */
+function automaticNetworkLevel(
+  business: Business,
+  scope: string,
+): AutomaticNetworkLevel | null {
+  const normalized = scope.trim().toLowerCase();
+  if (normalized.includes("mall") && business.localMallName) {
+    return "localMall";
+  }
+  if (normalized.includes("street") && business.highStreet) {
+    return "highStreet";
+  }
+  if (normalized.includes("city") && business.city) {
+    return "city";
+  }
+  if (business.localArea) return "borough";
+  if (business.city) return "city";
+  return null;
+}
+
+function automaticNetworkName(
+  business: Business,
+  level: AutomaticNetworkLevel,
+): string {
+  switch (level) {
+    case "localMall":
+      return `${business.localMallName} Network`;
+    case "highStreet":
+      return `${business.highStreet} Network`;
+    case "city":
+      return `${business.city} Network`;
+    default:
+      return `${business.city} — ${business.localArea} Network`;
+  }
+}
+
+function automaticNetworkLabel(
+  business: Business,
+  level: AutomaticNetworkLevel,
+): string {
+  switch (level) {
+    case "localMall":
+      return `${business.localMallName}, ${business.localArea ?? business.city}`;
+    case "highStreet":
+      return `${business.highStreet}, ${business.localArea ?? business.city}`;
+    case "city":
+      return business.city;
+    default:
+      return `${business.localArea}, ${business.city}`;
+  }
+}
+
+/** Restricts candidate groups to the same location at the chosen level. */
+function automaticNetworkWhere(
+  business: Business,
+  level: AutomaticNetworkLevel,
+): Prisma.GroupWhereInput {
+  const where: Prisma.GroupWhereInput = {};
+  if (business.city) {
+    where.city = { equals: business.city, mode: "insensitive" };
+  }
+  if (level !== "city" && business.localArea) {
+    where.localArea = { equals: business.localArea, mode: "insensitive" };
+  }
+  if (
+    (level === "highStreet" || level === "localMall") &&
+    business.highStreet
+  ) {
+    where.highStreet = { equals: business.highStreet, mode: "insensitive" };
+  }
+  if (level === "localMall" && business.localMallName) {
+    where.localMallName = {
+      equals: business.localMallName,
+      mode: "insensitive",
+    };
+  }
+  return where;
+}
+
+function automaticNetworkMemberData(
+  business: Business,
+  groupId: string,
+  role = "member",
+) {
+  return {
+    groupId,
+    memberId: business.id,
+    fullName: business.contactName,
+    businessName: business.name,
+    category: business.category,
+    location: business.city,
+    geography: [business.localArea, business.highStreet, business.localMallName]
+      .filter((entry): entry is string => Boolean(entry))
+      .join(" · "),
+    status: "active",
+    role,
+    tier: business.tier,
+    contributionStatus: "n/a",
+  };
 }
