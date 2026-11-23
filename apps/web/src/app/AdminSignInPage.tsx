@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import {
   ArrowRight,
+  LoaderCircle,
   LockKeyhole,
   ShieldAlert,
   ShieldCheck,
@@ -13,6 +14,7 @@ import {
   sessionFromApiUser,
   writeAuthSession,
 } from "./authSession";
+import { useSessionVerification } from "./useSessionVerification";
 
 export default function AdminSignInPage() {
   useEffect(() => {
@@ -32,8 +34,24 @@ export default function AdminSignInPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const sessionCheck = useSessionVerification();
   const session = readAuthSession();
-  if (session?.role === "admin") {
+
+  if (sessionCheck === "checking") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-ink-950 px-4 py-10">
+        <div className="flex flex-col items-center gap-4">
+          <div className="relative flex size-16 items-center justify-center">
+            <div className="absolute inset-0 rounded-full border-2 border-gold-500/20 border-t-gold-400 animate-spin" />
+            <LoaderCircle className="size-6 text-gold-400" />
+          </div>
+          <p className="text-xs text-slate-400">Checking your session…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (sessionCheck === "valid" && session?.role === "admin") {
     return <Navigate to={next} replace />;
   }
 
