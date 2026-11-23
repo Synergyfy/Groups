@@ -104,6 +104,8 @@ export class AdminGroupQueryDto {
   @IsOptional() @IsString() type?: string;
   @IsOptional() @IsString() city?: string;
   @IsOptional() @IsString() localArea?: string;
+  @IsOptional() @IsString() highStreet?: string;
+  @IsOptional() @IsString() localMall?: string;
   @IsOptional() @IsString() status?: string;
   @IsOptional() @IsString() stage?: string;
   @IsOptional() @IsString() owner?: string;
@@ -131,6 +133,8 @@ export class CreateGroupAdminDto {
   @IsOptional() @IsIn(["directory", "members"]) visibility?: string;
   @IsOptional() @IsString() city?: string;
   @IsOptional() @IsString() localArea?: string;
+  @IsOptional() @IsString() @MaxLength(120) highStreet?: string;
+  @IsOptional() @IsString() @MaxLength(120) localMall?: string;
   @IsOptional() @IsInt() @Min(0) requiredSize?: number;
   @IsOptional() @IsString() stage?: string;
   @IsOptional() @IsIn(["free", "paid"]) pricing?: string;
@@ -162,6 +166,8 @@ export class UpdateGroupAdminDto {
   @IsOptional() @IsIn(["directory", "members"]) visibility?: string;
   @IsOptional() @IsString() city?: string;
   @IsOptional() @IsString() localArea?: string;
+  @IsOptional() @IsString() @MaxLength(120) highStreet?: string;
+  @IsOptional() @IsString() @MaxLength(120) localMall?: string;
   @IsOptional() @IsInt() @Min(0) requiredSize?: number;
   @IsOptional() @IsString() stage?: string;
   @IsOptional() @IsIn(["free", "paid"]) pricing?: string;
@@ -198,6 +204,8 @@ export class UpdateGroupRelationshipsDto {
   @IsOptional() @IsString() programmeId?: string;
   @IsOptional() @IsString() city?: string;
   @IsOptional() @IsString() localArea?: string;
+  @IsOptional() @IsString() @MaxLength(120) highStreet?: string;
+  @IsOptional() @IsString() @MaxLength(120) localMall?: string;
 }
 
 export class UpdateMemberContributionDto {

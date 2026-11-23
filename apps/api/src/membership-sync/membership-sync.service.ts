@@ -501,6 +501,7 @@ export class MembershipSyncService {
     if (user.role !== UserRole.BUSINESS) return null;
 
     const profile = jsonObject(user.businessProfile);
+    const location = jsonObject(profile.location);
     const name =
       firstNonEmpty(
         user.businessName,
@@ -521,9 +522,24 @@ export class MembershipSyncService {
           email: user.email.trim().toLowerCase(),
           phone: user.phone,
           city:
-            firstNonEmpty(profile.city, user.address, "Unspecified") ??
-            "Unspecified",
-          localArea: firstNonEmpty(profile.localArea, user.postcode),
+            firstNonEmpty(
+              location.city,
+              profile.city,
+              user.address,
+              "Unspecified",
+            ) ?? "Unspecified",
+          localArea: firstNonEmpty(
+            location.borough,
+            profile.localArea,
+            user.postcode,
+          ),
+          highStreet: firstNonEmpty(location.highStreet),
+          localMallName: firstNonEmpty(location.localMall),
+          postcode: firstNonEmpty(location.postcode, user.postcode),
+          cityId: firstNonEmpty(location.cityId),
+          boroughId: firstNonEmpty(location.boroughId),
+          highStreetId: firstNonEmpty(location.highStreetId),
+          localMallId: firstNonEmpty(location.localMallId),
           category: firstNonEmpty(profile.category, "General") ?? "General",
           tier: normalizeTier(user.membershipTier),
           programmeId: firstNonEmpty(profile.programmeId),

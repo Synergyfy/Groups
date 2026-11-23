@@ -252,37 +252,38 @@ export default function MyNetworkListsPage() {
           </CardBody>
         </Card>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-2" data-tour="lists">
+        <div className="flex flex-col gap-4" data-tour="lists">
           {lists.map((list) => {
             const listContacts = contacts.filter((contact) => contact.listId === list.id);
             const pendingCount =
               listContacts.filter((contact) => contact.confirmation === "pending").length;
+            const contactCount = list.contactCount ?? listContacts.length;
             const Icon = SOURCE_ICON[list.source] ?? Users;
 
             return (
               <CollapsibleCard
                 key={list.id}
                 title={list.name}
-                defaultOpen={false}
+                subtitle={`${list.geography} · ${list.status}`}
+                defaultOpen
+                leading={
+                  <span className="flex size-9 items-center justify-center rounded-xl border border-white/10 bg-ink-950 text-gold-500">
+                    <Icon className="size-4" />
+                  </span>
+                }
                 action={
                   <>
+                    {pendingCount > 0 && (
+                      <Badge variant="warning">{pendingCount} pending</Badge>
+                    )}
                     <Badge variant="muted">
-                      {list.contactCount ?? listContacts.length} contacts
+                      {contactCount} contact{contactCount === 1 ? "" : "s"}
                     </Badge>
                     <Badge variant={list.type === "B2B" ? "gold" : "info"}>{list.type}</Badge>
                   </>
                 }
                 bodyClassName="flex flex-col gap-3"
               >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-[11px] text-slate-500">
-                    {list.geography} · {list.status}
-                  </p>
-                  {pendingCount > 0 && (
-                    <Badge variant="warning">{pendingCount} pending</Badge>
-                  )}
-                </div>
-
                 <p className="flex items-center gap-2 rounded-xl border border-white/10 bg-ink-950/60 px-3 py-2.5 text-[11px] text-slate-400">
                   <Icon className="size-3.5 shrink-0 text-gold-400" />
                   Intake source: <span className="font-semibold text-white">{list.source}</span>

@@ -121,6 +121,8 @@ export class CreateBusinessGroupDto {
   @IsOptional() @IsIn(CONTRIBUTION_FREQUENCIES) contributionFrequency?: string;
   @IsOptional() @IsString() @MaxLength(80) city?: string;
   @IsOptional() @IsString() @MaxLength(80) localArea?: string;
+  @IsOptional() @IsString() @MaxLength(120) highStreet?: string;
+  @IsOptional() @IsString() @MaxLength(120) localMall?: string;
   @IsOptional() @IsInt() @Min(0) requiredSize?: number;
   @IsOptional() @IsString() @MaxLength(80) stage?: string;
   @IsOptional() @IsArray() @IsString({ each: true }) campaignIds?: string[];
@@ -140,6 +142,8 @@ export class UpdateBusinessGroupDto {
   @IsOptional() @IsIn(CONTRIBUTION_FREQUENCIES) contributionFrequency?: string;
   @IsOptional() @IsString() @MaxLength(80) city?: string;
   @IsOptional() @IsString() @MaxLength(80) localArea?: string;
+  @IsOptional() @IsString() @MaxLength(120) highStreet?: string;
+  @IsOptional() @IsString() @MaxLength(120) localMall?: string;
   @IsOptional() @IsInt() @Min(0) requiredSize?: number;
   @IsOptional() @IsString() @MaxLength(80) stage?: string;
   @IsOptional() @IsArray() @IsString({ each: true }) campaignIds?: string[];

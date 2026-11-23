@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { AuthModule } from "../auth/auth.module.js";
+import { GeographyModule } from "../geography/geography.module.js";
 import { PaymentsModule } from "../payments/payments.module.js";
 import { AdminAuditService } from "./admin-audit.service.js";
 import { AdminRoleGuard } from "./admin-role.guard.js";
@@ -31,7 +32,7 @@ import { AdminUsersService } from "./users/users.service.js";
 import { AdminUsersController } from "./users/users.controller.js";
 
 @Module({
-  imports: [AuthModule, PaymentsModule],
+  imports: [AuthModule, PaymentsModule, GeographyModule],
   controllers: [
     AdminOverviewController,
     AdminUsersController,

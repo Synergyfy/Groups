@@ -297,6 +297,8 @@ export interface CircleListResponse extends PageResult<BusinessCircle> {
   mandatoryCircles: Array<{
     circleType: string;
     required: boolean;
+    satisfiesTier?: string;
+    minMemberCount: number;
     satisfied: boolean;
     circleId?: string;
     current: number;
@@ -362,14 +364,79 @@ export interface BusinessCommunityResponse {
   };
 }
 
+export interface GeographyLocalMallOption {
+  id: string;
+  name: string;
+  slug: string;
+  borough: string;
+  postcodes: string[];
+  status: string;
+}
+
+export interface GeographyHighStreetOption {
+  id: string;
+  cityId: string | null;
+  boroughId: string | null;
+  name: string;
+  borough: string;
+  lat: number | null;
+  lng: number | null;
+  gssCode: string | null;
+  localMalls: GeographyLocalMallOption[];
+}
+
+export interface GeographyBoroughOption {
+  id: string;
+  cityId: string | null;
+  name: string;
+  gssCode: string | null;
+  highStreetCount: number;
+  localMallCount: number;
+}
+
+export interface GeographyCityOption {
+  id: string;
+  name: string;
+  region: string | null;
+  country: string;
+  gssCode: string | null;
+  boroughs: GeographyBoroughOption[];
+}
+
+export interface GeographyBoroughDetail {
+  available: boolean;
+  boroughId: string;
+  highStreets: GeographyHighStreetOption[];
+  localMalls: GeographyLocalMallOption[];
+}
+
+export interface BusinessLocationCurrent {
+  city: string;
+  localArea?: string | null;
+  borough?: string | null;
+  highStreet?: string | null;
+  localMall?: string | null;
+  cityId?: string | null;
+  boroughId?: string | null;
+  highStreetId?: string | null;
+  localMallId?: string | null;
+  joinedAt: string;
+}
+
 export interface BusinessLocationResponse {
-  current: { city: string; localArea?: string; joinedAt: string };
+  available: boolean;
+  syncedAt: string | null;
+  current: BusinessLocationCurrent;
   cityGroups: Group[];
   areaGroups: Group[];
-  hierarchy: Array<{ id: string; name: string; areas: Array<{ id: string; name: string }> }>;
+  highStreetGroups: Group[];
+  localMallGroups: Group[];
+  hierarchy: GeographyCityOption[];
   stats: {
     groupsInCity: number;
     groupsInArea: number;
+    groupsInHighStreet: number;
+    groupsInLocalMall: number;
     membersInCity: number;
     myGroups: number;
   };
@@ -377,10 +444,15 @@ export interface BusinessLocationResponse {
 
 export interface BusinessLocationsResponse {
   nationalCommunity: string;
-  current: { city: string; localArea?: string; joinedAt: string };
-  cities: Array<{ id: string; name: string; areas: Array<{ id: string; name: string }> }>;
+  available: boolean;
+  syncedAt: string | null;
+  current: BusinessLocationCurrent;
+  cities: GeographyCityOption[];
   totalCities: number;
   totalAreas: number;
+  totalBoroughs: number;
+  totalHighStreets: number;
+  totalLocalMalls: number;
 }
 
 export interface BusinessCampaign extends CampaignRecord {
@@ -483,6 +555,7 @@ export interface BusinessOverviewResponse {
   mandatoryCircles: Array<{
     circleType: string;
     required: boolean;
+    minMemberCount: number;
     satisfied: boolean;
     circleId?: string;
     current: number;
@@ -790,6 +863,10 @@ export const businessApi = {
     >(`/business/directory${queryString(params)}`),
   locations: () =>
     apiRequest<BusinessLocationsResponse>("/business/locations"),
+  locationBorough: (boroughId: string) =>
+    apiRequest<GeographyBoroughDetail>(
+      `/business/locations/boroughs/${encodeURIComponent(boroughId)}`,
+    ),
   programmes: () =>
     apiRequest<BusinessProgrammesResponse>("/business/programmes"),
   campaigns: (params: { status?: string; groupId?: string; page?: number; limit?: number } = {}) =>

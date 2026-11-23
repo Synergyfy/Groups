@@ -30,6 +30,74 @@ const asObject = (value: unknown): Json =>
 const asArray = (value: unknown): unknown[] =>
   Array.isArray(value) ? value : [];
 
+/**
+ * The admin UI is not the only possible caller of PATCH /admin/config, so the
+ * mandatory rules are validated here before they can reach the group-creation
+ * gate.
+ */
+function assertMandatoryGroups(value: unknown): void {
+  for (const entry of asArray(value)) {
+    const rule = asObject(entry);
+    if (typeof rule.type !== "string" || !rule.type.trim()) {
+      throw new BadRequestException(
+        "Each mandatory group rule needs a non-empty type",
+      );
+    }
+    if (typeof rule.required !== "boolean") {
+      throw new BadRequestException(
+        `Mandatory group "${rule.type}" needs a boolean required flag`,
+      );
+    }
+    if (rule.pricing !== "owner-choice" && rule.pricing !== "paid") {
+      throw new BadRequestException(
+        `Mandatory group "${rule.type}" has an invalid pricing mode`,
+      );
+    }
+  }
+}
+
+function assertMandatoryCircles(value: unknown): void {
+  for (const entry of asArray(value)) {
+    const rule = asObject(entry);
+    if (
+      typeof rule.circleType !== "string" ||
+      !rule.circleType.trim()
+    ) {
+      throw new BadRequestException(
+        "Each mandatory circle rule needs a non-empty circleType",
+      );
+    }
+    if (typeof rule.required !== "boolean") {
+      throw new BadRequestException(
+        `Mandatory circle "${rule.circleType}" needs a boolean required flag`,
+      );
+    }
+    if (
+      rule.appliesToTier !== "All" &&
+      rule.appliesToTier !== "Free" &&
+      rule.appliesToTier !== "Paid"
+    ) {
+      throw new BadRequestException(
+        `Mandatory circle "${rule.circleType}" has an invalid appliesToTier`,
+      );
+    }
+    if (
+      typeof rule.minMemberCount !== "number" ||
+      !Number.isInteger(rule.minMemberCount) ||
+      rule.minMemberCount < 0
+    ) {
+      throw new BadRequestException(
+        `Mandatory circle "${rule.circleType}" needs a non-negative integer minMemberCount`,
+      );
+    }
+    if (typeof rule.autoEnforce !== "boolean") {
+      throw new BadRequestException(
+        `Mandatory circle "${rule.circleType}" needs a boolean autoEnforce flag`,
+      );
+    }
+  }
+}
+
 @Injectable()
 export class AdminConfigService {
   private readonly logger = new Logger(AdminConfigService.name);
@@ -151,11 +219,13 @@ export class AdminConfigService {
       data.circleTypes = asArray(body.circleTypes) as Prisma.InputJsonValue;
     }
     if (body.mandatoryCircles !== undefined) {
+      assertMandatoryCircles(body.mandatoryCircles);
       data.mandatoryCircles = asArray(
         body.mandatoryCircles,
       ) as Prisma.InputJsonValue;
     }
     if (body.mandatoryGroups !== undefined) {
+      assertMandatoryGroups(body.mandatoryGroups);
       data.mandatoryGroups = asArray(
         body.mandatoryGroups,
       ) as Prisma.InputJsonValue;

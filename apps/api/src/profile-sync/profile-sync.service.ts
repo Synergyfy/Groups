@@ -351,6 +351,7 @@ export class ProfileSyncService {
     if (!user.mcomUserId) return;
 
     const businessProfile = jsonObject(profile.businessProfile);
+    const canonicalLocation = profile.location ?? null;
     let business = await tx.business.findUnique({
       where: { mcomUserId: user.mcomUserId },
     });
@@ -394,16 +395,32 @@ export class ProfileSyncService {
         phone: user.phone,
         city:
           firstNonEmpty(
+            canonicalLocation?.city,
             businessProfile.city,
             user.address,
             business.city,
           ) ?? business.city,
         localArea:
           firstNonEmpty(
+            canonicalLocation?.borough,
             businessProfile.localArea,
             user.postcode,
             business.localArea,
           ) ?? business.localArea,
+        highStreet: canonicalLocation?.highStreet ?? business.highStreet,
+        localMallName:
+          canonicalLocation?.localMall ?? business.localMallName,
+        postcode:
+          firstNonEmpty(
+            canonicalLocation?.postcode,
+            profile.postcode,
+            business.postcode,
+          ) ?? business.postcode,
+        cityId: canonicalLocation?.cityId ?? business.cityId,
+        boroughId: canonicalLocation?.boroughId ?? business.boroughId,
+        highStreetId:
+          canonicalLocation?.highStreetId ?? business.highStreetId,
+        localMallId: canonicalLocation?.localMallId ?? business.localMallId,
         category:
           firstNonEmpty(
             businessProfile.category,
