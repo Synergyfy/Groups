@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import {
   ArrowRight,
   Info,
-  LockKeyhole,
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
@@ -13,6 +12,7 @@ import {
   destinationForSession,
   readAuthSession,
 } from "./authSession";
+import { useSessionVerification } from "./useSessionVerification";
 
 export default function SignInPage() {
   useEffect(() => {
@@ -24,9 +24,22 @@ export default function SignInPage() {
   const invitationId = searchParams.get("invitationId");
   const nextParam = searchParams.get("next");
   const errorParam = searchParams.get("error");
+  const sessionCheck = useSessionVerification();
   const session = readAuthSession();
 
-  if (session) {
+  if (sessionCheck === "checking") {
+    return (
+      <div className="flex min-h-[calc(100vh-57px)] flex-col items-center justify-center gap-4 px-4 py-10">
+        <div className="relative flex size-16 items-center justify-center">
+          <div className="absolute inset-0 rounded-full border-2 border-gold-500/20 border-t-gold-400 animate-spin" />
+          <ShieldCheck className="size-6 text-gold-400" />
+        </div>
+        <p className="text-xs text-slate-400">Checking your session…</p>
+      </div>
+    );
+  }
+
+  if (sessionCheck === "valid" && session) {
     return <Navigate to={destinationForSession(session)} replace />;
   }
 
@@ -105,24 +118,6 @@ export default function SignInPage() {
             </div>
             <ArrowRight className="size-4 shrink-0 text-gold-400 transition-all group-hover:translate-x-0.5" />
           </button>
-
-          <Link
-            to="/admin/login"
-            className="group flex w-full items-center gap-4 rounded-xl border border-white/10 bg-ink-900/70 p-4 text-left transition-all hover:border-white/20 hover:bg-white/[0.04]"
-          >
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-white/5 text-slate-300">
-              <LockKeyhole className="size-5" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-white">
-                Administrator sign-in
-              </p>
-              <p className="mt-0.5 text-[11px] leading-relaxed text-slate-400">
-                Separate local login for platform administrators only.
-              </p>
-            </div>
-            <ArrowRight className="size-4 shrink-0 text-slate-500 transition-all group-hover:translate-x-0.5 group-hover:text-slate-300" />
-          </Link>
         </div>
 
         <p className="mt-4 text-center text-[11px] text-slate-500">

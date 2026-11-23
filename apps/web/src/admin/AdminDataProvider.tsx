@@ -11,6 +11,9 @@ import {
 } from "react";
 import { AppStoreContext } from "../store/context";
 import type { AppAction, AppState } from "../store/reducer";
+import { useLocation, useNavigate } from "react-router-dom";
+import { ApiError } from "../app/api";
+import { clearAuthSession } from "../app/authSession";
 import type {
   AdminConfig,
   AdminConfigPatch,
@@ -238,6 +241,9 @@ export function AdminDataProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const mounted = useRef(true);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const redirectingToLogin = useRef(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -247,13 +253,28 @@ export function AdminDataProvider({ children }: { children: ReactNode }) {
       setError(null);
     } catch (cause) {
       if (!mounted.current) return;
+
+      // The http-only session cookie can expire while the client still holds a
+      // stored login. Clear it and send the administrator back to their login
+      // page instead of showing an unusable "Not signed in" panel.
+      if (cause instanceof ApiError && cause.status === 401) {
+        if (redirectingToLogin.current) return;
+        redirectingToLogin.current = true;
+        clearAuthSession();
+        const nextPath = `${location.pathname}${location.search}`;
+        navigate(`/admin/login?next=${encodeURIComponent(nextPath)}`, {
+          replace: true,
+        });
+        return;
+      }
+
       setError(
         cause instanceof Error
           ? cause.message
           : "Could not load admin data from the API",
       );
     }
-  }, []);
+  }, [location.pathname, location.search, navigate]);
 
   useEffect(() => {
     mounted.current = true;
