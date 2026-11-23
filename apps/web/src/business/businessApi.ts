@@ -95,6 +95,13 @@ export interface BusinessRecordView {
   phone?: string;
   city: string;
   localArea?: string;
+  highStreet?: string;
+  localMall?: string;
+  postcode?: string;
+  cityId?: string;
+  boroughId?: string;
+  highStreetId?: string;
+  localMallId?: string;
   category: string;
   status: string;
   verified: boolean;
@@ -125,7 +132,14 @@ export interface BusinessProfileView {
     agent: RelationshipRecord | null;
     consultant: RelationshipRecord | null;
   };
-  location: { city: string; localArea?: string };
+  location: {
+    city: string;
+    localArea?: string | null;
+    borough?: string | null;
+    highStreet?: string | null;
+    localMall?: string | null;
+    postcode?: string | null;
+  };
   joinedAt: string;
   nationalCommunity: { name: string; status: "Member"; joinedAt: string };
 }
@@ -416,6 +430,7 @@ export interface BusinessLocationCurrent {
   borough?: string | null;
   highStreet?: string | null;
   localMall?: string | null;
+  postcode?: string | null;
   cityId?: string | null;
   boroughId?: string | null;
   highStreetId?: string | null;

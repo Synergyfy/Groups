@@ -145,6 +145,10 @@ export class BusinessPlatformService {
       location: {
         city: ctx.business.city,
         localArea: ctx.business.localArea,
+        borough: ctx.business.localArea,
+        highStreet: ctx.business.highStreet,
+        localMall: ctx.business.localMallName,
+        postcode: ctx.business.postcode,
       },
       joinedAt: ctx.business.joinedAt.toISOString(),
       nationalCommunity: {
@@ -429,6 +433,7 @@ export class BusinessPlatformService {
         borough: ctx.business.localArea,
         highStreet: ctx.business.highStreet,
         localMall: ctx.business.localMallName,
+        postcode: ctx.business.postcode,
         cityId: ctx.business.cityId,
         boroughId: ctx.business.boroughId,
         highStreetId: ctx.business.highStreetId,
@@ -785,6 +790,7 @@ export class BusinessPlatformService {
         borough: localArea,
         highStreet,
         localMall,
+        postcode: ctx.business.postcode,
         cityId: ctx.business.cityId,
         boroughId: ctx.business.boroughId,
         highStreetId: ctx.business.highStreetId,
