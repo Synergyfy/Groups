@@ -52,6 +52,7 @@ import {
   partnerPermissionsFor,
 } from "../business.validation.js";
 import { isUuid } from "../business.utils.js";
+import { GeographyService } from "../../geography/geography.service.js";
 import type {
   BusinessContext,
   GroupActivationView,
@@ -81,7 +82,16 @@ export interface DecoratedGroup {
   ownerName: string;
   memberIds: string[];
   memberCount: number;
-  location?: { city?: string; localArea?: string };
+  location?: {
+    city?: string;
+    localArea?: string;
+    highStreet?: string;
+    localMall?: string;
+    cityId?: string;
+    boroughId?: string;
+    highStreetId?: string;
+    localMallId?: string;
+  };
   requiredSize?: number;
   stage?: string;
   status: string;
@@ -110,6 +120,7 @@ export class BusinessGroupsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly context: BusinessContextService,
+    private readonly geography: GeographyService,
   ) {}
 
   async getDashboard(ctx: BusinessContext) {
@@ -767,7 +778,12 @@ export class BusinessGroupsService {
     }
 
     assertStageLabel(dto.stage, ctx.config.stageLabels);
-    await assertLocation(this.prisma, dto.city, dto.localArea);
+    const location = await assertLocation(this.geography, {
+      city: dto.city,
+      localArea: dto.localArea,
+      highStreet: dto.highStreet,
+      localMall: dto.localMall,
+    });
     await assertCampaignsAvailable(this.prisma, dto.campaignIds);
 
     this.assertGroupType(ctx, dto.type);
@@ -876,8 +892,14 @@ export class BusinessGroupsService {
           ownerId: ctx.business.id,
           ownerName: ctx.business.name,
           memberCount: 1,
-          city: dto.city,
-          localArea: dto.localArea,
+          city: location.city ?? dto.city,
+          localArea: location.borough ?? dto.localArea,
+          highStreet: location.highStreet ?? dto.highStreet,
+          localMallName: location.localMall ?? dto.localMall,
+          cityId: location.cityId,
+          boroughId: location.boroughId,
+          highStreetId: location.highStreetId,
+          localMallId: location.localMallId,
           requiredSize,
           stage: dto.stage,
           status: initialStatus,
@@ -971,13 +993,18 @@ export class BusinessGroupsService {
       );
     }
     assertStageLabel(dto.stage, ctx.config.stageLabels);
-    if (dto.city !== undefined || dto.localArea !== undefined) {
-      await assertLocation(
-        this.prisma,
-        dto.city ?? group.city,
-        dto.localArea ?? group.localArea,
-      );
-    }
+    const location =
+      dto.city !== undefined ||
+      dto.localArea !== undefined ||
+      dto.highStreet !== undefined ||
+      dto.localMall !== undefined
+        ? await assertLocation(this.geography, {
+            city: dto.city ?? group.city,
+            localArea: dto.localArea ?? group.localArea,
+            highStreet: dto.highStreet ?? group.highStreet,
+            localMall: dto.localMall ?? group.localMallName,
+          })
+        : null;
     await assertCampaignsAvailable(this.prisma, dto.campaignIds);
 
     const currentVisibility =
@@ -1050,8 +1077,16 @@ export class BusinessGroupsService {
     if (dto.contributionFrequency !== undefined) {
       data.contributionFrequency = dto.contributionFrequency;
     }
-    if (dto.city !== undefined) data.city = dto.city;
-    if (dto.localArea !== undefined) data.localArea = dto.localArea;
+    if (location) {
+      data.city = location.city;
+      data.localArea = location.borough;
+      data.highStreet = location.highStreet;
+      data.localMallName = location.localMall;
+      data.cityId = location.cityId;
+      data.boroughId = location.boroughId;
+      data.highStreetId = location.highStreetId;
+      data.localMallId = location.localMallId;
+    }
     if (dto.requiredSize !== undefined) data.requiredSize = dto.requiredSize;
     if (dto.stage !== undefined) data.stage = dto.stage.trim() || null;
     if (dto.campaignIds !== undefined) data.campaignIds = dto.campaignIds;

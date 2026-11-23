@@ -20,6 +20,8 @@ const BLANK_FILTERS: AdminGroupFilters = {
   type: "all",
   city: "all",
   localArea: "all",
+  highStreet: "all",
+  localMall: "all",
   status: "all",
   stage: "all",
   owner: "all",
@@ -50,6 +52,28 @@ export default function AdminGroupListPage() {
       .filter((group) => filters.city === "all" || group.location?.city === filters.city)
       .map((group) => group.location?.localArea ?? ""),
     "All local areas"
+  );
+  const highStreets = options(
+    state.groups
+      .filter(
+        (group) =>
+          (filters.city === "all" || group.location?.city === filters.city) &&
+          (filters.localArea === "all" ||
+            group.location?.localArea === filters.localArea)
+      )
+      .map((group) => group.location?.highStreet ?? ""),
+    "All high streets"
+  );
+  const localMalls = options(
+    state.groups
+      .filter(
+        (group) =>
+          (filters.city === "all" || group.location?.city === filters.city) &&
+          (filters.localArea === "all" ||
+            group.location?.localArea === filters.localArea)
+      )
+      .map((group) => group.location?.localMall ?? ""),
+    "All local malls"
   );
 
   const activeFilterCount = (Object.keys(filters) as (keyof AdminGroupFilters)[]).filter((key) =>
@@ -115,10 +139,23 @@ export default function AdminGroupListPage() {
     },
     {
       key: "city",
-      header: "City",
-      render: (group) => (
-        <span className="text-slate-300">{group.location?.city ?? "No location"}</span>
-      ),
+      header: "Location",
+      render: (group) => {
+        const location = group.location;
+        if (!location?.city) {
+          return <span className="text-slate-500">No location</span>;
+        }
+        return (
+          <span className="flex flex-col text-slate-300">
+            <span>{location.city}</span>
+            <span className="text-[10px] text-slate-500">
+              {[location.localArea, location.highStreet, location.localMall]
+                .filter(Boolean)
+                .join(" · ") || "—"}
+            </span>
+          </span>
+        );
+      },
     },
     {
       key: "pricing",
@@ -169,15 +206,38 @@ export default function AdminGroupListPage() {
         label="City"
         tip="Filter by city — location comes from each group's saved address."
         value={filters.city}
-        onChange={(value) => patch({ city: value, localArea: "all" })}
+        onChange={(value) =>
+          patch({
+            city: value,
+            localArea: "all",
+            highStreet: "all",
+            localMall: "all",
+          })
+        }
         options={cities}
       />
       <FilterSelect
         label="Local area"
         tip="Narrow to one local area; options follow the city picked above."
         value={filters.localArea}
-        onChange={(value) => patch({ localArea: value })}
+        onChange={(value) =>
+          patch({ localArea: value, highStreet: "all", localMall: "all" })
+        }
         options={localAreas}
+      />
+      <FilterSelect
+        label="High street"
+        tip="Narrow to one high street; options follow the city and local area picked above."
+        value={filters.highStreet}
+        onChange={(value) => patch({ highStreet: value, localMall: "all" })}
+        options={highStreets}
+      />
+      <FilterSelect
+        label="Local mall"
+        tip="Narrow to one local mall; options follow the city and local area picked above."
+        value={filters.localMall}
+        onChange={(value) => patch({ localMall: value })}
+        options={localMalls}
       />
       <FilterSelect
         label="Stage"

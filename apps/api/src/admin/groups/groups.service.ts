@@ -39,6 +39,8 @@ import {
   assertProgrammeAvailable,
   assertStageLabel,
 } from "../../business/business.validation.js";
+import { GeographyService } from "../../geography/geography.service.js";
+import type { ResolvedGeography } from "../../geography/geography.types.js";
 
 function slugify(value: string): string {
   return value
@@ -54,6 +56,7 @@ export class AdminGroupsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AdminAuditService,
+    private readonly geography: GeographyService,
   ) {}
 
   async list(query: AdminGroupQueryDto) {
@@ -68,6 +71,8 @@ export class AdminGroupsService {
     set("type", "type");
     set("city", "city");
     set("localArea", "localArea");
+    set("highStreet", "highStreet");
+    set("localMall", "localMallName");
     set("status", "status");
     set("stage", "stage");
     set("owner", "ownerName");
@@ -225,9 +230,11 @@ export class AdminGroupsService {
     stage?: string;
     city?: string;
     localArea?: string;
+    highStreet?: string;
+    localMall?: string;
     campaignIds?: string[];
     programmeId?: string;
-  }): Promise<void> {
+  }): Promise<ResolvedGeography | null> {
     const config = await this.prisma.adminConfig.findFirst({
       select: { stageLabels: true },
     });
@@ -237,11 +244,24 @@ export class AdminGroupsService {
         ? config.stageLabels.map(String)
         : [],
     );
-    if (dto.city !== undefined || dto.localArea !== undefined) {
-      await assertLocation(this.prisma, dto.city, dto.localArea);
-    }
+
+    const touchesLocation =
+      dto.city !== undefined ||
+      dto.localArea !== undefined ||
+      dto.highStreet !== undefined ||
+      dto.localMall !== undefined;
+    const location = touchesLocation
+      ? await assertLocation(this.geography, {
+          city: dto.city,
+          localArea: dto.localArea,
+          highStreet: dto.highStreet,
+          localMall: dto.localMall,
+        })
+      : null;
+
     await assertCampaignsAvailable(this.prisma, dto.campaignIds);
     await assertProgrammeAvailable(this.prisma, dto.programmeId);
+    return location;
   }
 
   private async notifyModerationQueue(group: {
@@ -269,7 +289,7 @@ export class AdminGroupsService {
   }
 
   async create(dto: CreateGroupAdminDto, actor?: SessionUser) {
-    await this.assertGroupInput(dto);
+    const location = await this.assertGroupInput(dto);
     const config = await this.prisma.adminConfig.findFirst({
       select: { platformSettings: true, accessRules: true },
     });
@@ -303,8 +323,14 @@ export class AdminGroupsService {
           (settings.defaultVisibility === "members"
             ? "members"
             : "directory"),
-        city: dto.city,
-        localArea: dto.localArea,
+        city: location?.city ?? dto.city,
+        localArea: location?.borough ?? dto.localArea,
+        highStreet: location?.highStreet ?? dto.highStreet,
+        localMallName: location?.localMall ?? dto.localMall,
+        cityId: location?.cityId,
+        boroughId: location?.boroughId,
+        highStreetId: location?.highStreetId,
+        localMallId: location?.localMallId,
         requiredSize:
           dto.requiredSize ??
           (Number(settings.defaultRequiredSize ?? 0) || undefined),
@@ -349,12 +375,20 @@ export class AdminGroupsService {
 
   async update(id: string, dto: UpdateGroupAdminDto, actor?: SessionUser) {
     const existing = await this.ensureGroup(id);
-    await this.assertGroupInput({
+    const touchesLocation =
+      dto.city !== undefined ||
+      dto.localArea !== undefined ||
+      dto.highStreet !== undefined ||
+      dto.localMall !== undefined;
+    const location = await this.assertGroupInput({
       ...dto,
-      ...(dto.city !== undefined || dto.localArea !== undefined
+      ...(touchesLocation
         ? {
             city: dto.city ?? existing.city ?? undefined,
             localArea: dto.localArea ?? existing.localArea ?? undefined,
+            highStreet: dto.highStreet ?? existing.highStreet ?? undefined,
+            localMall:
+              dto.localMall ?? existing.localMallName ?? undefined,
           }
         : {}),
     });
@@ -374,8 +408,18 @@ export class AdminGroupsService {
         status: dto.status,
         accessType: dto.accessType,
         directoryVisibility: dto.visibility,
-        city: dto.city,
-        localArea: dto.localArea,
+        ...(location
+          ? {
+              city: location.city,
+              localArea: location.borough,
+              highStreet: location.highStreet,
+              localMallName: location.localMall,
+              cityId: location.cityId,
+              boroughId: location.boroughId,
+              highStreetId: location.highStreetId,
+              localMallId: location.localMallId,
+            }
+          : {}),
         requiredSize: dto.requiredSize,
         stage: dto.stage,
         pricing: dto.pricing,
@@ -668,6 +712,12 @@ export class AdminGroupsService {
       location: {
         city: group.city ?? null,
         localArea: group.localArea ?? null,
+        highStreet: group.highStreet ?? null,
+        localMall: group.localMallName ?? null,
+        cityId: group.cityId ?? null,
+        boroughId: group.boroughId ?? null,
+        highStreetId: group.highStreetId ?? null,
+        localMallId: group.localMallId ?? null,
       },
     };
   }
@@ -678,6 +728,18 @@ export class AdminGroupsService {
     actor?: SessionUser,
   ) {
     const group = await this.ensureGroup(id);
+    const location =
+      dto.city !== undefined ||
+      dto.localArea !== undefined ||
+      dto.highStreet !== undefined ||
+      dto.localMall !== undefined
+        ? await assertLocation(this.geography, {
+            city: dto.city ?? group.city,
+            localArea: dto.localArea ?? group.localArea,
+            highStreet: dto.highStreet ?? group.highStreet,
+            localMall: dto.localMall ?? group.localMallName,
+          })
+        : null;
     const updated = await this.prisma.group.update({
       where: { id },
       data: {
@@ -685,8 +747,18 @@ export class AdminGroupsService {
         agentId: dto.agentId,
         consultantId: dto.consultantId,
         programmeId: dto.programmeId,
-        city: dto.city,
-        localArea: dto.localArea,
+        ...(location
+          ? {
+              city: location.city,
+              localArea: location.borough,
+              highStreet: location.highStreet,
+              localMallName: location.localMall,
+              cityId: location.cityId,
+              boroughId: location.boroughId,
+              highStreetId: location.highStreetId,
+              localMallId: location.localMallId,
+            }
+          : {}),
       },
       include: { members: { select: { memberId: true } } },
     });

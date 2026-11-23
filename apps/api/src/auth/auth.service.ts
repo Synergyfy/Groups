@@ -434,7 +434,14 @@ export class AuthService {
       trialAccessExpiresAt:
         toDate(profile.trialAccessExpiresAt) ??
         (decision.source === "trial" ? toDate(decision.expiresAt) : undefined),
-      businessProfile: toJson(profile.businessProfile),
+      businessProfile: toJson(
+        profile.businessProfile || profile.location
+          ? {
+              ...(profile.businessProfile ?? {}),
+              ...(profile.location ? { location: profile.location } : {}),
+            }
+          : null,
+      ),
       customerProfile: toJson(profile.customerProfile),
       agentProfile: toJson(profile.agentProfile),
       consultantProfile: toJson(profile.consultantProfile),

@@ -2,6 +2,11 @@ import { BadRequestException } from "@nestjs/common";
 import type { Partner } from "../generated/prisma/client.js";
 import type { PrismaClient } from "../generated/prisma/client.js";
 import { jsonObject } from "../admin/admin.mappers.js";
+import type { GeographyService } from "../geography/geography.service.js";
+import type {
+  GeographySelection,
+  ResolvedGeography,
+} from "../geography/geography.types.js";
 import type { PartnerPermissions } from "./business.types.js";
 
 /** Reject a stage label that administrators removed from the configured list. */
@@ -19,48 +24,15 @@ export function assertStageLabel(
 }
 
 /**
- * Groups and businesses may only use cities/areas from the admin-managed
- * hierarchy once that hierarchy has been populated.
+ * Groups and businesses may only use locations from Central Hub's geography
+ * hierarchy. Central Hub stays authoritative; this resolves the selection to
+ * canonical ids/names and rejects levels that do not exist.
  */
 export async function assertLocation(
-  prisma: PrismaClient,
-  city: string | null | undefined,
-  localArea: string | null | undefined,
-): Promise<void> {
-  const cityCount = await prisma.locationCity.count();
-  if (cityCount === 0) return;
-
-  const cityName = city?.trim();
-  if (!cityName) {
-    throw new BadRequestException(
-      "A city from the configured location hierarchy is required.",
-    );
-  }
-
-  const cityRow = await prisma.locationCity.findFirst({
-    where: { name: { equals: cityName, mode: "insensitive" } },
-    select: { id: true, name: true },
-  });
-  if (!cityRow) {
-    throw new BadRequestException(
-      `City "${cityName}" is not in the configured location hierarchy.`,
-    );
-  }
-
-  const areaName = localArea?.trim();
-  if (!areaName) return;
-  const area = await prisma.locationArea.findFirst({
-    where: {
-      cityId: cityRow.id,
-      name: { equals: areaName, mode: "insensitive" },
-    },
-    select: { id: true },
-  });
-  if (!area) {
-    throw new BadRequestException(
-      `Area "${areaName}" is not configured for ${cityRow.name}.`,
-    );
-  }
+  geography: GeographyService,
+  selection: GeographySelection,
+): Promise<ResolvedGeography> {
+  return geography.resolveSelection(selection);
 }
 
 /** A business/partner may only be linked to a programme that exists and is active. */

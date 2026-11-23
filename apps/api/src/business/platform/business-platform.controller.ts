@@ -121,6 +121,11 @@ export class BusinessPlatformController {
     return this.platform.getLocations(await this.context.resolve(user));
   }
 
+  @Get("locations/boroughs/:boroughId")
+  async locationBorough(@Param("boroughId") boroughId: string) {
+    return this.platform.getLocationBorough(boroughId);
+  }
+
   @Get("programmes")
   async programmes(@CurrentUser() user: SessionUser) {
     return this.platform.getProgrammes(await this.context.resolve(user));

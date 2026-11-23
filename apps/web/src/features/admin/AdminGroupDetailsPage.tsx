@@ -166,7 +166,11 @@ export default function AdminGroupDetailsPage() {
                 <StatCard
                   label="City"
                   value={group.location?.city ?? "—"}
-                  hint={group.location?.localArea ?? "No local area"}
+                  hint={
+                    group.location?.highStreet
+                      ? `${group.location.localArea ?? "No borough"} · ${group.location.highStreet}`
+                      : (group.location?.localArea ?? "No borough")
+                  }
                   accent="success"
                 />
                 <StatCard
@@ -250,7 +254,14 @@ export default function AdminGroupDetailsPage() {
                     <div className="flex items-start gap-2 rounded-xl border border-white/10 bg-ink-950/60 p-3 text-[11px] leading-relaxed text-slate-500">
                       <MapPinned className="mt-px size-3.5 shrink-0 text-gold-400" />
                       {group.location
-                        ? `${group.location.city ?? "No city"} · ${group.location.localArea ?? "No local area"}`
+                        ? [
+                            group.location.city,
+                            group.location.localArea,
+                            group.location.highStreet,
+                            group.location.localMall,
+                          ]
+                            .filter(Boolean)
+                            .join(" → ") || "This group has no location."
                         : "This group has no location."}
                     </div>
                   </CardBody>
