@@ -314,6 +314,31 @@ Register the endpoint in **MCOM Console**:
 Saving the endpoint in Console provisions the B2B scope, audience and ingress
 grant automatically.
 
+### Central Hub geography hierarchy
+
+Cities, boroughs, high streets and local malls are **owned by Central Hub**
+(the same ONS/OSM/postcode-resolved hierarchy used by the main platform).
+Groups does not import or edit geography data:
+
+- `GET /api/v1/data/geography` on Central Hub returns a flat, read-only
+  snapshot of the four levels. It uses the same HMAC service identity as the
+  other server-to-server APIs.
+- The Groups API caches the snapshot in memory for
+  `GEOGRAPHY_CACHE_TTL_MS` (default 15 minutes) and validates every group
+  location against it.
+- Groups stores only the resolved ids plus display-name snapshots
+  (`city`, `localArea`/borough, `highStreet`, `localMallName`) on groups and
+  businesses, so filtering and list views never need a network call.
+- `GET /api/admin/geography` returns the cached tree; `POST
+  /api/admin/geography/sync` forces a refresh. The admin **Locations** page
+  (`/admin/locations`) is read-only.
+- Canonical profile payloads from Central Hub include a `location` block
+  (`cityId/city/boroughId/borough/highStreetId/highStreet/localMallId/localMall`
+  plus `postcode`); the profile sync stores it on the local `Business`.
+
+Manage cities, boroughs, high streets and local malls in the **Central Hub
+admin console**, then run **Sync now** on the Groups Locations page.
+
 ### Central Hub membership synchronization
 
 When a business buys a Central Hub membership that bundles Groups & Circles,

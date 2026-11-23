@@ -1,14 +1,26 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowLeft, ArrowRight, Check, CircleDollarSign, Info, Lock, Users } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  CircleDollarSign,
+  CircleDot,
+  Info,
+  ListChecks,
+  Lock,
+  Users,
+} from "lucide-react";
 import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
 import Card, { CardBody, CardTitle } from "../../components/ui/Card";
 import EmptyState from "../../components/ui/EmptyState";
 import FieldHint from "../../components/ui/FieldHint";
 import LinkButton from "../../components/ui/LinkButton";
+import Modal from "../../components/ui/Modal";
 import SectionHeader from "../../components/ui/SectionHeader";
 import Select from "../../components/ui/Select";
+import { SkeletonCard } from "../../components/ui/Skeleton";
 import Stepper from "../../components/ui/Stepper";
 import type {
   GroupAccessType,
@@ -25,6 +37,7 @@ import {
   useBusinessProfile,
   useCanCreateGroups,
   useCreationRightsLabel,
+  useMandatoryGroupStatuses,
   usePlan,
   useOwnedGroups,
   useAppState,
@@ -32,6 +45,7 @@ import {
 } from "../../store/selectors";
 import { errorMessage } from "../../app/api";
 import { businessApi, useBusinessData } from "../../business/BusinessDataProvider";
+import type { GeographyBoroughDetail } from "../../business/businessApi";
 import { creatableGroupTypes, nonCreatableGroupTypes, pendingMandatoryTypes, typeForcedPaid } from "./groupUtils";
 
 const INTERACTION_LABELS: Record<InteractionLevel, string> = {
@@ -68,13 +82,77 @@ const FIELD_CLASS =
   "h-11 rounded-lg border border-white/10 bg-ink-800 px-3 text-sm text-slate-200 placeholder:text-slate-500 focus:border-gold-500/50 focus:outline-none";
 
 export default function CreateGroupWizardPage() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { adminConfig } = useAppState();
+  const { circles } = useBusinessData();
+  const actorId = useBusinessId();
   const canCreate = useCanCreateGroups();
   const rightsLabel = useCreationRightsLabel();
   const plan = usePlan();
   const platformGroup = usePlatformGroup();
+  const mandatoryGroups = useMandatoryGroupStatuses(actorId);
   const creatableTypes = creatableGroupTypes(adminConfig);
   const blockedTypes = nonCreatableGroupTypes(adminConfig);
+
+  const requestedType = searchParams.get("type") ?? "";
+  const missingCircles = (circles?.mandatoryCircles ?? []).filter(
+    (entry) => entry.required && !entry.satisfied,
+  );
+  const missingGroups = mandatoryGroups.filter(
+    (entry) => entry.required && !entry.satisfied,
+  );
+  const requestedIsMissingRequiredGroup = missingGroups.some(
+    (entry) => entry.type === requestedType,
+  );
+  // `circles` is null until the business data provider has loaded. Do not show
+  // the wizard before the prerequisite check can run.
+  const circlesReady = circles !== null;
+  const circleBlocker = circlesReady && missingCircles.length > 0;
+  const groupBlocker =
+    circlesReady &&
+    missingCircles.length === 0 &&
+    missingGroups.length > 0 &&
+    !requestedIsMissingRequiredGroup;
+
+  const circlesHref = "/business/network/lists";
+  const nextRequiredGroup = missingGroups[0];
+  const groupHref = nextRequiredGroup
+    ? `/business/groups/create?type=${encodeURIComponent(nextRequiredGroup.type)}`
+    : "/business/groups";
+
+  const blockedTitle = circleBlocker
+    ? "Set up your required circles first"
+    : "Create your required groups first";
+
+  const blockedDescription = circleBlocker
+    ? "Your administrator requires these circles before any group can be created. A circle is built from contacts in your My Network lists."
+    : "Your administrator requires these group types before any other group can be created.";
+
+  const blockedActionLabel = circleBlocker
+    ? "Set up circles"
+    : `Create ${nextRequiredGroup?.type ?? "required"} group`;
+
+  const lockedCallout = (
+    <Card>
+      <CardBody className="flex flex-col items-center gap-3 py-10 text-center">
+        <div className="flex size-12 items-center justify-center rounded-2xl border border-white/10 bg-ink-950 text-gold-500">
+          {circleBlocker ? (
+            <CircleDot className="size-6" />
+          ) : (
+            <ListChecks className="size-6" />
+          )}
+        </div>
+        <p className="text-sm font-semibold text-white">{blockedTitle}</p>
+        <p className="max-w-md text-xs leading-relaxed text-slate-500">
+          {blockedDescription}
+        </p>
+        <LinkButton to={circleBlocker ? circlesHref : groupHref} size="sm">
+          {blockedActionLabel}
+        </LinkButton>
+      </CardBody>
+    </Card>
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -115,6 +193,91 @@ export default function CreateGroupWizardPage() {
           description="Administrators have disabled every group type, so no group can be created right now."
           icon={<Lock className="size-6" />}
         />
+      ) : !circlesReady ? (
+        <SkeletonCard />
+      ) : circleBlocker || groupBlocker ? (
+        <>
+          {lockedCallout}
+          <Modal
+            open
+            title={blockedTitle}
+            onClose={() => navigate("/business/groups")}
+            footer={
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => navigate("/business/groups")}
+                >
+                  Back to groups
+                </Button>
+                <LinkButton
+                  to={circleBlocker ? circlesHref : groupHref}
+                  size="sm"
+                >
+                  {blockedActionLabel}
+                </LinkButton>
+              </>
+            }
+          >
+            <div className="flex flex-col gap-3">
+              <p className="text-xs leading-relaxed text-slate-400">
+                {blockedDescription}
+              </p>
+
+              {circleBlocker ? (
+                <>
+                  <ul className="flex flex-col gap-2">
+                    {missingCircles.map((entry) => (
+                      <li
+                        key={entry.circleType}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-ink-950/60 px-3 py-2"
+                      >
+                        <span className="text-xs font-semibold text-white">
+                          {entry.circleType}
+                        </span>
+                        <Badge variant="warning">
+                          {entry.current}/{entry.minMemberCount ?? 1} members
+                        </Badge>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-[11px] leading-relaxed text-slate-500">
+                    Circles are your marketing and advertising audiences. Build
+                    one from a My Network list with at least one confirmed
+                    contact.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <ul className="flex flex-col gap-2">
+                    {missingGroups.map((entry) => (
+                      <li
+                        key={entry.type}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-ink-950/60 px-3 py-2"
+                      >
+                        <span className="text-xs font-semibold text-white">
+                          {entry.type} group
+                        </span>
+                        <Badge
+                          variant={entry.pricing === "paid" ? "gold" : "muted"}
+                        >
+                          {entry.pricing === "paid"
+                            ? "Paid group"
+                            : "Free or paid"}
+                        </Badge>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-[11px] leading-relaxed text-slate-500">
+                    Create these first — every other group type unlocks once they
+                    exist.
+                  </p>
+                </>
+              )}
+            </div>
+          </Modal>
+        </>
       ) : (
         <CreateGroupWizard types={creatableTypes} blockedTypes={blockedTypes} />
       )}
@@ -162,7 +325,13 @@ function CreateGroupWizard({
     : 0;
   const setStep = (next: number) => {
     const clamped = Math.min(Math.max(next, 0), STEPS.length - 1);
-    setSearchParams(clamped === 0 ? {} : { step: String(clamped) }, { replace: true });
+    const nextParams: Record<string, string> = {};
+    // Keep the preset type in the URL so a refresh or back/forward keeps the
+    // skipped Type step skipped.
+    const typeParam = searchParams.get("type");
+    if (typeParam) nextParams.type = typeParam;
+    if (clamped !== 0) nextParams.step = String(clamped);
+    setSearchParams(nextParams, { replace: true });
   };
   // The dashboard's "Create" links deep-link here with ?type= — preselect it,
   // but only when it is creatable, still required (or the mandate is satisfied)
@@ -172,26 +341,90 @@ function CreateGroupWizard({
     creatableSet.has(presetCandidate) &&
     !ownedTypes.has(presetCandidate) &&
     (!mandateActive || pendingSet.has(presetCandidate));
+  const presetForcedPaid = validPreset && typeForcedPaid(adminConfig, presetCandidate);
+  const initialPresetAmount = presetForcedPaid
+    ? ((paymentRules?.presets ?? []).find(
+        (value) =>
+          value >= (paymentRules?.minAmount ?? 0) &&
+          value <= (paymentRules?.maxAmount ?? 0)
+      ) ?? null)
+    : null;
   const [type, setType] = useState<UserGroupType | "">(validPreset ? presetCandidate : "");
   const [name, setName] = useState("");
   const [purpose, setPurpose] = useState("");
   const [city, setCity] = useState(profile?.city ?? "");
   const [localArea, setLocalArea] = useState(profile?.localArea ?? "");
+  const [highStreet, setHighStreet] = useState("");
+  const [localMall, setLocalMall] = useState("");
+  const [boroughDetail, setBoroughDetail] =
+    useState<GeographyBoroughDetail | null>(null);
   const [accessType, setAccessType] = useState<GroupAccessType>("open");
   const [visibility, setVisibility] = useState<GroupVisibility>("directory");
   const [interactionLevel, setInteractionLevel] = useState<InteractionLevel>("message");
   const [requiredSize, setRequiredSize] = useState("");
   const [pricing, setPricing] = useState<GroupPricingMode>(
-    validPreset && typeForcedPaid(adminConfig, presetCandidate) ? "paid" : "free"
+    presetForcedPaid ? "paid" : "free"
   );
-  const [presetAmount, setPresetAmount] = useState<number | null>(null);
+  const [presetAmount, setPresetAmount] = useState<number | null>(
+    initialPresetAmount
+  );
   const [customAmount, setCustomAmount] = useState("");
   const [frequencyMode, setFrequencyMode] = useState<"once" | "recurring">("once");
   const [recurringEvery, setRecurringEvery] = useState<"daily" | "weekly" | "monthly">("weekly");
 
-  const areas = useMemo(
-    () => locations?.cities.find((entry) => entry.name === city)?.areas.map((entry) => entry.name) ?? [],
+  const cityNode = useMemo(
+    () => locations?.cities.find((entry) => entry.name === city) ?? null,
     [locations, city],
+  );
+  const boroughNode = useMemo(
+    () => cityNode?.boroughs.find((entry) => entry.name === localArea) ?? null,
+    [cityNode, localArea],
+  );
+  // High streets and malls are loaded lazily for the selected borough; the
+  // full UK hierarchy is several megabytes and must not ride on every
+  // dashboard load.
+  const activeDetail =
+    boroughDetail && boroughDetail.boroughId === boroughNode?.id
+      ? boroughDetail
+      : null;
+
+  useEffect(() => {
+    const boroughId = boroughNode?.id;
+    if (!boroughId) return;
+    let cancelled = false;
+    businessApi
+      .locationBorough(boroughId)
+      .then((detail) => {
+        if (!cancelled) setBoroughDetail(detail);
+      })
+      .catch(() => {
+        // A missing detail payload just leaves the optional levels empty.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [boroughNode?.id]);
+
+  const highStreetNode = useMemo(
+    () =>
+      activeDetail?.highStreets.find((entry) => entry.name === highStreet) ??
+      null,
+    [activeDetail, highStreet],
+  );
+  const areas = useMemo(
+    () => cityNode?.boroughs.map((entry) => entry.name) ?? [],
+    [cityNode],
+  );
+  const highStreets = useMemo(
+    () => activeDetail?.highStreets.map((entry) => entry.name) ?? [],
+    [activeDetail],
+  );
+  const localMalls = useMemo(
+    () =>
+      (highStreetNode?.localMalls ?? activeDetail?.localMalls ?? []).map(
+        (entry) => entry.name
+      ),
+    [highStreetNode, activeDetail],
   );
 
   const inRangePresets = useMemo(
@@ -250,10 +483,19 @@ function CreateGroupWizard({
   };
 
   const next = () => {
-    if (step < STEPS.length - 1 && stepValid) setStep(step + 1);
+    if (!stepValid) return;
+    // A "Create" button on a required group already chose the type, so the
+    // Type step is done by default. Pricing still needs a decision, then the
+    // wizard jumps straight to Details.
+    if (step === 0 && validPreset) {
+      setStep(2);
+      return;
+    }
+    if (step < STEPS.length - 1) setStep(step + 1);
   };
   const back = () => {
-    if (step > 0) setStep(step - 1);
+    if (step === 0) return;
+    setStep(step === 2 && validPreset ? 0 : step - 1);
   };
 
   const create = async () => {
@@ -278,7 +520,14 @@ function CreateGroupWizard({
                 frequencyMode === "recurring" ? recurringEvery : "once",
             }
           : {}),
-        ...(city ? { city, ...(localArea ? { localArea } : {}) } : {}),
+        ...(city
+          ? {
+              city,
+              ...(localArea ? { localArea } : {}),
+              ...(highStreet ? { highStreet } : {}),
+              ...(localMall ? { localMall } : {}),
+            }
+          : {}),
         ...(requiredSize ? { requiredSize: Number(requiredSize) } : {}),
       });
       await refresh();
@@ -416,7 +665,7 @@ function CreateGroupWizard({
                   className={`${FIELD_CLASS} h-auto py-2 leading-relaxed`}
                 />
               </label>
-              <div className="grid gap-3 sm:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <Select
                   label="City (optional)"
                   hint="Optional — pins the group to a city for geographic discovery."
@@ -425,8 +674,11 @@ function CreateGroupWizard({
                     const nextCity = event.target.value;
                     setCity(nextCity);
                     setLocalArea(
-                      locations?.cities.find((entry) => entry.name === nextCity)?.areas[0]?.name ?? "",
+                      locations?.cities.find((entry) => entry.name === nextCity)
+                        ?.boroughs[0]?.name ?? "",
                     );
+                    setHighStreet("");
+                    setLocalMall("");
                   }}
                   options={[
                     { value: "", label: "No location (not location-bound)" },
@@ -434,15 +686,52 @@ function CreateGroupWizard({
                   ]}
                 />
                 <Select
-                  label="Local area"
+                  label="Borough / local area"
                   hint="Narrower than city — helps people in your local area find the group."
                   value={localArea}
                   disabled={city === ""}
-                  onChange={(event) => setLocalArea(event.target.value)}
+                  onChange={(event) => {
+                    setLocalArea(event.target.value);
+                    setHighStreet("");
+                    setLocalMall("");
+                  }}
                   options={
                     city === ""
                       ? [{ value: "", label: "—" }]
                       : areas.map((entry) => ({ value: entry, label: entry }))
+                  }
+                />
+                <Select
+                  label="High street"
+                  hint="Optional — the retail street or ward within the borough."
+                  value={highStreet}
+                  disabled={!boroughNode}
+                  onChange={(event) => {
+                    setHighStreet(event.target.value);
+                    setLocalMall("");
+                  }}
+                  options={
+                    !boroughNode
+                      ? [{ value: "", label: "—" }]
+                      : [
+                          { value: "", label: "No high street" },
+                          ...highStreets.map((entry) => ({ value: entry, label: entry })),
+                        ]
+                  }
+                />
+                <Select
+                  label="Local mall"
+                  hint="Optional — the local mall or district the group belongs to."
+                  value={localMall}
+                  disabled={localMalls.length === 0}
+                  onChange={(event) => setLocalMall(event.target.value)}
+                  options={
+                    localMalls.length === 0
+                      ? [{ value: "", label: "—" }]
+                      : [
+                          { value: "", label: "No local mall" },
+                          ...localMalls.map((entry) => ({ value: entry, label: entry })),
+                        ]
                   }
                 />
                 <Select
@@ -533,6 +822,16 @@ function CreateGroupWizard({
           {step === 0 && (
             <div className="flex flex-col gap-4">
               <CardTitle>Free group or paid group?</CardTitle>
+              {validPreset && (
+                <div className="flex items-start gap-2 rounded-xl border border-success-500/30 bg-success-500/10 p-3 text-[11px] leading-relaxed text-success-400">
+                  <Check className="mt-px size-3.5 shrink-0" />
+                  <span>
+                    <span className="font-semibold">{type} group selected.</span>{" "}
+                    The Type step is already done for this link — choose pricing
+                    and continue straight to the group details.
+                  </span>
+                </div>
+              )}
               <p className="text-xs leading-relaxed text-slate-400">
                 Decide membership pricing before anything else — whether members pay to join, how
                 much, and how often. Everything here follows the administrator payment rules, and
@@ -842,7 +1141,13 @@ function CreateGroupWizard({
                 <ReviewRow label="Purpose" value={purpose.trim() || "—"} wide />
                 <ReviewRow
                   label="Location"
-                  value={city ? `${localArea || city}, ${city}` : "Not location-bound"}
+                  value={
+                    city
+                      ? [city, localArea, highStreet, localMall]
+                          .filter(Boolean)
+                          .join(" → ")
+                      : "Not location-bound"
+                  }
                 />
                 <ReviewRow
                   label="Access"

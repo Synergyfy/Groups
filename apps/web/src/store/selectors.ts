@@ -172,6 +172,10 @@ export function selectAdminFilteredGroups(
     if (filters.city !== "all" && (group.location?.city ?? "") !== filters.city) return false;
     if (filters.localArea !== "all" && (group.location?.localArea ?? "") !== filters.localArea)
       return false;
+    if (filters.highStreet !== "all" && (group.location?.highStreet ?? "") !== filters.highStreet)
+      return false;
+    if (filters.localMall !== "all" && (group.location?.localMall ?? "") !== filters.localMall)
+      return false;
     if (filters.status !== "all" && group.status !== filters.status) return false;
     if (filters.stage !== "all" && (group.stage ?? "") !== filters.stage) return false;
     if (filters.owner !== "all" && group.ownerName !== filters.owner) return false;

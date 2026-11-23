@@ -87,8 +87,16 @@ model Group {
   ownerId               String?  @map("owner_id")
   ownerName             String   @default("") @map("owner_name")
   memberCount           Int      @default(0) @map("member_count")
+  /// Snapshot names from the Central Hub geography hierarchy. `localArea` is
+  /// the borough name; `highStreet`/`localMallName` are the finer levels.
   city                  String?
   localArea             String?  @map("local_area")
+  highStreet            String?  @map("high_street")
+  localMallName         String?  @map("local_mall_name")
+  cityId                String?  @map("city_id")
+  boroughId             String?  @map("borough_id")
+  highStreetId          String?  @map("high_street_id")
+  localMallId           String?  @map("local_mall_id")
   requiredSize          Int?     @map("required_size")
   stage                 String?
   status                String   @default("Active")
@@ -116,6 +124,10 @@ model Group {
   @@index([status])
   @@index([status, createdAt])
   @@index([city])
+  @@index([cityId])
+  @@index([boroughId])
+  @@index([highStreetId])
+  @@index([localMallId])
   @@index([ownerId])
   @@index([programmeId])
   @@index([createdAt])
@@ -154,6 +166,13 @@ model Business {
   phone            String?
   city             String
   localArea        String?  @map("local_area")
+  highStreet       String?  @map("high_street")
+  localMallName    String?  @map("local_mall_name")
+  postcode         String?
+  cityId           String?  @map("city_id")
+  boroughId        String?  @map("borough_id")
+  highStreetId     String?  @map("high_street_id")
+  localMallId      String?  @map("local_mall_id")
   category         String
   status           String   @default("Active")
   verified         Boolean  @default(false)
@@ -176,6 +195,10 @@ model Business {
   @@index([status])
   @@index([tier])
   @@index([city])
+  @@index([cityId])
+  @@index([boroughId])
+  @@index([highStreetId])
+  @@index([localMallId])
   @@index([joinedAt])
   @@map("businesses")
 }
@@ -528,6 +551,11 @@ model GroupCircle {
   @@map("group_circles")
 }
 
+/// Legacy two-level location cache. Superseded by the Central Hub geography
+/// hierarchy (`City → Borough → HighStreet → LocalMall`) which the API reads
+/// through `GeographyService`. Kept only so existing installs do not lose the
+/// rows created before the hierarchy moved to Central Hub; no new code should
+/// read or write these models.
 model LocationCity {
   id        String         @id
   name      String

@@ -43,6 +43,7 @@ import { adminApi } from "../../admin/adminApi";
 import type { AppAction } from "../../store/reducer";
 import { memberCountOf } from "../groups/groupUtils";
 import AdminGroupContributionCard from "./AdminGroupContributionCard";
+import AdminGroupRulesTab from "./AdminGroupRulesTab";
 
 const ADMIN_ACTOR = { id: "admin", name: "Administrator" };
 
@@ -53,6 +54,7 @@ type Tab =
   | "business-groups"
   | "members-invitations"
   | "access-rules"
+  | "rules"
   | "reports";
 
 function downloadCsv(filename: string, rows: Array<Array<string | number>>) {
@@ -76,6 +78,7 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "business-groups", label: "Business Groups", icon: <Building2 className="size-3.5" /> },
   { id: "members-invitations", label: "Members & Invitations", icon: <Users className="size-3.5" /> },
   { id: "access-rules", label: "Access Rules", icon: <Shield className="size-3.5" /> },
+  { id: "rules", label: "Group & Circle Rules", icon: <ShieldCheck className="size-3.5" /> },
   { id: "reports", label: "Reports & Activity", icon: <TrendingUp className="size-3.5" /> },
 ];
 
@@ -204,6 +207,7 @@ export default function AdminGroupsHubPage() {
         <MembersInvitationsTab groups={groups} invitations={invitations} setFeedback={setFeedback} />
       )}
       {activeTab === "access-rules" && <AccessRulesTab />}
+      {activeTab === "rules" && <AdminGroupRulesTab />}
       {activeTab === "reports" && (
         <ReportsTab groups={groups} invitations={invitations} adminGroups={adminGroups} businessGroups={businessGroups} activeGroups={activeGroups} suspendedGroups={suspendedGroups} />
       )}

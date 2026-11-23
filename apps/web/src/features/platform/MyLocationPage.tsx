@@ -89,15 +89,15 @@ export default function MyLocationPage() {
                       {isMine && <Badge variant="gold">Yours</Badge>}
                     </div>
                     <ul className="mt-2 space-y-1">
-                      {entry.areas.map((area) => (
+                      {entry.boroughs.map((borough) => (
                         <li
-                          key={area.id}
+                          key={borough.id}
                           className={`flex items-center justify-between gap-2 text-[11px] ${
-                            area.name === localArea ? "text-gold-400" : "text-slate-500"
+                            borough.name === localArea ? "text-gold-400" : "text-slate-500"
                           }`}
                         >
-                          <span>{area.name}</span>
-                          {area.name === localArea && <span>current</span>}
+                          <span>{borough.name}</span>
+                          {borough.name === localArea && <span>current</span>}
                         </li>
                       ))}
                     </ul>

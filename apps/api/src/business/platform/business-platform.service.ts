@@ -18,6 +18,7 @@ import {
   mapRewardDeal,
 } from "../../admin/admin.mappers.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
+import { GeographyService } from "../../geography/geography.service.js";
 import { BusinessContextService } from "../business-context.service.js";
 import { activatePlanTx } from "../plan-activation.js";
 import { BusinessGroupsService } from "../groups/business-groups.service.js";
@@ -54,6 +55,7 @@ export class BusinessPlatformService {
     private readonly context: BusinessContextService,
     private readonly groups: BusinessGroupsService,
     private readonly config: ConfigService,
+    private readonly geography: GeographyService,
   ) {}
 
   async getOverview(ctx: BusinessContext) {
@@ -410,26 +412,35 @@ export class BusinessPlatformService {
     );
   }
 
+  getLocationBorough(boroughId: string) {
+    return this.geography.getBoroughDetail(boroughId);
+  }
+
   async getLocations(ctx: BusinessContext) {
-    const cities = await this.prisma.locationCity.findMany({
-      include: { areas: { orderBy: { name: "asc" } } },
-      orderBy: { name: "asc" },
-    });
+    const hierarchy = await this.geography.getSummary();
 
     return {
       nationalCommunity: "National Community",
+      available: hierarchy.available,
+      syncedAt: hierarchy.syncedAt,
       current: {
         city: ctx.business.city,
         localArea: ctx.business.localArea,
+        borough: ctx.business.localArea,
+        highStreet: ctx.business.highStreet,
+        localMall: ctx.business.localMallName,
+        cityId: ctx.business.cityId,
+        boroughId: ctx.business.boroughId,
+        highStreetId: ctx.business.highStreetId,
+        localMallId: ctx.business.localMallId,
         joinedAt: ctx.business.joinedAt.toISOString(),
       },
-      cities: cities.map((city) => ({
-        id: city.id,
-        name: city.name,
-        areas: city.areas.map((area) => ({ id: area.id, name: area.name })),
-      })),
-      totalCities: cities.length,
-      totalAreas: cities.reduce((sum, city) => sum + city.areas.length, 0),
+      cities: hierarchy.cities,
+      totalCities: hierarchy.counts.cities,
+      totalAreas: hierarchy.counts.boroughs,
+      totalBoroughs: hierarchy.counts.boroughs,
+      totalHighStreets: hierarchy.counts.highStreets,
+      totalLocalMalls: hierarchy.counts.localMalls,
     };
   }
 
@@ -732,41 +743,64 @@ export class BusinessPlatformService {
   async getLocation(ctx: BusinessContext) {
     const city = ctx.business.city;
     const localArea = ctx.business.localArea;
-    const [cityGroups, areaGroups, cities] = await Promise.all([
-      this.prisma.group.findMany({
-        where: { city },
-        include: { members: true },
-        orderBy: { createdAt: "desc" },
-      }),
-      localArea
-        ? this.prisma.group.findMany({
-            where: { localArea },
-            include: { members: true },
-            orderBy: { createdAt: "desc" },
-          })
-        : Promise.resolve([]),
-      this.prisma.locationCity.findMany({
-        include: { areas: { orderBy: { name: "asc" } } },
-        orderBy: { name: "asc" },
-      }),
-    ]);
+    const highStreet = ctx.business.highStreet;
+    const localMall = ctx.business.localMallName;
+    const [cityGroups, areaGroups, highStreetGroups, mallGroups, hierarchy] =
+      await Promise.all([
+        this.prisma.group.findMany({
+          where: { city },
+          include: { members: true },
+          orderBy: { createdAt: "desc" },
+        }),
+        localArea
+          ? this.prisma.group.findMany({
+              where: { localArea },
+              include: { members: true },
+              orderBy: { createdAt: "desc" },
+            })
+          : Promise.resolve([]),
+        highStreet
+          ? this.prisma.group.findMany({
+              where: { highStreet },
+              include: { members: true },
+              orderBy: { createdAt: "desc" },
+            })
+          : Promise.resolve([]),
+        localMall
+          ? this.prisma.group.findMany({
+              where: { localMallName: localMall },
+              include: { members: true },
+              orderBy: { createdAt: "desc" },
+            })
+          : Promise.resolve([]),
+        this.geography.getSummary(),
+      ]);
 
     return {
+      available: hierarchy.available,
+      syncedAt: hierarchy.syncedAt,
       current: {
         city,
         localArea,
+        borough: localArea,
+        highStreet,
+        localMall,
+        cityId: ctx.business.cityId,
+        boroughId: ctx.business.boroughId,
+        highStreetId: ctx.business.highStreetId,
+        localMallId: ctx.business.localMallId,
         joinedAt: ctx.business.joinedAt.toISOString(),
       },
       cityGroups: cityGroups.map((group) => mapGroup(group)),
       areaGroups: areaGroups.map((group) => mapGroup(group)),
-      hierarchy: cities.map((entry) => ({
-        id: entry.id,
-        name: entry.name,
-        areas: entry.areas.map((area) => ({ id: area.id, name: area.name })),
-      })),
+      highStreetGroups: highStreetGroups.map((group) => mapGroup(group)),
+      localMallGroups: mallGroups.map((group) => mapGroup(group)),
+      hierarchy: hierarchy.cities,
       stats: {
         groupsInCity: cityGroups.length,
         groupsInArea: areaGroups.length,
+        groupsInHighStreet: highStreetGroups.length,
+        groupsInLocalMall: mallGroups.length,
         membersInCity: cityGroups.reduce(
           (sum, group) => sum + (group.members?.length ?? group.memberCount),
           0,

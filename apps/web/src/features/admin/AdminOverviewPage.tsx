@@ -47,8 +47,8 @@ const COMPLETENESS_RULES = [
     description:
       "Admin can manage mandatory business groups (Marketing, Advertising, Partners), Consulting, Seasonal and consumer-focused groups.",
     status: "verified",
-    link: "/admin/groups",
-    linkText: "Manage Groups",
+    link: "/admin/groups?tab=rules",
+    linkText: "Manage Rules",
   },
   {
     id: "rule-4",

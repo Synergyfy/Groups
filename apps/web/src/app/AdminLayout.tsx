@@ -3,6 +3,7 @@ import {
   FolderKanban,
   LayoutDashboard,
   Mail,
+  MapPin,
   SlidersHorizontal,
   Tag,
   Users,
@@ -39,6 +40,12 @@ const ADMIN_NAV: NavSection[] = [
         to: "/admin/invitations",
         label: "Invitations",
         icon: <Mail className="size-4" />,
+        end: true,
+      },
+      {
+        to: "/admin/locations",
+        label: "Locations",
+        icon: <MapPin className="size-4" />,
         end: true,
       },
       {

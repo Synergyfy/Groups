@@ -47,10 +47,19 @@ export function mapGroup(group: GroupWithMembers) {
     memberIds: group.members?.map((member) => member.memberId) ?? [],
     memberCount: group.memberCount,
     location:
-      group.city || group.localArea
+      group.city ||
+      group.localArea ||
+      group.highStreet ||
+      group.localMallName
         ? {
             city: group.city ?? undefined,
             localArea: group.localArea ?? undefined,
+            highStreet: group.highStreet ?? undefined,
+            localMall: group.localMallName ?? undefined,
+            cityId: group.cityId ?? undefined,
+            boroughId: group.boroughId ?? undefined,
+            highStreetId: group.highStreetId ?? undefined,
+            localMallId: group.localMallId ?? undefined,
           }
         : undefined,
     requiredSize: group.requiredSize ?? undefined,
@@ -124,6 +133,13 @@ export function mapBusiness(business: Business) {
     phone: business.phone ?? undefined,
     city: business.city,
     localArea: business.localArea ?? undefined,
+    highStreet: business.highStreet ?? undefined,
+    localMall: business.localMallName ?? undefined,
+    postcode: business.postcode ?? undefined,
+    cityId: business.cityId ?? undefined,
+    boroughId: business.boroughId ?? undefined,
+    highStreetId: business.highStreetId ?? undefined,
+    localMallId: business.localMallId ?? undefined,
     category: business.category,
     status: business.status,
     verified: business.verified,

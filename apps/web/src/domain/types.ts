@@ -175,6 +175,12 @@ export const GROUP_VISIBILITY_LABELS: Record<GroupVisibility, string> = {
 export interface GroupLocation {
   city?: string;
   localArea?: string;
+  highStreet?: string;
+  localMall?: string;
+  cityId?: string;
+  boroughId?: string;
+  highStreetId?: string;
+  localMallId?: string;
 }
 
 export type GroupPricingMode = "free" | "paid";
@@ -523,6 +529,8 @@ export interface AdminGroupFilters {
   type: string;
   city: string;
   localArea: string;
+  highStreet: string;
+  localMall: string;
   status: string;
   stage: string;
   owner: string;

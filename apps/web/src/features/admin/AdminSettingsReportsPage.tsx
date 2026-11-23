@@ -57,8 +57,8 @@ const SIGN_OFF_RULES = [
     status: "Verified",
     evidence:
       "Admin controls mandatory groups (Marketing, Advertising, Partners), Consulting, Seasonal (Friends & Family), and Consumer-focused groups, with full lifecycle (create, edit, approve, suspend, close).",
-    link: "/admin/groups",
-    linkText: "Manage Group Types",
+    link: "/admin/groups?tab=rules",
+    linkText: "Manage Group & Circle Rules",
   },
   {
     id: "rule-4",

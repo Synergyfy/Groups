@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { AuthModule } from "../auth/auth.module.js";
+import { GeographyModule } from "../geography/geography.module.js";
 import { McomModule } from "../mcom/mcom.module.js";
 import { BusinessAccessGuard } from "./business-access.guard.js";
 import { BusinessContextService } from "./business-context.service.js";
@@ -20,7 +21,7 @@ import {
 import { BusinessPlatformService } from "./platform/business-platform.service.js";
 
 @Module({
-  imports: [AuthModule, McomModule],
+  imports: [AuthModule, McomModule, GeographyModule],
   controllers: [
     BusinessAccountController,
     BusinessPlatformController,

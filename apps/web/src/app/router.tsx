@@ -30,6 +30,7 @@ import BusinessSettingsPage from "../features/settings/BusinessSettingsPage";
 import PlanPage from "../features/plan/PlanPage";
 import JourneyPage from "../journey/JourneyPage";
 import AdminOverviewPage from "../features/admin/AdminOverviewPage";
+import AdminLocationsPage from "../features/admin/AdminLocationsPage";
 import AdminUsersPage from "../features/admin/AdminUsersPage";
 import AdminGroupsHubPage from "../features/admin/AdminGroupsHubPage";
 import AdminPlansPage from "../features/admin/AdminPlansPage";
@@ -245,6 +246,10 @@ const adminRoutes = [
   {
     path: "invitations",
     element: <AdminInvitationsPage />,
+  },
+  {
+    path: "locations",
+    element: <AdminLocationsPage />,
   },
 ];
 

@@ -75,6 +75,68 @@ export interface AdminSettingsReport {
   completeness: Array<{ id: string; title: string; status: string }>;
 }
 
+export interface AdminGeographyLocalMall {
+  id: string;
+  cityId: string | null;
+  boroughId: string | null;
+  highStreetId: string | null;
+  name: string;
+  slug: string;
+  borough: string;
+  postcodes: string[];
+  status: string;
+}
+
+export interface AdminGeographyHighStreet {
+  id: string;
+  cityId: string | null;
+  boroughId: string | null;
+  name: string;
+  borough: string;
+  lat: number | null;
+  lng: number | null;
+  gssCode: string | null;
+  localMalls: AdminGeographyLocalMall[];
+}
+
+export interface AdminGeographyBorough {
+  id: string;
+  cityId: string | null;
+  name: string;
+  gssCode: string | null;
+  highStreetCount: number;
+  localMallCount: number;
+}
+
+export interface AdminGeographyBoroughDetail {
+  available: boolean;
+  boroughId: string;
+  highStreets: AdminGeographyHighStreet[];
+  localMalls: AdminGeographyLocalMall[];
+}
+
+export interface AdminGeographyCity {
+  id: string;
+  name: string;
+  region: string | null;
+  country: string;
+  gssCode: string | null;
+  boroughs: AdminGeographyBorough[];
+}
+
+export interface AdminGeographyResponse {
+  available: boolean;
+  version: number | null;
+  syncedAt: string | null;
+  counts: {
+    cities: number;
+    boroughs: number;
+    highStreets: number;
+    localMalls: number;
+  };
+  cities: AdminGeographyCity[];
+}
+
 export interface AdminConfigResponse extends AdminConfig {
   accessRules?: Record<string, unknown>;
   platformSettings?: Record<string, unknown>;
@@ -186,6 +248,16 @@ const query = (params: Record<string, string | undefined>) => {
 
 export const adminApi = {
   overview: () => apiRequest<AdminOverview>("/admin/overview"),
+
+  geography: () => apiRequest<AdminGeographyResponse>("/admin/geography"),
+  geographyBorough: (boroughId: string) =>
+    apiRequest<AdminGeographyBoroughDetail>(
+      `/admin/geography/boroughs/${encodeURIComponent(boroughId)}`,
+    ),
+  syncGeography: () =>
+    apiRequest<AdminGeographyResponse>("/admin/geography/sync", {
+      method: "POST",
+    }),
 
   users: (search?: string) =>
     apiRequest<AdminUser[]>(`/admin/users${query({ search })}`),

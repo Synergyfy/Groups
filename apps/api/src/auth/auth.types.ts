@@ -52,6 +52,20 @@ export interface McomProfile {
   membershipPlanName?: string | null;
   membershipExpiresAt?: string | null;
   trialAccessExpiresAt?: string | null;
+  /** Canonical geography resolved by Central Hub from the profile postcode. */
+  location?: {
+    postcode?: string | null;
+    cityId?: string | null;
+    city?: string | null;
+    region?: string | null;
+    country?: string | null;
+    boroughId?: string | null;
+    borough?: string | null;
+    highStreetId?: string | null;
+    highStreet?: string | null;
+    localMallId?: string | null;
+    localMall?: string | null;
+  } | null;
   businessProfile?: Record<string, unknown> | null;
   customerProfile?: Record<string, unknown> | null;
   agentProfile?: Record<string, unknown> | null;
