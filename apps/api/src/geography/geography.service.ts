@@ -335,9 +335,7 @@ export class GeographyService implements OnModuleInit {
           ? snapshot.localMalls.filter(
               (entry) => entry.boroughId === borough!.id,
             )
-          : city
-            ? snapshot.localMalls.filter((entry) => entry.cityId === city!.id)
-            : snapshot.localMalls;
+          : snapshot.localMalls;
       localMall = this.findByName(pool, localMallName);
       if (!localMall && highStreet) {
         // Central Hub resolves a business's high street and local mall
