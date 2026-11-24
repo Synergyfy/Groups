@@ -34,7 +34,6 @@ const SOURCE_ICON: Record<string, typeof QrCode> = {
   "Traffic & Leads Directory": ArrowRight,
 };
 
-const LIST_GEOGRAPHIES = ["Nearby", "Hyperlocal", "National", "Global"];
 const LIST_SOURCES = [
   "Manual Contacts",
   "QR Plaque Scans",
@@ -51,7 +50,6 @@ export default function MyNetworkListsPage() {
   const [listOpen, setListOpen] = useState(false);
   const [listName, setListName] = useState("");
   const [listType, setListType] = useState("B2B");
-  const [listGeography, setListGeography] = useState("National");
   const [savingList, setSavingList] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
 
@@ -63,13 +61,11 @@ export default function MyNetworkListsPage() {
       await businessApi.createNetworkList({
         name: listName.trim(),
         type: listType,
-        geography: listGeography,
         source: "Manual Contacts",
       });
       await refresh();
       setListName("");
       setListType("B2B");
-      setListGeography("National");
       setListOpen(false);
     } catch (cause) {
       setListError(errorMessage(cause));
@@ -81,7 +77,6 @@ export default function MyNetworkListsPage() {
   const [editTarget, setEditTarget] = useState<NetworkListResponse | null>(null);
   const [editName, setEditName] = useState("");
   const [editType, setEditType] = useState("B2B");
-  const [editGeography, setEditGeography] = useState("National");
   const [editStatus, setEditStatus] = useState("Active");
   const [editSource, setEditSource] = useState("Manual Contacts");
   const [savingEdit, setSavingEdit] = useState(false);
@@ -91,7 +86,6 @@ export default function MyNetworkListsPage() {
     setEditTarget(list);
     setEditName(list.name);
     setEditType(list.type);
-    setEditGeography(list.geography);
     setEditStatus(list.status);
     setEditSource(list.source);
     setEditError(null);
@@ -105,7 +99,6 @@ export default function MyNetworkListsPage() {
       await businessApi.updateNetworkList(editTarget.id, {
         name: editName.trim(),
         type: editType,
-        geography: editGeography,
         status: editStatus,
         source: editSource,
       });
@@ -372,7 +365,8 @@ export default function MyNetworkListsPage() {
           <ul className="flex flex-col gap-2 text-xs leading-relaxed text-slate-400">
             <li className="rounded-xl border border-white/10 bg-ink-950/60 px-3 py-2.5">
               A <span className="font-semibold text-white">list</span> is intake: raw contacts
-              captured from one source, with a type (B2B/B2C) and geography.
+              captured from one source, with a type (B2B/B2C). Its reach follows your business
+              location, so you never set it by hand.
             </li>
             <li className="rounded-xl border border-white/10 bg-ink-950/60 px-3 py-2.5">
               A <span className="font-semibold text-white">circle</span> is built from one or more
@@ -421,33 +415,17 @@ export default function MyNetworkListsPage() {
               className="h-10 rounded-lg border border-white/10 bg-ink-800 px-3 text-xs text-slate-200 placeholder:text-slate-500 focus:border-gold-500/50 focus:outline-none"
             />
           </label>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="flex flex-col gap-1.5 text-xs">
-              <span className="font-semibold text-white">Type</span>
-              <select
-                value={listType}
-                onChange={(event) => setListType(event.target.value)}
-                className="h-10 rounded-lg border border-white/10 bg-ink-800 px-3 text-xs text-slate-200 focus:border-gold-500/50 focus:outline-none"
-              >
-                <option value="B2B">B2B</option>
-                <option value="B2C">B2C</option>
-              </select>
-            </label>
-            <label className="flex flex-col gap-1.5 text-xs">
-              <span className="font-semibold text-white">Geography</span>
-              <select
-                value={listGeography}
-                onChange={(event) => setListGeography(event.target.value)}
-                className="h-10 rounded-lg border border-white/10 bg-ink-800 px-3 text-xs text-slate-200 focus:border-gold-500/50 focus:outline-none"
-              >
-                {LIST_GEOGRAPHIES.map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
+          <label className="flex flex-col gap-1.5 text-xs">
+            <span className="font-semibold text-white">Type</span>
+            <select
+              value={listType}
+              onChange={(event) => setListType(event.target.value)}
+              className="h-10 rounded-lg border border-white/10 bg-ink-800 px-3 text-xs text-slate-200 focus:border-gold-500/50 focus:outline-none"
+            >
+              <option value="B2B">B2B</option>
+              <option value="B2C">B2C</option>
+            </select>
+          </label>
           {listError && (
             <p className="rounded-xl border border-danger-500/30 bg-danger-500/10 px-3 py-2.5 text-xs text-danger-400">
               {listError}
@@ -497,20 +475,6 @@ export default function MyNetworkListsPage() {
               >
                 <option value="B2B">B2B</option>
                 <option value="B2C">B2C</option>
-              </select>
-            </label>
-            <label className="flex flex-col gap-1.5 text-xs">
-              <span className="font-semibold text-white">Geography</span>
-              <select
-                value={editGeography}
-                onChange={(event) => setEditGeography(event.target.value)}
-                className={FIELD_CLASS}
-              >
-                {LIST_GEOGRAPHIES.map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
               </select>
             </label>
             <label className="flex flex-col gap-1.5 text-xs">

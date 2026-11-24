@@ -1,7 +1,8 @@
-import { Layers, MessageSquare, Pencil, Plus, RefreshCw, Sparkles, Trash2, UserMinus, UserPlus, Wallet } from "lucide-react";
+import { Layers, MapPin, MessageSquare, Pencil, Plus, RefreshCw, Sparkles, Trash2, UserMinus, UserPlus, Wallet } from "lucide-react";
 import type { ActivityEvent, CircleMember, GroupCircle, NetworkList } from "../../domain/types";
 import { TIER_ORDER, TIERS } from "../../domain/constants";
 import { useCircleTypeMeta } from "../../store/selectors";
+import Avatar from "../ui/Avatar";
 
 interface StatsPanelProps {
   circle: GroupCircle;
@@ -51,6 +52,12 @@ export default function StatsPanel({
   const coreCount = members.filter((m) => m.role === "core" || m.role === "banker").length;
   const peripheralCount = members.length - coreCount;
   const activeCount = members.filter((m) => m.status === "active").length;
+  const circleLocation = [
+    circle.config.location?.city,
+    circle.config.location?.borough,
+    circle.config.location?.highStreet,
+    circle.config.location?.localMall,
+  ].filter(Boolean) as string[];
 
   return (
     <aside className="flex w-full flex-col gap-4 self-start lg:w-80">
@@ -69,6 +76,15 @@ export default function StatsPanel({
           <span className={chipClass}>{circle.config.visibility}</span>
           <span className={chipClass}>{circle.config.interactionLevel}</span>
         </div>
+        {circleLocation.length > 0 && (
+          <p className="mt-3 flex items-start gap-1.5 border-t border-white/10 pt-3 text-[11px] leading-relaxed text-slate-400">
+            <MapPin className="mt-px size-3.5 shrink-0 text-gold-400" />
+            <span>
+              <span className="font-semibold text-slate-300">Location</span> ·{" "}
+              {circleLocation.join(" → ")}
+            </span>
+          </p>
+        )}
         {!participantMode && (onEditCircle || onDeleteCircle) && (
           <div className="mt-3 flex flex-wrap gap-1.5 border-t border-white/10 pt-3">
             {onEditCircle && (
@@ -133,12 +149,20 @@ export default function StatsPanel({
                   key={member.id}
                   className="flex items-center justify-between gap-2 rounded-xl bg-white/5 px-3 py-2"
                 >
-                  <span className="min-w-0">
-                    <span className="block truncate text-xs font-medium text-slate-200">
-                      {member.businessName || member.fullName}
-                    </span>
-                    <span className="block truncate text-[10px] capitalize text-slate-500">
-                      {member.role} · {member.status}
+                  <span className="flex min-w-0 items-center gap-2">
+                    <Avatar
+                      id={member.id}
+                      name={member.fullName}
+                      src={member.photoUrl}
+                      className="size-7 shrink-0 rounded-full text-[10px] font-bold text-white"
+                    />
+                    <span className="min-w-0">
+                      <span className="block truncate text-xs font-medium text-slate-200">
+                        {member.businessName || member.fullName}
+                      </span>
+                      <span className="block truncate text-[10px] capitalize text-slate-500">
+                        {member.role} · {member.status}
+                      </span>
                     </span>
                   </span>
                   <button

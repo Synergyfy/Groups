@@ -16,7 +16,7 @@ import type { BusinessCircle } from "../../business/businessApi";
 import { DURATIONS } from "../../domain/constants";
 import { useAppStore } from "../../store/context";
 import { useActiveCircle, useCircles, useCircleActivity, useCircleTypeMeta, useNetworkContacts } from "../../store/selectors";
-import { errorMessage } from "../../app/api";
+import { errorMessage, mediaUrl } from "../../app/api";
 import { businessApi, useOptionalBusinessData } from "../../business/BusinessDataProvider";
 
 interface CirclesWorkspacePageProps {
@@ -116,6 +116,7 @@ export default function CirclesWorkspacePage({
         tier: "Bronze" as const,
         joinedAt: contact.addedAt,
         lastActiveAt: contact.addedAt,
+        photoUrl: mediaUrl(contact.photoUrl),
       }));
     }
     return networkContacts.map((contact) => ({
@@ -130,6 +131,7 @@ export default function CirclesWorkspacePage({
       tier: "Bronze" as const,
       joinedAt: contact.addedAt,
       lastActiveAt: contact.addedAt,
+      photoUrl: mediaUrl(contact.photoUrl),
     }));
   }, [business, networkContacts]);
   const membersById = useMemo(() => new Map(allMembers.map((c) => [c.id, c])), [allMembers]);
@@ -148,7 +150,7 @@ export default function CirclesWorkspacePage({
         tier: (member.tier || "Bronze") as CircleMember["tier"],
         joinedAt: member.joinedAt ?? "",
         lastActiveAt: member.lastActiveAt ?? "",
-        photoUrl: member.photoUrl,
+        photoUrl: mediaUrl(member.photoUrl),
       }));
     }
     return (activeCircle?.memberIds ?? [])
@@ -374,6 +376,7 @@ export default function CirclesWorkspacePage({
                           business.profile.user.name ??
                           business.profile.business.contactName,
                         businessName: business.profile.business.name,
+                        photoUrl: business.profile.user.avatarUrl,
                       }
                     : undefined
                 }

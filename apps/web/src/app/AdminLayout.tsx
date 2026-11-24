@@ -5,7 +5,6 @@ import {
   Mail,
   MapPin,
   SlidersHorizontal,
-  Tag,
   Users,
 } from "lucide-react";
 import { useEffect } from "react";
@@ -52,12 +51,6 @@ const ADMIN_NAV: NavSection[] = [
         to: "/admin/plans",
         label: "Plans",
         icon: <Crown className="size-4" />,
-        end: true,
-      },
-      {
-        to: "/admin/rewards-deals",
-        label: "Rewards and Deals",
-        icon: <Tag className="size-4" />,
         end: true,
       },
       {

@@ -68,7 +68,12 @@ export default function MemberNode({
         className={`animate-node-in relative flex size-full cursor-pointer items-center justify-center rounded-full border border-white/10 text-[11px] font-bold text-white transition-transform duration-200 hover:scale-110 focus-visible:scale-110 focus-visible:outline-none ${ringClass}`}
         style={{ boxShadow: glow, ["--tw-ring-color" as string]: banker ? undefined : accent }}
       >
-        <Avatar id={member.id} name={member.fullName} className="size-full rounded-full" />
+        <Avatar
+          id={member.id}
+          name={member.fullName}
+          src={member.photoUrl}
+          className="size-full rounded-full"
+        />
         {banker && (
           <span className="absolute -right-0.5 -top-0.5 flex size-4 items-center justify-center rounded-full bg-gold-500 text-ink-950 shadow-md shadow-black/40">
             <Crown className="size-2.5" />

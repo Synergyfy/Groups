@@ -390,6 +390,8 @@ export class BusinessGroupsService {
       if (query.type && group.type !== query.type) return false;
       if (query.city && group.city !== query.city) return false;
       if (query.localArea && group.localArea !== query.localArea) return false;
+      if (query.highStreet && group.highStreet !== query.highStreet) return false;
+      if (query.localMall && group.localMallName !== query.localMall) return false;
       if (query.status && group.status !== query.status) return false;
       if (query.pricing && (group.pricing ?? "free") !== query.pricing) {
         return false;

@@ -147,6 +147,7 @@ export default function AddMemberFlow({
                     <Avatar
                       id={member.id}
                       name={member.fullName}
+                      src={member.photoUrl}
                       className="size-8 shrink-0 rounded-full text-[10px] font-bold text-white"
                     />
                     <span className="min-w-0 flex-1 truncate text-xs">
@@ -190,6 +191,7 @@ export default function AddMemberFlow({
             <Avatar
               id={selected.id}
               name={selected.fullName}
+              src={selected.photoUrl}
               className="size-11 shrink-0 rounded-full text-sm font-bold text-white"
             />
             <div className="min-w-0">

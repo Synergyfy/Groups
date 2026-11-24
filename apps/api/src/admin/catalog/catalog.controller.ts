@@ -14,9 +14,7 @@ import { AdminOnly } from "../admin-only.decorator.js";
 import {
   AdminListQueryDto,
   CreatePlanDto,
-  CreateRewardDealDto,
   UpdatePlanDto,
-  UpdateRewardDealDto,
 } from "../dto/admin.dto.js";
 import { AdminCatalogService } from "./catalog.service.js";
 
@@ -52,43 +50,5 @@ export class AdminPlansController {
   @Delete(":id")
   remove(@Param("id") id: string, @CurrentUser() user: SessionUser) {
     return this.catalog.removePlan(id, user);
-  }
-}
-
-@Controller("admin/rewards-deals")
-@AdminOnly()
-export class AdminRewardsDealsController {
-  constructor(private readonly catalog: AdminCatalogService) {}
-
-  @Get()
-  list(@Query() query: AdminListQueryDto) {
-    return this.catalog.listRewards(query);
-  }
-
-  @Get("stats")
-  stats() {
-    return this.catalog.getRewardStats();
-  }
-
-  @Post()
-  create(
-    @Body() dto: CreateRewardDealDto,
-    @CurrentUser() user: SessionUser,
-  ) {
-    return this.catalog.createReward(dto, user);
-  }
-
-  @Patch(":id")
-  update(
-    @Param("id") id: string,
-    @Body() dto: UpdateRewardDealDto,
-    @CurrentUser() user: SessionUser,
-  ) {
-    return this.catalog.updateReward(id, dto, user);
-  }
-
-  @Delete(":id")
-  remove(@Param("id") id: string, @CurrentUser() user: SessionUser) {
-    return this.catalog.removeReward(id, user);
   }
 }

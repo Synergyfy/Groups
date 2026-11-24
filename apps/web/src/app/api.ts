@@ -33,6 +33,16 @@ const API_BASE_URL = (viteEnv?.VITE_API_BASE_URL ?? "/api").replace(
   "",
 );
 
+/**
+ * The URL a browser should load for a media path returned by the API.
+ * Central Hub logos are proxied by the API, so they arrive as API-relative
+ * paths; absolute URLs (a logo hosted elsewhere) are used as they are.
+ */
+export function mediaUrl(url?: string | null): string | undefined {
+  if (!url) return undefined;
+  return url.startsWith("/") ? `${API_BASE_URL}${url}` : url;
+}
+
 export class ApiError extends Error {
   readonly status: number;
   readonly body: unknown;

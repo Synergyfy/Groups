@@ -15,6 +15,8 @@ import {
   mapNetworkContact,
   mapNetworkList,
 } from "../business.mappers.js";
+import { centralHubPhotos } from "../business.photos.js";
+import { BusinessMediaService } from "../business.media.js";
 import type {
   BusinessNetworkContactQueryDto,
   ConfirmNetworkContactDto,
@@ -35,6 +37,7 @@ export class BusinessNetworkService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly context: BusinessContextService,
+    private readonly media: BusinessMediaService,
   ) {}
 
   async listLists(ctx: BusinessContext) {
@@ -83,7 +86,7 @@ export class BusinessNetworkService {
         businessId: ctx.business.id,
         name: dto.name.trim(),
         type: dto.type,
-        geography: dto.geography,
+        geography: dto.geography ?? this.listGeography(ctx),
         status: dto.status ?? "Active",
         source: dto.source ?? "Manual Contacts",
       },
@@ -92,6 +95,17 @@ export class BusinessNetworkService {
 
     await this.audit(ctx, "network-list-created", list.id, list.name);
     return mapNetworkList(list);
+  }
+
+  /**
+   * A list inherits its reach from the business's Central Hub location: a
+   * mall or high street is hyperlocal, a borough is nearby, anything wider is
+   * national.
+   */
+  private listGeography(ctx: BusinessContext): string {
+    if (ctx.business.localMallName || ctx.business.highStreet) return "Hyperlocal";
+    if (ctx.business.localArea) return "Nearby";
+    return "National";
   }
 
   async updateList(
@@ -177,7 +191,18 @@ export class BusinessNetworkService {
       }),
     ]);
 
-    return pageResult(contacts.map(mapNetworkContact), total, params);
+    // Central Hub owns the contact avatars, so Groups mirrors them when the
+    // contact maps to a Central Hub user.
+    const photos = await centralHubPhotos(this.prisma, this.media, contacts, []);
+
+    return pageResult(
+      contacts.map((contact) => ({
+        ...mapNetworkContact(contact),
+        photoUrl: photos.byContactId.get(contact.id) ?? null,
+      })),
+      total,
+      params,
+    );
   }
 
   async createContact(ctx: BusinessContext, dto: CreateNetworkContactDto) {
@@ -220,12 +245,12 @@ export class BusinessNetworkService {
     });
 
     await this.audit(ctx, "network-contact-added", contact.id, contact.fullName);
-    return mapNetworkContact(contact);
+    return this.contactView(contact);
   }
 
   async getContact(ctx: BusinessContext, contactId: string) {
     const contact = await this.ensureContact(ctx, contactId);
-    return mapNetworkContact(contact);
+    return this.contactView(contact);
   }
 
   async confirmContact(
@@ -235,7 +260,7 @@ export class BusinessNetworkService {
   ) {
     const contact = await this.ensureContact(ctx, contactId);
     if (contact.confirmation === "confirmed") {
-      return mapNetworkContact(contact);
+      return this.contactView(contact);
     }
 
     const updated = await this.prisma.networkContact.update({
@@ -247,7 +272,16 @@ export class BusinessNetworkService {
     });
 
     await this.audit(ctx, "network-contact-confirmed", updated.id, updated.fullName);
-    return mapNetworkContact(updated);
+    return this.contactView(updated);
+  }
+
+  /** A contact with the Central Hub avatar of the user behind its email. */
+  private async contactView(contact: NetworkContact) {
+    const photos = await centralHubPhotos(this.prisma, this.media, [contact], []);
+    return {
+      ...mapNetworkContact(contact),
+      photoUrl: photos.byContactId.get(contact.id) ?? null,
+    };
   }
 
   async removeContact(ctx: BusinessContext, contactId: string) {

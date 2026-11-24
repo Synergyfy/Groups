@@ -4,6 +4,7 @@ import { GeographyModule } from "../geography/geography.module.js";
 import { McomModule } from "../mcom/mcom.module.js";
 import { BusinessAccessGuard } from "./business-access.guard.js";
 import { BusinessContextService } from "./business-context.service.js";
+import { BusinessMediaService } from "./business.media.js";
 import { CentralAccessService } from "./central-access.service.js";
 import { BusinessRoleGuard } from "./business-role.guard.js";
 import { BusinessCirclesController } from "./circles/business-circles.controller.js";
@@ -34,6 +35,7 @@ import { BusinessPlatformService } from "./platform/business-platform.service.js
     BusinessRoleGuard,
     BusinessAccessGuard,
     BusinessContextService,
+    BusinessMediaService,
     CentralAccessService,
     BusinessGroupsService,
     BusinessInvitationsService,

@@ -1,7 +1,6 @@
 import {
   IsArray,
   IsBoolean,
-  IsDateString,
   IsEmail,
   IsIn,
   IsInt,
@@ -272,34 +271,3 @@ export class UpdatePlanDto {
   @IsOptional() @IsInt() @Min(0) subscriberCount?: number;
 }
 
-// ---------------------------------------------------------------------------
-// Rewards & deals
-// ---------------------------------------------------------------------------
-
-export class CreateRewardDealDto {
-  @IsString() @MaxLength(160) title!: string;
-  @IsIn(["voucher", "gift-card", "coupon", "incentive"]) category!: string;
-  @IsString() discountValue!: string;
-  @IsOptional() @IsString() code?: string;
-  @IsString() targetAudience!: string;
-  @IsOptional() @IsBoolean() liveOnFrontend?: boolean;
-  @IsOptional() @IsIn(["Active", "Draft", "Expired"]) status?: string;
-  @IsDateString() expiryDate!: string;
-  @IsOptional() @IsInt() @Min(0) claimsCount?: number;
-  @IsOptional() @IsInt() @Min(0) maxClaims?: number;
-  @IsOptional() @IsString() sponsorBusiness?: string;
-}
-
-export class UpdateRewardDealDto {
-  @IsOptional() @IsString() @MaxLength(160) title?: string;
-  @IsOptional() @IsIn(["voucher", "gift-card", "coupon", "incentive"]) category?: string;
-  @IsOptional() @IsString() discountValue?: string;
-  @IsOptional() @IsString() code?: string;
-  @IsOptional() @IsString() targetAudience?: string;
-  @IsOptional() @IsBoolean() liveOnFrontend?: boolean;
-  @IsOptional() @IsIn(["Active", "Draft", "Expired"]) status?: string;
-  @IsOptional() @IsDateString() expiryDate?: string;
-  @IsOptional() @IsInt() @Min(0) claimsCount?: number;
-  @IsOptional() @IsInt() @Min(0) maxClaims?: number;
-  @IsOptional() @IsString() sponsorBusiness?: string;
-}

@@ -16,7 +16,7 @@ interface CircleCanvasProps {
   onSendMessage: (member: CircleMember) => void;
   onAddCategory: (member: CircleMember) => void;
   /** The viewer at the centre of the canvas. */
-  self?: { id: string; name: string; businessName: string };
+  self?: { id: string; name: string; businessName: string; photoUrl?: string | null };
 }
 
 function ringPositions(count: number, radiusPercent: number) {
@@ -71,6 +71,7 @@ export default function CircleCanvas({
             <Avatar
               id={self.id}
               name={self.name}
+              src={self.photoUrl}
               className="size-full rounded-full text-sm font-bold text-ink-950"
             />
           </button>

@@ -335,8 +335,24 @@ export class GeographyService implements OnModuleInit {
           ? snapshot.localMalls.filter(
               (entry) => entry.boroughId === borough!.id,
             )
-          : snapshot.localMalls;
+          : city
+            ? snapshot.localMalls.filter((entry) => entry.cityId === city!.id)
+            : snapshot.localMalls;
       localMall = this.findByName(pool, localMallName);
+      if (!localMall && highStreet) {
+        // Central Hub resolves a business's high street and local mall
+        // independently from the postcode, so the mall can sit on another
+        // street in the same borough. Accept the chain instead of rejecting
+        // the business's own location.
+        const fallbackPool = borough
+          ? snapshot.localMalls.filter(
+              (entry) => entry.boroughId === borough!.id,
+            )
+          : city
+            ? snapshot.localMalls.filter((entry) => entry.cityId === city!.id)
+            : snapshot.localMalls;
+        localMall = this.findByName(fallbackPool, localMallName);
+      }
       if (!localMall) {
         throw new BadRequestException(
           `Local mall "${localMallName}" is not in the Central Hub geography hierarchy.`,

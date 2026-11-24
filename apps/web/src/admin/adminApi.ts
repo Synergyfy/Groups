@@ -22,23 +22,6 @@ export interface AdminUser {
   source: string;
 }
 
-export type DealCategory = "voucher" | "gift-card" | "coupon" | "incentive";
-
-export interface RewardDeal {
-  id: string;
-  title: string;
-  category: DealCategory;
-  discountValue: string;
-  code?: string;
-  targetAudience: "All Users" | "Consumers Only" | "Business Owners" | "Gold & Platinum";
-  liveOnFrontend: boolean;
-  status: "Active" | "Draft" | "Expired";
-  expiryDate: string;
-  claimsCount: number;
-  maxClaims: number;
-  sponsorBusiness: string;
-}
-
 export interface AdminOverview {
   metrics: {
     businessOwners: number;
@@ -357,29 +340,6 @@ export const adminApi = {
     }),
   deletePlan: (id: string) =>
     apiRequest<{ ok: boolean }>(`/admin/plans/${id}`, {
-      method: "DELETE",
-    }),
-
-  rewards: () => apiRequest<RewardDeal[]>("/admin/rewards-deals"),
-  rewardStats: () =>
-    apiRequest<{
-      totalDeals: number;
-      liveOnFrontend: number;
-      totalRedemptions: number;
-      frontendDelivery: string;
-    }>("/admin/rewards-deals/stats"),
-  createReward: (body: Record<string, unknown>) =>
-    apiRequest<RewardDeal>("/admin/rewards-deals", {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
-  updateReward: (id: string, patch: Record<string, unknown>) =>
-    apiRequest<RewardDeal>(`/admin/rewards-deals/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(patch),
-    }),
-  deleteReward: (id: string) =>
-    apiRequest<{ ok: boolean }>(`/admin/rewards-deals/${id}`, {
       method: "DELETE",
     }),
 

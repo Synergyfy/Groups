@@ -36,10 +36,15 @@ import Table, { type TableColumn } from "../../components/ui/Table";
 import Toast from "../../components/ui/Toast";
 import Modal from "../../components/ui/Modal";
 import type { Group, GroupStatus, GroupType, Invitation, PlanVariant } from "../../domain/types";
+import { planDisplayName } from "../../domain/types";
 import { useAppState } from "../../store/selectors";
 import { useAppStore } from "../../store/context";
 import { useAdminData } from "../../admin/AdminDataProvider";
 import { adminApi } from "../../admin/adminApi";
+import type {
+  AdminGeographyBoroughDetail,
+  AdminGeographyResponse,
+} from "../../admin/adminApi";
 import type { AppAction } from "../../store/reducer";
 import { memberCountOf } from "../groups/groupUtils";
 import AdminGroupContributionCard from "./AdminGroupContributionCard";
@@ -554,16 +559,6 @@ function PlatformGroupsTab({
   onUpdateStatus: (g: Group, s: GroupStatus) => void;
 }) {
   const { data } = useAdminData();
-  const ukLocations = [
-    "National (UK-wide)",
-    ...Array.from(
-      new Set(
-        groups
-          .map((group) => group.location?.city)
-          .filter((city): city is string => Boolean(city)),
-      ),
-    ).sort(),
-  ];
   const availablePlans = (data?.plans ?? []).filter(
     (plan) => plan.status === "Active",
   );
@@ -571,11 +566,89 @@ function PlatformGroupsTab({
   const [planName, setPlanName] = useState("");
   const [planVariant, setPlanVariant] = useState<PlanVariant | "*">("Standard");
   const [form, setForm] = useState({
-    name: "", purpose: "", type: "Marketing" as string, location: "National (UK-wide)",
+    name: "", purpose: "", type: "Marketing" as string,
+    city: "", borough: "", highStreet: "", localMall: "",
     sector: "All sectors", joinMethod: "open" as "open" | "request" | "invitation",
     planIds: [] as string[],
     memberLimit: "", startDate: "", endDate: "", status: "draft" as "active" | "draft",
   });
+
+  // The geography hierarchy is owned by Central Hub Solution. It is only
+  // fetched when the create dialog opens, so the groups tab stays cheap.
+  const [geography, setGeography] = useState<AdminGeographyResponse | null>(null);
+  const [geographyLoading, setGeographyLoading] = useState(false);
+  const [geographyError, setGeographyError] = useState<string | null>(null);
+  const [boroughDetail, setBoroughDetail] =
+    useState<AdminGeographyBoroughDetail | null>(null);
+  const [boroughLoading, setBoroughLoading] = useState(false);
+
+  const cityNode = useMemo(
+    () => geography?.cities.find((entry) => entry.name === form.city) ?? null,
+    [geography, form.city],
+  );
+  const boroughNode = useMemo(
+    () => cityNode?.boroughs.find((entry) => entry.name === form.borough) ?? null,
+    [cityNode, form.borough],
+  );
+  const activeBoroughDetail =
+    boroughDetail && boroughDetail.boroughId === boroughNode?.id
+      ? boroughDetail
+      : null;
+  const highStreetOptions = useMemo(
+    () => activeBoroughDetail?.highStreets ?? [],
+    [activeBoroughDetail],
+  );
+  const localMallOptions = useMemo(() => {
+    const detail = activeBoroughDetail;
+    if (!detail) return [];
+    const street = detail.highStreets.find(
+      (entry) => entry.name === form.highStreet,
+    );
+    return street?.localMalls ?? detail.localMalls;
+  }, [activeBoroughDetail, form.highStreet]);
+
+  // The hierarchy is owned by Central Hub Solution, so it is fetched when the
+  // create dialog opens rather than on every render of the groups tab.
+  const loadGeography = async () => {
+    if (geography) return;
+    setGeographyLoading(true);
+    setGeographyError(null);
+    try {
+      setGeography(await adminApi.geography());
+    } catch (cause) {
+      setGeographyError(
+        cause instanceof Error
+          ? cause.message
+          : "Could not load the Central Hub geography",
+      );
+    } finally {
+      setGeographyLoading(false);
+    }
+  };
+
+  const openCreateDialog = () => {
+    setCreateOpen(true);
+    void loadGeography();
+  };
+
+  // High streets and malls belong to one borough, so they load on demand.
+  const selectBorough = (boroughName: string) => {
+    setForm((current) => ({
+      ...current,
+      borough: boroughName,
+      highStreet: "",
+      localMall: "",
+    }));
+    setBoroughDetail(null);
+    const node = cityNode?.boroughs.find((entry) => entry.name === boroughName);
+    if (!node) return;
+    setBoroughLoading(true);
+    adminApi
+      .geographyBorough(node.id)
+      .then((detail) => setBoroughDetail(detail))
+      .catch(() => setBoroughDetail(null))
+      .finally(() => setBoroughLoading(false));
+  };
 
   const planNames = [...new Set(availablePlans.map((plan) => plan.name))];
   const selectedPlanName = planNames.includes(planName)
@@ -638,11 +711,19 @@ function PlatformGroupsTab({
         requiredPlanIds: form.planIds,
         status: form.status === "draft" ? "Pending Review" : "Active",
         requiredSize: form.memberLimit ? Number(form.memberLimit) : undefined,
+        ...(form.city
+          ? {
+              city: form.city,
+              ...(form.borough ? { localArea: form.borough } : {}),
+              ...(form.highStreet ? { highStreet: form.highStreet } : {}),
+              ...(form.localMall ? { localMall: form.localMall } : {}),
+            }
+          : {}),
       },
     });
     setFeedback(`Platform group "${form.name}" created!`);
     setCreateOpen(false);
-    setForm({ name: "", purpose: "", type: "Marketing", location: "National (UK-wide)", sector: "All sectors", joinMethod: "open", planIds: [], memberLimit: "", startDate: "", endDate: "", status: "draft" });
+    setForm({ name: "", purpose: "", type: "Marketing", city: "", borough: "", highStreet: "", localMall: "", sector: "All sectors", joinMethod: "open", planIds: [], memberLimit: "", startDate: "", endDate: "", status: "draft" });
   };
 
   return (
@@ -654,7 +735,7 @@ function PlatformGroupsTab({
               <p className="text-sm font-semibold text-white">Platform Groups</p>
               <p className="text-xs text-slate-400">Admin-created groups discoverable by eligible businesses based on location, sector and other criteria.</p>
             </div>
-            <Button variant="primary" size="sm" onClick={() => setCreateOpen(true)}><Plus className="size-4" /> Create Platform Group</Button>
+            <Button variant="primary" size="sm" onClick={openCreateDialog}><Plus className="size-4" /> Create Platform Group</Button>
           </div>
 
           <div className="rounded-lg border border-sky-500/20 bg-sky-500/5 px-4 py-3">
@@ -672,7 +753,7 @@ function PlatformGroupsTab({
               <Globe className="mx-auto mb-3 size-8 text-slate-600" />
               <p className="text-sm font-medium text-slate-300">No platform groups yet</p>
               <p className="mt-1 text-xs text-slate-500">Create platform-wide groups that eligible businesses can discover and join.</p>
-              <Button variant="primary" size="sm" className="mt-4" onClick={() => setCreateOpen(true)}><Plus className="size-4" /> Create your first platform group</Button>
+              <Button variant="primary" size="sm" className="mt-4" onClick={openCreateDialog}><Plus className="size-4" /> Create your first platform group</Button>
             </div>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -692,7 +773,10 @@ function PlatformGroupsTab({
                     {g.requiredPlanIds && g.requiredPlanIds.length > 0 && (
                       <span
                         title={g.requiredPlanIds
-                          .map((planId) => (data?.plans ?? []).find((plan) => plan.id === planId)?.name ?? "Unknown plan")
+                          .map((planId) => {
+                            const plan = (data?.plans ?? []).find((entry) => entry.id === planId);
+                            return plan ? planDisplayName(plan) : "Unknown plan";
+                          })
                           .join(", ")}
                         className="inline-flex items-center gap-1 rounded-full border border-gold-500/20 bg-gold-500/10 px-2 py-0.5 text-[10px] text-gold-300"
                       >
@@ -739,12 +823,112 @@ function PlatformGroupsTab({
             <div>
               <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Eligibility Targeting</p>
               <div className="grid gap-3 sm:grid-cols-2">
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-xs font-medium text-slate-300">Location</span>
-                  <select value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} className="h-9 rounded-lg border border-white/10 bg-ink-800 px-3 text-xs text-slate-200 focus:border-gold-500/50 focus:outline-none">
-                    {ukLocations.map((l) => <option key={l} value={l}>{l}</option>)}
-                  </select>
-                </label>
+                <div className="flex flex-col gap-3 sm:col-span-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-slate-300">Location</span>
+                    <span className="inline-flex items-center gap-1 text-[10px] text-slate-500">
+                      <MapPin className="size-3" />
+                      Cities, boroughs, high streets and local malls come from Central Hub Solution
+                    </span>
+                  </div>
+                  {geographyError && (
+                    <p className="rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-[11px] text-danger-400">
+                      {geographyError}
+                    </p>
+                  )}
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">City</span>
+                      <select
+                        value={form.city}
+                        disabled={geographyLoading}
+                        onChange={(e) => {
+                          setBoroughDetail(null);
+                          setForm({
+                            ...form,
+                            city: e.target.value,
+                            borough: "",
+                            highStreet: "",
+                            localMall: "",
+                          });
+                        }}
+                        className="h-9 rounded-lg border border-white/10 bg-ink-800 px-3 text-xs text-slate-200 focus:border-gold-500/50 focus:outline-none disabled:opacity-60"
+                      >
+                        <option value="">National (UK-wide)</option>
+                        {(geography?.cities ?? []).map((city) => (
+                          <option key={city.id} value={city.name}>
+                            {city.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">Borough</span>
+                      <select
+                        value={form.borough}
+                        disabled={!cityNode}
+                        onChange={(e) => selectBorough(e.target.value)}
+                        className="h-9 rounded-lg border border-white/10 bg-ink-800 px-3 text-xs text-slate-200 focus:border-gold-500/50 focus:outline-none disabled:opacity-60"
+                      >
+                        <option value="">All boroughs</option>
+                        {(cityNode?.boroughs ?? []).map((borough) => (
+                          <option key={borough.id} value={borough.name}>
+                            {borough.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">High street</span>
+                      <select
+                        value={form.highStreet}
+                        disabled={!boroughNode || boroughLoading}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            highStreet: e.target.value,
+                            localMall: "",
+                          })
+                        }
+                        className="h-9 rounded-lg border border-white/10 bg-ink-800 px-3 text-xs text-slate-200 focus:border-gold-500/50 focus:outline-none disabled:opacity-60"
+                      >
+                        <option value="">All high streets</option>
+                        {highStreetOptions.map((highStreet) => (
+                          <option key={highStreet.id} value={highStreet.name}>
+                            {highStreet.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">Local mall</span>
+                      <select
+                        value={form.localMall}
+                        disabled={!boroughNode || boroughLoading}
+                        onChange={(e) =>
+                          setForm({ ...form, localMall: e.target.value })
+                        }
+                        className="h-9 rounded-lg border border-white/10 bg-ink-800 px-3 text-xs text-slate-200 focus:border-gold-500/50 focus:outline-none disabled:opacity-60"
+                      >
+                        <option value="">All local malls</option>
+                        {localMallOptions.map((mall) => (
+                          <option key={mall.id} value={mall.name}>
+                            {mall.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <p className="text-[10px] leading-relaxed text-slate-500">
+                    {geographyLoading
+                      ? "Loading the Central Hub hierarchy…"
+                      : form.city
+                        ? `Members are matched on ${[form.city, form.borough, form.highStreet, form.localMall]
+                            .filter(Boolean)
+                            .join(" → ")}. Leave a level empty to widen the match.`
+                        : "No city selected — the group is open to every UK business."}
+                  </p>
+                </div>
                 <label className="flex flex-col gap-1.5">
                   <span className="text-xs font-medium text-slate-300">Business Sector</span>
                   <select value={form.sector} onChange={(e) => setForm({ ...form, sector: e.target.value })} className="h-9 rounded-lg border border-white/10 bg-ink-800 px-3 text-xs text-slate-200 focus:border-gold-500/50 focus:outline-none">
@@ -841,10 +1025,10 @@ function PlatformGroupsTab({
                             key={planId}
                             className="inline-flex items-center gap-1 rounded-full border border-gold-500/30 bg-gold-500/10 py-0.5 pl-2 pr-1 text-[10px] text-gold-200"
                           >
-                            {plan?.name ?? "Unknown plan"}
+                            {plan ? planDisplayName(plan) : "Unknown plan"}
                             <button
                               type="button"
-                              aria-label={`Remove ${plan?.name ?? "plan"}`}
+                              aria-label={`Remove ${plan ? planDisplayName(plan) : "plan"}`}
                               onClick={() => removePlan(planId)}
                               className="flex size-4 items-center justify-center rounded-full text-gold-300 hover:bg-gold-500/20 hover:text-white"
                             >

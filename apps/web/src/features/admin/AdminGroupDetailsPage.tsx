@@ -21,6 +21,7 @@ import StatCard from "../../components/ui/StatCard";
 import TipIcon from "../../components/ui/TipIcon";
 import Toast from "../../components/ui/Toast";
 import type { Group } from "../../domain/types";
+import { planDisplayName } from "../../domain/types";
 import { useAppState, useGroup } from "../../store/selectors";
 import { useAdminGroupActivity, useAdminData } from "../../admin/AdminDataProvider";
 import { adminApi } from "../../admin/adminApi";
@@ -72,11 +73,10 @@ export default function AdminGroupDetailsPage() {
   const requiredPlanLabel =
     group?.requiredPlanIds && group.requiredPlanIds.length > 0
       ? group.requiredPlanIds
-          .map(
-            (planId) =>
-              adminData?.plans.find((plan) => plan.id === planId)?.name ??
-              "Unknown plan",
-          )
+          .map((planId) => {
+            const plan = adminData?.plans.find((entry) => entry.id === planId);
+            return plan ? planDisplayName(plan) : "Unknown plan";
+          })
           .join(", ")
       : "All plans";
   if (!group) {
@@ -454,11 +454,10 @@ function GroupSettingsPanel({ group }: { group: Group }) {
   const requiredPlanLabel =
     group.requiredPlanIds && group.requiredPlanIds.length > 0
       ? group.requiredPlanIds
-          .map(
-            (planId) =>
-              adminData?.plans.find((plan) => plan.id === planId)?.name ??
-              "Unknown plan",
-          )
+          .map((planId) => {
+            const plan = adminData?.plans.find((entry) => entry.id === planId);
+            return plan ? planDisplayName(plan) : "Unknown plan";
+          })
           .join(", ")
       : "All plans";
 

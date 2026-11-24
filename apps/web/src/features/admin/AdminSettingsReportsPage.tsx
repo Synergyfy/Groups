@@ -71,17 +71,6 @@ const SIGN_OFF_RULES = [
     link: "/admin/plans",
     linkText: "Review Plans",
   },
-  {
-    id: "rule-5",
-    title: "5. Admin-controlled rewards, deals and campaigns",
-    ruleText:
-      "Admin-controlled rewards, deals and campaigns appear correctly wherever users need them.",
-    status: "Verified",
-    evidence:
-      "Admin controls vouchers, gift cards, coupon deals and cashback incentives in AdminRewardsDealsPage.tsx, with frontend visibility controls delivering offers to /rewards and consumer portals.",
-    link: "/admin/rewards-deals",
-    linkText: "Verify Rewards & Deals",
-  },
 ];
 
 export default function AdminSettingsReportsPage() {
