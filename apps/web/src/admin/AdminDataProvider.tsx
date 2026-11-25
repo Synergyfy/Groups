@@ -32,7 +32,6 @@ import {
   type AdminOverview,
   type AdminSettingsReport,
   type AdminUser,
-  type RewardDeal,
 } from "./adminApi";
 
 export interface AdminData {
@@ -42,7 +41,6 @@ export interface AdminData {
   circles: GroupCircle[];
   accounts: PlatformAccount[];
   plans: Plan[];
-  rewards: RewardDeal[];
   users: AdminUser[];
   overview: AdminOverview | null;
   settingsReport: AdminSettingsReport | null;
@@ -51,12 +49,6 @@ export interface AdminData {
     activePlans: number;
     totalSubscribers: number;
     monthlyRecurringRunRate: number;
-  } | null;
-  rewardStats: {
-    totalDeals: number;
-    liveOnFrontend: number;
-    totalRedemptions: number;
-    frontendDelivery: string;
   } | null;
 }
 
@@ -197,24 +189,20 @@ async function loadAll(): Promise<AdminData> {
     invitations,
     config,
     plans,
-    rewards,
     users,
     overview,
     settingsReport,
     planStats,
-    rewardStats,
     circles,
   ] = await Promise.all([
     adminApi.groups(),
     adminApi.invitations(),
     adminApi.config(),
     adminApi.plans(),
-    adminApi.rewards(),
     adminApi.users(),
     adminApi.overview(),
     adminApi.settingsReport(),
     adminApi.planStats(),
-    adminApi.rewardStats(),
     adminApi.circles(),
   ]);
 
@@ -227,12 +215,10 @@ async function loadAll(): Promise<AdminData> {
       .filter((user) => user.role !== "business" && user.role !== "admin")
       .map(accountFromUser),
     plans,
-    rewards,
     users,
     overview,
     settingsReport,
     planStats,
-    rewardStats,
   };
 }
 
@@ -767,6 +753,8 @@ async function handleAction(
           requiredPlanIds: action.input.requiredPlanIds,
           city: action.input.city,
           localArea: action.input.localArea,
+          highStreet: action.input.highStreet,
+          localMall: action.input.localMall,
           requiredSize: action.input.requiredSize,
           stage: action.input.stage,
           status: action.input.status ?? "Active",

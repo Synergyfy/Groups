@@ -34,7 +34,6 @@ import { GROUP_VISIBILITY_LABELS } from "../../domain/types";
 import { INTERACTION_LEVELS } from "../../domain/constants";
 import {
   useBusinessId,
-  useBusinessProfile,
   useCanCreateGroups,
   useCreationRightsLabel,
   useMandatoryGroupStatuses,
@@ -296,8 +295,7 @@ function CreateGroupWizard({
   const [searchParams, setSearchParams] = useSearchParams();
   const { adminConfig } = useAppState();
   const actorId = useBusinessId();
-  const profile = useBusinessProfile();
-  const { refresh, locations } = useBusinessData();
+  const { refresh, locations, location } = useBusinessData();
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const ownedGroups = useOwnedGroups(actorId);
@@ -352,10 +350,26 @@ function CreateGroupWizard({
   const [type, setType] = useState<UserGroupType | "">(validPreset ? presetCandidate : "");
   const [name, setName] = useState("");
   const [purpose, setPurpose] = useState("");
-  const [city, setCity] = useState(profile?.city ?? "");
-  const [localArea, setLocalArea] = useState(profile?.localArea ?? "");
-  const [highStreet, setHighStreet] = useState("");
-  const [localMall, setLocalMall] = useState("");
+  // A group created by a business inherits that business's Central Hub
+  // location chain — city, borough, high street and local mall — so members
+  // in the same area discover it automatically. Only a city Central Hub knows
+  // is pre-filled: anything else (a placeholder such as "Unspecified", or a
+  // street address) would be rejected when the group is saved.
+  const myLocation = location?.current ?? null;
+  const knownCity = useMemo(
+    () =>
+      myLocation?.city &&
+      (locations?.cities ?? []).some((entry) => entry.name === myLocation.city)
+        ? myLocation.city
+        : "",
+    [myLocation, locations],
+  );
+  const [city, setCity] = useState(knownCity);
+  const [localArea, setLocalArea] = useState(
+    knownCity ? (myLocation?.borough ?? myLocation?.localArea ?? "") : "",
+  );
+  const [highStreet, setHighStreet] = useState(knownCity ? (myLocation?.highStreet ?? "") : "");
+  const [localMall, setLocalMall] = useState(knownCity ? (myLocation?.localMall ?? "") : "");
   const [boroughDetail, setBoroughDetail] =
     useState<GeographyBoroughDetail | null>(null);
   const [accessType, setAccessType] = useState<GroupAccessType>("open");
@@ -684,8 +698,7 @@ function CreateGroupWizard({
                     { value: "", label: "No location (not location-bound)" },
                     ...(locations?.cities ?? []).map((entry) => ({ value: entry.name, label: entry.name })),
                   ]}
-                />
-                <Select
+                />                <Select
                   label="Borough / local area"
                   hint="Narrower than city — helps people in your local area find the group."
                   value={localArea}
@@ -742,11 +755,57 @@ function CreateGroupWizard({
                   options={SIZE_OPTIONS}
                 />
               </div>
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-ink-950/60 px-3 py-2">
+                <p className="text-[11px] text-slate-400">
+                  {knownCity ? (
+                    <>
+                      Attached to your business location:{" "}
+                      <span className="font-semibold text-slate-200">
+                        {[
+                          knownCity,
+                          myLocation?.borough ?? myLocation?.localArea,
+                          myLocation?.highStreet,
+                          myLocation?.localMall,
+                        ]
+                          .filter(Boolean)
+                          .join(" → ")}
+                      </span>
+                    </>
+                  ) : myLocation?.city ? (
+                    <>
+                      Central Hub has not resolved{" "}
+                      <span className="font-semibold text-slate-200">
+                        {myLocation.city}
+                      </span>{" "}
+                      to a city yet. Add a postcode in Central Hub, or pick the city
+                      for this group below.
+                    </>
+                  ) : (
+                    "No business location yet — choose where this group sits."
+                  )}
+                </p>
+                {knownCity && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setCity(knownCity);
+                      setLocalArea(
+                        myLocation?.borough ?? myLocation?.localArea ?? "",
+                      );
+                      setHighStreet(myLocation?.highStreet ?? "");
+                      setLocalMall(myLocation?.localMall ?? "");
+                    }}
+                  >
+                    Use my business location
+                  </Button>
+                )}
+              </div>
               <div className="flex items-start gap-2 rounded-xl border border-white/10 bg-ink-950/60 p-3 text-[11px] leading-relaxed text-slate-500">
                 <Info className="mt-px size-3.5 shrink-0 text-gold-400" />
-                Location is optional — Group ≠ Location. Attach a city and local area only when
-                members should discover this group geographically; the group itself stays a
-                membership container, not a place.
+                Location is optional — Group ≠ Location. Your group starts on your own city,
+                borough, high street and local mall so members nearby find it; adjust any level
+                when the group needs to reach a wider area.
               </div>
               {!stepValid && (
                 <p className="text-[11px] text-warning-400">

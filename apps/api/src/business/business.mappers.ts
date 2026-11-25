@@ -70,6 +70,28 @@ export function mapNetworkContact(contact: NetworkContact) {
   };
 }
 
+/**
+ * A circle inherits the owning business's Central Hub location chain. The
+ * chain is stored on the circle so the workspace can show where the circle
+ * operates without re-resolving the postcode.
+ */
+export function mapCircleLocation(value: unknown) {
+  const location = jsonObject(value);
+  const city = String(location.city ?? "");
+  const borough = String(location.borough ?? location.localArea ?? "");
+  if (!city && !borough) return null;
+  return {
+    city: city || null,
+    borough: borough || null,
+    highStreet: String(location.highStreet ?? "") || null,
+    localMall: String(location.localMall ?? "") || null,
+    cityId: String(location.cityId ?? "") || null,
+    boroughId: String(location.boroughId ?? "") || null,
+    highStreetId: String(location.highStreetId ?? "") || null,
+    localMallId: String(location.localMallId ?? "") || null,
+  };
+}
+
 export function mapCircle(circle: Circle) {
   const config = jsonObject(circle.config);
   return {
@@ -81,6 +103,7 @@ export function mapCircle(circle: Circle) {
       duration: Number(config.duration ?? 90),
       visibility: String(config.visibility ?? "private"),
       interactionLevel: String(config.interactionLevel ?? "message"),
+      location: mapCircleLocation(config.location),
     },
     memberIds: circle.memberIds,
     sourceListIds: circle.sourceListIds,

@@ -892,6 +892,16 @@ async function main() {
     ok(result.data.members.length === 2, "circle detail resolves its members");
     ok(result.data.sourceLists.length === 1, "circle detail resolves its source lists");
     ok(result.data.activity.length >= 1, "circle creation writes activity");
+    eq(
+      circleOne.config?.location?.city,
+      "Birmingham",
+      "a circle inherits the business city",
+    );
+    eq(
+      circleOne.config?.location?.borough,
+      "City Centre",
+      "a circle inherits the business borough",
+    );
 
     result = await api("POST", "/business/circles", {
       token: f.tokenA,

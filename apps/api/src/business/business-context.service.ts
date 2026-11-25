@@ -17,6 +17,7 @@ import type { SessionUser } from "../auth/auth.types.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { fromMinorPence, toMinorPence } from "../common/money.js";
 import { CentralAccessService } from "./central-access.service.js";
+import { BusinessLocationService } from "./business-location.service.js";
 import {
   accessPreferenceFor,
   isLocalSnapshotActive,
@@ -56,6 +57,7 @@ export class BusinessContextService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly centralAccess: CentralAccessService,
+    private readonly location: BusinessLocationService,
   ) {}
 
   async resolve(session: SessionUser): Promise<BusinessContext> {
@@ -74,13 +76,14 @@ export class BusinessContextService {
 
     const config = await this.getConfig();
     const business = await this.findOrCreateBusiness(user);
-    if (
-      business.status === "Suspended" ||
-      business.status === "Closed"
-    ) {
+    // Central Hub owns the location. A business that reached Groups before
+    // its profile was mirrored gets its chain resolved from the postcode, so
+    // it is never filed under a placeholder such as "Unspecified".
+    const located = await this.location.ensureResolved(business);
+    if (located.status === "Suspended" || located.status === "Closed") {
       throw new ForbiddenException({
         code: "BUSINESS_SUSPENDED",
-        message: `This business account is ${business.status.toLowerCase()}. Contact an administrator.`,
+        message: `This business account is ${located.status.toLowerCase()}. Contact an administrator.`,
       });
     }
 
@@ -97,7 +100,7 @@ export class BusinessContextService {
 
     return {
       user,
-      business,
+      business: located,
       plan,
       config,
       partner,

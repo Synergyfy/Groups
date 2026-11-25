@@ -8,7 +8,6 @@ import {
   LayoutDashboard,
   Mail,
   SlidersHorizontal,
-  Tag,
   Users,
 } from "lucide-react";
 import Badge from "../../components/ui/Badge";
@@ -58,15 +57,6 @@ const COMPLETENESS_RULES = [
     status: "verified",
     link: "/admin/plans",
     linkText: "Review Plans",
-  },
-  {
-    id: "rule-5",
-    title: "Admin-controlled rewards, deals & campaigns",
-    description:
-      "Vouchers, gift cards, coupons and incentives are controlled by admin and confirmed available to users on the frontend.",
-    status: "verified",
-    link: "/admin/rewards-deals",
-    linkText: "Rewards & Deals",
   },
 ];
 
@@ -196,12 +186,6 @@ export default function AdminOverviewPage() {
               to="/admin/plans"
               description="Named plans with Standard/Pro/Pro+ variants & renewals."
               icon={<Crown className="size-4 text-gold-400" />}
-            />
-            <ModuleCard
-              title="Rewards & Deals"
-              to="/admin/rewards-deals"
-              description="Vouchers, gift cards, coupons, incentives & frontend visibility."
-              icon={<Tag className="size-4 text-gold-400" />}
             />
             <ModuleCard
               title="Settings & Reports"

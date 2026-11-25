@@ -34,7 +34,6 @@ import AdminLocationsPage from "../features/admin/AdminLocationsPage";
 import AdminUsersPage from "../features/admin/AdminUsersPage";
 import AdminGroupsHubPage from "../features/admin/AdminGroupsHubPage";
 import AdminPlansPage from "../features/admin/AdminPlansPage";
-import AdminRewardsDealsPage from "../features/admin/AdminRewardsDealsPage";
 import AdminSettingsReportsPage from "../features/admin/AdminSettingsReportsPage";
 import AdminGroupsDashboardPage from "../features/admin/AdminGroupsDashboardPage";
 import AdminGroupListPage from "../features/admin/AdminGroupListPage";
@@ -206,10 +205,6 @@ const adminRoutes = [
   {
     path: "plans",
     element: <AdminPlansPage />,
-  },
-  {
-    path: "rewards-deals",
-    element: <AdminRewardsDealsPage />,
   },
   {
     path: "settings-reports",

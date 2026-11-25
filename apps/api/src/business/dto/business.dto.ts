@@ -48,6 +48,8 @@ export class BusinessGroupQueryDto {
   @IsOptional() @IsString() @MaxLength(80) type?: string;
   @IsOptional() @IsString() @MaxLength(80) city?: string;
   @IsOptional() @IsString() @MaxLength(80) localArea?: string;
+  @IsOptional() @IsString() @MaxLength(120) highStreet?: string;
+  @IsOptional() @IsString() @MaxLength(120) localMall?: string;
   @IsOptional() @IsIn(PRICING_MODES) pricing?: string;
   @IsOptional() @IsIn(GROUP_STATUSES) status?: string;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number;
@@ -180,7 +182,11 @@ export class RespondInvitationDto {
 export class CreateNetworkListDto {
   @IsString() @MaxLength(160) name!: string;
   @IsIn(LIST_TYPES) type!: string;
-  @IsIn(GEOGRAPHIES) geography!: string;
+  /**
+   * Optional: the scope is derived from the business's Central Hub location
+   * when the client does not send one.
+   */
+  @IsOptional() @IsIn(GEOGRAPHIES) geography?: string;
   @IsOptional() @IsIn(LIST_STATUSES) status?: string;
   @IsOptional() @IsIn(LIST_SOURCES) source?: string;
 }

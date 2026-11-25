@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowLeft, ArrowRight, Check, Users } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, MapPin, Users } from "lucide-react";
 import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
 import Card, { CardBody, CardTitle } from "../../components/ui/Card";
@@ -22,9 +22,19 @@ const STEPS = [
 
 export default function CircleCreatePage() {
   const navigate = useNavigate();
-  const { networkLists, contacts, refresh } = useBusinessData();
+  const { networkLists, contacts, refresh, location } = useBusinessData();
   const lists = useMemo(() => networkLists?.items ?? [], [networkLists]);
   const [params] = useSearchParams();
+
+  // A circle always belongs to the business that owns it, so it inherits the
+  // business's Central Hub location chain.
+  const myLocation = location?.current ?? null;
+  const locationChain = [
+    myLocation?.city,
+    myLocation?.borough ?? myLocation?.localArea,
+    myLocation?.highStreet,
+    myLocation?.localMall,
+  ].filter(Boolean) as string[];
 
   const [step, setStep] = useState(0);
   const [selected, setSelected] = useState<string[]>(() => {
@@ -365,6 +375,24 @@ export default function CircleCreatePage() {
                 </div>
               </div>
 
+              <div className="rounded-xl border border-white/10 bg-ink-950/60 p-3 text-[11px] leading-relaxed text-slate-400">
+                <p className="flex items-center gap-1.5 font-semibold text-white">
+                  <MapPin className="size-3.5 text-gold-400" /> Location
+                </p>
+                <p className="mt-1">
+                  {locationChain.length > 0 ? (
+                    <>
+                      This circle is attached to your business location:{" "}
+                      <span className="text-slate-200">
+                        {locationChain.join(" → ")}
+                      </span>
+                      . Central Hub resolves it from the postcode on your profile.
+                    </>
+                  ) : (
+                    "No business location yet. Central Hub assigns one from the postcode on your profile."
+                  )}
+                </p>
+              </div>
               <div className="rounded-xl border border-white/10 bg-ink-950/60 p-3 text-[11px] leading-relaxed text-slate-400">
                 <p className="font-semibold text-white">Review</p>
                 <p className="mt-1">

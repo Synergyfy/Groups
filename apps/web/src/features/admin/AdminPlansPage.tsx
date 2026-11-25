@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import {
   Check,
+  ChevronDown,
   Coins,
   Crown,
   Gauge,
@@ -138,6 +139,9 @@ export default function AdminPlansPage() {
   const [selectedPlan, setSelectedPlan] = useState<"All" | string>("All");
   const [selectedVariant, setSelectedVariant] = useState<"All" | PlanVariant>("All");
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [variantsOpen, setVariantsOpen] = useState(false);
+  // Plan names whose variant cards are expanded on the page. Collapsed by default.
+  const [expandedPlans, setExpandedPlans] = useState<string[]>([]);
   const [groupRulesModalOpen, setGroupRulesModalOpen] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [savingRules, setSavingRules] = useState(false);
@@ -189,8 +193,17 @@ export default function AdminPlansPage() {
     };
   };
 
+  const togglePlanVariants = (planName: string) => {
+    setExpandedPlans((current) =>
+      current.includes(planName)
+        ? current.filter((name) => name !== planName)
+        : [...current, planName],
+    );
+  };
+
   const openPlansModal = () => {
     setNewPlanName("");
+    setVariantsOpen(false);
     setDrafts({
       Standard: { ...EMPTY_DRAFT },
       Pro: { ...EMPTY_DRAFT },
@@ -201,6 +214,7 @@ export default function AdminPlansPage() {
 
   const openExistingPlan = (planName: string) => {
     setNewPlanName(planName);
+    setVariantsOpen(true);
     setDrafts(draftsForPlan(planName));
     setCreateModalOpen(true);
   };
@@ -251,6 +265,7 @@ export default function AdminPlansPage() {
       );
     });
     if (missing.length > 0) {
+      setVariantsOpen(true);
       setFeedback(
         `Configure price, group quota and circle quota for ${missing.join(", ")}.`,
       );
@@ -345,12 +360,18 @@ export default function AdminPlansPage() {
     });
   }, [plans, selectedPlan, selectedVariant]);
 
-  // Group filtered plans by plan name
+  // Group filtered plans by plan name (plan names keep API order: newest first)
   const groupedByPlan = useMemo(() => {
     const map = new Map<string, Plan[]>();
     for (const planName of planNames) {
       if (selectedPlan === "All" || selectedPlan === planName) {
-        const matches = filteredPlans.filter((p) => p.name === planName);
+        const matches = filteredPlans
+          .filter((p) => p.name === planName)
+          .sort(
+            (a, b) =>
+              PLAN_VARIANTS_LIST.indexOf(a.variant) -
+              PLAN_VARIANTS_LIST.indexOf(b.variant),
+          );
         if (matches.length > 0) {
           map.set(planName, matches);
         }
@@ -506,6 +527,7 @@ export default function AdminPlansPage() {
           const missingVariants = PLAN_VARIANTS_LIST.filter(
             (variant) => !planVariants.some((plan) => plan.variant === variant),
           );
+          const isExpanded = expandedPlans.includes(planName);
 
           return (
             <div key={planName} className="flex flex-col gap-3">
@@ -540,6 +562,20 @@ export default function AdminPlansPage() {
                       £{planMonthly.toLocaleString("en-GB")}/mo
                     </span>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => togglePlanVariants(planName)}
+                    aria-expanded={isExpanded}
+                    aria-controls={`plan-variants-${planName}`}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-ink-950/60 px-2.5 py-1.5 text-xs font-medium text-slate-200 transition-colors hover:border-gold-500/40 hover:text-white"
+                  >
+                    Variants
+                    <ChevronDown
+                      className={`size-3.5 transition-transform ${
+                        isExpanded ? "rotate-180" : ""
+                      }`}
+                    />
+                  </button>
                   {missingVariants.length > 0 && (
                     <Button
                       variant="outline"
@@ -553,7 +589,11 @@ export default function AdminPlansPage() {
               </div>
 
               {/* Nested Plans Grid (Standard, Pro, Pro+) */}
-              <div className="grid gap-4 md:grid-cols-3">
+              {isExpanded && (
+                <div
+                  id={`plan-variants-${planName}`}
+                  className="grid gap-4 md:grid-cols-3"
+                >
                 {planVariants.map((plan) => {
                   const canCreate = planCanCreateGroups(
                     rules,
@@ -712,7 +752,8 @@ export default function AdminPlansPage() {
                     </Button>
                   </div>
                 ))}
-              </div>
+                </div>
+              )}
             </div>
           );
         })}
@@ -927,184 +968,208 @@ export default function AdminPlansPage() {
               </div>
             </div>
 
-            <div className="grid gap-3 lg:grid-cols-3">
-              {PLAN_VARIANTS_LIST.map((variant) => {
-                const draft = drafts[variant];
-                const exists = plans.some(
-                  (plan) => plan.name === newPlanName.trim() && plan.variant === variant,
-                );
-                return (
-                  <div
-                    key={variant}
-                    className="flex flex-col gap-3 rounded-xl border border-white/10 bg-ink-950/50 p-3"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div>
-                        <p className="text-sm font-bold text-white">
-                          {newPlanName.trim() || "Plan"} {variant}
-                        </p>
-                        <p className="text-[10px] uppercase tracking-wide text-slate-500">
-                          {variant} variant
-                        </p>
-                      </div>
-                      <Badge variant={exists ? "success" : "muted"}>
-                        {exists ? "Existing" : "New"}
-                      </Badge>
-                    </div>
+            <div className="flex flex-col gap-3 rounded-xl border border-white/10 bg-ink-950/40 p-3">
+              <button
+                type="button"
+                onClick={() => setVariantsOpen((open) => !open)}
+                aria-expanded={variantsOpen}
+                aria-controls="plan-variants-panel"
+                className="flex items-center justify-between gap-2 text-left"
+              >
+                <span>
+                  <span className="block text-xs font-semibold text-white">
+                    Plan variants
+                  </span>
+                  <span className="block text-[11px] text-slate-400">
+                    Standard, Pro and Pro+ — click to{" "}
+                    {variantsOpen ? "hide" : "show"} configuration
+                  </span>
+                </span>
+                <ChevronDown
+                  className={`size-4 shrink-0 text-slate-400 transition-transform ${
+                    variantsOpen ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
 
-                    <div className="grid grid-cols-2 gap-2">
-                      <label className="flex flex-col gap-1">
-                        <span className="text-[11px] font-medium text-slate-400">
-                          Price (£)
-                        </span>
-                        <input
-                          type="number"
-                          value={draft.priceMonthly}
-                          onChange={(e) =>
-                            updateDraft(variant, { priceMonthly: e.target.value })
-                          }
-                          min={0}
-                          className="h-9 rounded-lg border border-white/10 bg-ink-800 px-2.5 text-xs text-white focus:outline-none"
-                          required
-                        />
-                      </label>
-
-                      <label className="flex flex-col gap-1">
-                        <span className="text-[11px] font-medium text-slate-400">
-                          Status
-                        </span>
-                        <select
-                          value={draft.status}
-                          onChange={(e) =>
-                            updateDraft(variant, {
-                              status: e.target.value as PlanDraft["status"],
-                            })
-                          }
-                          className="h-9 rounded-lg border border-white/10 bg-ink-800 px-2 text-xs text-slate-200 focus:outline-none"
-                        >
-                          <option value="Active">Active</option>
-                          <option value="Draft">Draft</option>
-                          <option value="Closed">Closed</option>
-                        </select>
-                      </label>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2">
-                      <label className="flex flex-col gap-1">
-                        <span className="text-[11px] font-medium text-slate-400">
-                          Group quota
-                        </span>
-                        <input
-                          type="number"
-                          value={draft.groupQuota}
-                          onChange={(e) =>
-                            updateDraft(variant, { groupQuota: e.target.value })
-                          }
-                          min={0}
-                          className="h-9 rounded-lg border border-white/10 bg-ink-800 px-2.5 text-xs text-white focus:outline-none"
-                          required
-                        />
-                      </label>
-
-                      <label className="flex flex-col gap-1">
-                        <span className="text-[11px] font-medium text-slate-400">
-                          Circle quota
-                        </span>
-                        <input
-                          type="number"
-                          value={draft.circleQuota}
-                          onChange={(e) =>
-                            updateDraft(variant, { circleQuota: e.target.value })
-                          }
-                          min={0}
-                          className="h-9 rounded-lg border border-white/10 bg-ink-800 px-2.5 text-xs text-white focus:outline-none"
-                          required
-                        />
-                      </label>
-                    </div>
-
-                    <label className="flex flex-col gap-1">
-                      <span className="text-[11px] font-medium text-slate-400">
-                        Revenue share (%)
-                      </span>
-                      <input
-                        type="number"
-                        value={draft.revenueSharePercent}
-                        onChange={(e) =>
-                          updateDraft(variant, {
-                            revenueSharePercent: e.target.value,
-                          })
-                        }
-                        min={0}
-                        max={100}
-                        className="h-9 rounded-lg border border-white/10 bg-ink-800 px-2.5 text-xs text-white focus:outline-none"
-                      />
-                    </label>
-
-                    <div className="flex flex-col gap-2 rounded-lg border border-gold-500/20 bg-gold-500/[0.04] p-2.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="flex items-center gap-1.5 text-[11px] font-semibold text-white">
-                          <KeyRound className="size-3.5 text-gold-400" />
-                          Group creation
-                        </span>
-                        <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-slate-300">
+              {variantsOpen && (
+                <div id="plan-variants-panel" className="grid gap-3 lg:grid-cols-3">
+                  {PLAN_VARIANTS_LIST.map((variant) => {
+                    const draft = drafts[variant];
+                    const exists = plans.some(
+                      (plan) => plan.name === newPlanName.trim() && plan.variant === variant,
+                    );
+                    return (
+                      <div
+                        key={variant}
+                        className="flex flex-col gap-3 rounded-xl border border-white/10 bg-ink-950/50 p-3"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-bold text-white">
+                              {newPlanName.trim() || "Plan"} {variant}
+                            </p>
+                            <p className="text-[10px] uppercase tracking-wide text-slate-500">
+                              {variant} variant
+                            </p>
+                          </div>
+                          <Badge variant={exists ? "success" : "muted"}>
+                            {exists ? "Existing" : "New"}
+                          </Badge>
+                        </div>
+    
+                        <div className="grid grid-cols-2 gap-2">
+                          <label className="flex flex-col gap-1">
+                            <span className="text-[11px] font-medium text-slate-400">
+                              Price (£)
+                            </span>
+                            <input
+                              type="number"
+                              value={draft.priceMonthly}
+                              onChange={(e) =>
+                                updateDraft(variant, { priceMonthly: e.target.value })
+                              }
+                              min={0}
+                              className="h-9 rounded-lg border border-white/10 bg-ink-800 px-2.5 text-xs text-white focus:outline-none"
+                            />
+                          </label>
+    
+                          <label className="flex flex-col gap-1">
+                            <span className="text-[11px] font-medium text-slate-400">
+                              Status
+                            </span>
+                            <select
+                              value={draft.status}
+                              onChange={(e) =>
+                                updateDraft(variant, {
+                                  status: e.target.value as PlanDraft["status"],
+                                })
+                              }
+                              className="h-9 rounded-lg border border-white/10 bg-ink-800 px-2 text-xs text-slate-200 focus:outline-none"
+                            >
+                              <option value="Active">Active</option>
+                              <option value="Draft">Draft</option>
+                              <option value="Closed">Closed</option>
+                            </select>
+                          </label>
+                        </div>
+    
+                        <div className="grid grid-cols-2 gap-2">
+                          <label className="flex flex-col gap-1">
+                            <span className="text-[11px] font-medium text-slate-400">
+                              Group quota
+                            </span>
+                            <input
+                              type="number"
+                              value={draft.groupQuota}
+                              onChange={(e) =>
+                                updateDraft(variant, { groupQuota: e.target.value })
+                              }
+                              min={0}
+                              className="h-9 rounded-lg border border-white/10 bg-ink-800 px-2.5 text-xs text-white focus:outline-none"
+                            />
+                          </label>
+    
+                          <label className="flex flex-col gap-1">
+                            <span className="text-[11px] font-medium text-slate-400">
+                              Circle quota
+                            </span>
+                            <input
+                              type="number"
+                              value={draft.circleQuota}
+                              onChange={(e) =>
+                                updateDraft(variant, { circleQuota: e.target.value })
+                              }
+                              min={0}
+                              className="h-9 rounded-lg border border-white/10 bg-ink-800 px-2.5 text-xs text-white focus:outline-none"
+                            />
+                          </label>
+                        </div>
+    
+                        <label className="flex flex-col gap-1">
+                          <span className="text-[11px] font-medium text-slate-400">
+                            Revenue share (%)
+                          </span>
                           <input
-                            type="checkbox"
-                            checked={draft.canCreateGroup}
+                            type="number"
+                            value={draft.revenueSharePercent}
                             onChange={(e) =>
                               updateDraft(variant, {
-                                canCreateGroup: e.target.checked,
+                                revenueSharePercent: e.target.value,
                               })
                             }
-                            className="size-4 accent-gold-500"
+                            min={0}
+                            max={100}
+                            className="h-9 rounded-lg border border-white/10 bg-ink-800 px-2.5 text-xs text-white focus:outline-none"
                           />
-                          May create
+                        </label>
+    
+                        <div className="flex flex-col gap-2 rounded-lg border border-gold-500/20 bg-gold-500/[0.04] p-2.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="flex items-center gap-1.5 text-[11px] font-semibold text-white">
+                              <KeyRound className="size-3.5 text-gold-400" />
+                              Group creation
+                            </span>
+                            <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-slate-300">
+                              <input
+                                type="checkbox"
+                                checked={draft.canCreateGroup}
+                                onChange={(e) =>
+                                  updateDraft(variant, {
+                                    canCreateGroup: e.target.checked,
+                                  })
+                                }
+                                className="size-4 accent-gold-500"
+                              />
+                              May create
+                            </label>
+                          </div>
+    
+                          <label className="flex flex-col gap-1">
+                            <span className="text-[10px] text-slate-400">
+                              Recruitment target (members, 0–50)
+                            </span>
+                            <input
+                              type="number"
+                              min={0}
+                              max={50}
+                              value={draft.recruitmentTarget}
+                              onChange={(e) =>
+                                updateDraft(variant, {
+                                  recruitmentTarget: e.target.value,
+                                })
+                              }
+                              disabled={!draft.canCreateGroup}
+                              className="h-9 rounded-lg border border-white/10 bg-ink-800 px-2.5 text-xs text-white focus:outline-none disabled:opacity-50"
+                            />
+                          </label>
+    
+                          <p className="text-[10px] text-slate-500">
+                            {draft.canCreateGroup
+                              ? "Groups activate after this many members join."
+                              : "This variant joins the platform group instead."}
+                          </p>
+                        </div>
+    
+                        <label className="flex flex-col gap-1">
+                          <span className="text-[11px] font-medium text-slate-400">
+                            Features &amp; entitlements (one per line)
+                          </span>
+                          <textarea
+                            value={draft.featuresText}
+                            onChange={(e) =>
+                              updateDraft(variant, { featuresText: e.target.value })
+                            }
+                            rows={3}
+                            className="rounded-lg border border-white/10 bg-ink-800 p-2.5 text-xs text-white focus:outline-none"
+                            placeholder="Priority group approval&#10;Campaign access"
+                          />
                         </label>
                       </div>
-
-                      <label className="flex flex-col gap-1">
-                        <span className="text-[10px] text-slate-400">
-                          Recruitment target (members, 0–50)
-                        </span>
-                        <input
-                          type="number"
-                          min={0}
-                          max={50}
-                          value={draft.recruitmentTarget}
-                          onChange={(e) =>
-                            updateDraft(variant, {
-                              recruitmentTarget: e.target.value,
-                            })
-                          }
-                          disabled={!draft.canCreateGroup}
-                          className="h-9 rounded-lg border border-white/10 bg-ink-800 px-2.5 text-xs text-white focus:outline-none disabled:opacity-50"
-                        />
-                      </label>
-
-                      <p className="text-[10px] text-slate-500">
-                        {draft.canCreateGroup
-                          ? "Groups activate after this many members join."
-                          : "This variant joins the platform group instead."}
-                      </p>
-                    </div>
-
-                    <label className="flex flex-col gap-1">
-                      <span className="text-[11px] font-medium text-slate-400">
-                        Features &amp; entitlements (one per line)
-                      </span>
-                      <textarea
-                        value={draft.featuresText}
-                        onChange={(e) =>
-                          updateDraft(variant, { featuresText: e.target.value })
-                        }
-                        rows={3}
-                        className="rounded-lg border border-white/10 bg-ink-800 p-2.5 text-xs text-white focus:outline-none"
-                        placeholder="Priority group approval&#10;Campaign access"
-                      />
-                    </label>
-                  </div>
-                );
-              })}
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             <div className="mt-2 flex justify-end gap-2">

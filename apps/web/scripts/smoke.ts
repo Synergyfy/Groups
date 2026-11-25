@@ -536,8 +536,8 @@ const cases: SmokeCase[] = [
   { path: "/business/groups/grp-smith-marketing/settings", expect: "permissions configured by Admin" },
   { path: "/business/groups/grp-smith-marketing/settings", expect: "Visibility" },
 
-  // Spec 29 — explore filters: local area + membership
-  { path: "/business/groups/explore", expect: "All local areas" },
+  // Spec 29 — explore filters: borough + membership
+  { path: "/business/groups/explore", expect: "All boroughs" },
   { path: "/business/groups/explore", expect: "Any membership" },
 
   // Spec 35 — group created confirmation

@@ -36,6 +36,8 @@ export interface NetworkContact {
   consentAt: string;
   addedAt: string;
   addedByName: string;
+  /** Central Hub avatar of the user behind this contact, when there is one. */
+  photoUrl?: string | null;
 }
 
 // Circle types are admin-defined: the name is created on the Circle Type
@@ -48,12 +50,26 @@ export type CampaignDuration = 60 | 90 | 120 | 180 | 270 | 360 | 365;
 
 export type CircleVisibility = "private" | "invite only" | "public";
 
+/** The Central Hub location chain a circle inherits from its business. */
+export interface CircleLocation {
+  city: string | null;
+  borough: string | null;
+  highStreet: string | null;
+  localMall: string | null;
+  cityId: string | null;
+  boroughId: string | null;
+  highStreetId: string | null;
+  localMallId: string | null;
+}
+
 export interface CircleConfig {
   name: string;
   description: string;
   duration: CampaignDuration;
   visibility: CircleVisibility;
   interactionLevel: InteractionLevel;
+  /** Where the circle operates — copied from the owning business's location. */
+  location?: CircleLocation | null;
 }
 
 export type MemberRole = "core" | "peripheral" | "banker" | "partner";
@@ -78,6 +94,11 @@ export const PLAN_VARIANT_ACCESS_DAYS: Record<PlanVariant, number> = {
 
 export function planAccessLabel(variant: PlanVariant): string {
   return variant === "Pro+" ? "1 year" : `${PLAN_VARIANT_ACCESS_DAYS[variant]} days`;
+}
+
+/** Display label for a plan, including its variant (e.g. "Gold Pro"). */
+export function planDisplayName(plan: Pick<Plan, "name" | "variant">): string {
+  return `${plan.name} ${plan.variant}`;
 }
 
 export function accessDaysLabel(days: number): string {

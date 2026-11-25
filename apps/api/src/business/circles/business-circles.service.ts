@@ -18,6 +18,11 @@ import type {
 } from "../business.types.js";
 import { mapCircle, mapCircleActivity } from "../business.mappers.js";
 import {
+  centralHubPhotos,
+  type CentralHubPhotos,
+} from "../business.photos.js";
+import { BusinessMediaService } from "../business.media.js";
+import {
   accessQuotas,
   applicableMandatoryCircles,
 } from "../business.rules.js";
@@ -33,11 +38,24 @@ import type {
 } from "../dto/business.dto.js";
 import { pageParams, pageResult, slicePage } from "../business.utils.js";
 
+/** The Central Hub location chain a circle inherits from its business. */
+type CircleLocation = {
+  city: string | null;
+  borough: string | null;
+  highStreet: string | null;
+  localMall: string | null;
+  cityId: string | null;
+  boroughId: string | null;
+  highStreetId: string | null;
+  localMallId: string | null;
+};
+
 @Injectable()
 export class BusinessCirclesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly context: BusinessContextService,
+    private readonly media: BusinessMediaService,
   ) {}
 
   async list(ctx: BusinessContext, query: BusinessCircleQueryDto) {
@@ -116,15 +134,24 @@ export class BusinessCirclesService {
         })
       : [];
 
+    const photos = await this.memberPhotos(contacts, businesses);
+
     const contactsById = new Map(contacts.map((contact) => [contact.id, contact]));
     const businessesById = new Map(
       businesses.map((business) => [business.id, business]),
     );
     const members = circle.memberIds.map((memberId) => {
       const contact = contactsById.get(memberId);
-      if (contact) return this.memberFromContact(contact);
+      if (contact) {
+        return this.memberFromContact(contact, photos.byContactId.get(contact.id));
+      }
       const business = businessesById.get(memberId);
-      if (business) return this.memberFromBusiness(business);
+      if (business) {
+        return this.memberFromBusiness(
+          business,
+          photos.byBusinessId.get(business.id),
+        );
+      }
       return {
         id: memberId,
         fullName: memberId,
@@ -196,7 +223,7 @@ export class BusinessCirclesService {
       data: {
         businessId: ctx.business.id,
         type: typeConfig.type,
-        config: this.configJson(dto, typeConfig),
+        config: this.configJson(dto, typeConfig, this.businessLocation(ctx)),
         memberIds,
         sourceListIds: sourceLists.map((list) => list.id),
         status: "Active",
@@ -616,13 +643,37 @@ export class BusinessCirclesService {
     });
   }
 
-  private configJson(dto: CreateCircleDto, typeConfig: CircleTypeConfigEntry) {
+  /**
+   * A circle always belongs to the business that owns it, so it inherits the
+   * business's Central Hub location chain: city, borough, high street and
+   * local mall. The chain is mirrored onto the circle so the workspace can
+   * show where the circle operates.
+   */
+  private businessLocation(ctx: BusinessContext): CircleLocation {
+    return {
+      city: ctx.business.city || null,
+      borough: ctx.business.localArea || null,
+      highStreet: ctx.business.highStreet || null,
+      localMall: ctx.business.localMallName || null,
+      cityId: ctx.business.cityId || null,
+      boroughId: ctx.business.boroughId || null,
+      highStreetId: ctx.business.highStreetId || null,
+      localMallId: ctx.business.localMallId || null,
+    };
+  }
+
+  private configJson(
+    dto: CreateCircleDto,
+    typeConfig: CircleTypeConfigEntry,
+    location: CircleLocation,
+  ) {
     return {
       name: dto.config.name.trim(),
       description: dto.config.description?.trim() ?? "",
       duration: dto.config.duration ?? typeConfig.allowedDurations[0] ?? 90,
       visibility: dto.config.visibility ?? "private",
       interactionLevel: dto.config.interactionLevel ?? "message",
+      location,
     } satisfies Prisma.InputJsonObject;
   }
 
@@ -634,6 +685,7 @@ export class BusinessCirclesService {
       duration: Number(config.duration ?? 90),
       visibility: String(config.visibility ?? "private"),
       interactionLevel: String(config.interactionLevel ?? "message"),
+      location: (config.location ?? null) as Prisma.InputJsonValue,
     };
   }
 
@@ -653,7 +705,7 @@ export class BusinessCirclesService {
     return String(config.name ?? circle.type);
   }
 
-  private memberFromContact(contact: NetworkContact) {
+  private memberFromContact(contact: NetworkContact, photoUrl?: string) {
     return {
       id: contact.id,
       fullName: contact.fullName,
@@ -667,20 +719,23 @@ export class BusinessCirclesService {
       confirmation: contact.confirmation,
       joinedAt: contact.createdAt.toISOString(),
       lastActiveAt: contact.updatedAt.toISOString(),
-      photoUrl: undefined,
+      photoUrl: photoUrl ?? null,
     };
   }
 
-  private memberFromBusiness(business: {
-    id: string;
-    name: string;
-    contactName: string;
-    category: string;
-    city: string;
-    tier: string;
-    joinedAt: Date;
-    updatedAt: Date;
-  }) {
+  private memberFromBusiness(
+    business: {
+      id: string;
+      name: string;
+      contactName: string;
+      category: string;
+      city: string;
+      tier: string;
+      joinedAt: Date;
+      updatedAt: Date;
+    },
+    photoUrl?: string,
+  ) {
     return {
       id: business.id,
       fullName: business.contactName,
@@ -694,8 +749,22 @@ export class BusinessCirclesService {
       confirmation: "confirmed",
       joinedAt: business.joinedAt.toISOString(),
       lastActiveAt: business.updatedAt.toISOString(),
-      photoUrl: undefined,
+      photoUrl: photoUrl ?? null,
     };
+  }
+
+  /**
+   * Central Hub owns the member logos, so Groups only mirrors them.
+   *
+   * A business member shows the logo from its Central Hub business profile; a
+   * contact shows the avatar of the Central Hub user behind their email
+   * address. Members without one keep the initials fallback on the client.
+   */
+  private async memberPhotos(
+    contacts: NetworkContact[],
+    businesses: Array<{ id: string }>,
+  ): Promise<CentralHubPhotos> {
+    return centralHubPhotos(this.prisma, this.media, contacts, businesses);
   }
 
   private async audit(

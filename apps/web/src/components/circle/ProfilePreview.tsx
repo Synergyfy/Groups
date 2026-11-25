@@ -31,6 +31,7 @@ export default function ProfilePreview({
         <Avatar
           id={member.id}
           name={member.fullName}
+          src={member.photoUrl}
           className="size-10 shrink-0 rounded-full text-xs font-bold text-white"
         />
         <span className="min-w-0">

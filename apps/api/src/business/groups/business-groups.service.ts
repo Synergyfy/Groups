@@ -390,6 +390,8 @@ export class BusinessGroupsService {
       if (query.type && group.type !== query.type) return false;
       if (query.city && group.city !== query.city) return false;
       if (query.localArea && group.localArea !== query.localArea) return false;
+      if (query.highStreet && group.highStreet !== query.highStreet) return false;
+      if (query.localMall && group.localMallName !== query.localMall) return false;
       if (query.status && group.status !== query.status) return false;
       if (query.pricing && (group.pricing ?? "free") !== query.pricing) {
         return false;
@@ -1828,16 +1830,35 @@ export class BusinessGroupsService {
     if (!config.enabled) return;
 
     const level = automaticNetworkLevel(ctx.business, config.scope);
-    if (!level) return;
+    if (!level) {
+      // No usable location: drop any automatic group the business was put in
+      // before its location was resolved, so no placeholder group survives.
+      await this.removeAutomaticNetworkMembership(ctx.business.id);
+      return;
+    }
 
     const existing = await this.prisma.groupMember.findFirst({
       where: {
         memberId: ctx.business.id,
         group: { source: "automatic", type: "Network" },
       },
-      select: { id: true },
+      select: {
+        id: true,
+        group: { select: { id: true, city: true, localArea: true } },
+      },
     });
-    if (existing) return;
+    if (existing) {
+      // The business keeps its group unless its location moved: an automatic
+      // group is the businesses trading in the same area, so a new location
+      // means a new group.
+      const group = existing.group;
+      const moved =
+        (group.city ?? "") !== (ctx.business.city ?? "") ||
+        (level !== "city" &&
+          (group.localArea ?? "") !== (ctx.business.localArea ?? ""));
+      if (!moved) return;
+      await this.removeAutomaticNetworkMembership(ctx.business.id);
+    }
 
     const threshold = Math.max(1, Number(config.threshold) || 1);
     const baseName = automaticNetworkName(ctx.business, level);
@@ -1939,6 +1960,41 @@ export class BusinessGroupsService {
           message: `${created.name} created and ${ctx.business.name} assigned automatically`,
         },
       });
+    });
+  }
+
+  /**
+   * Removes the business from its automatic network group and deletes the
+   * group when it is left empty. Used when the business has no usable
+   * location, so no placeholder group ("Unspecified Network") survives.
+   */
+  private async removeAutomaticNetworkMembership(
+    businessId: string,
+  ): Promise<void> {
+    const memberships = await this.prisma.groupMember.findMany({
+      where: {
+        memberId: businessId,
+        group: { source: "automatic", type: "Network" },
+      },
+      select: { id: true, groupId: true },
+    });
+    if (!memberships.length) return;
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const membership of memberships) {
+        await tx.groupMember.delete({ where: { id: membership.id } });
+        const memberCount = await tx.groupMember.count({
+          where: { groupId: membership.groupId },
+        });
+        if (memberCount === 0) {
+          await tx.group.delete({ where: { id: membership.groupId } });
+        } else {
+          await tx.group.update({
+            where: { id: membership.groupId },
+            data: { memberCount },
+          });
+        }
+      }
     });
   }
 
@@ -2060,16 +2116,28 @@ export class BusinessGroupsService {
 
 type AutomaticNetworkLevel = "city" | "borough" | "highStreet" | "localMall";
 
+/** Placeholder city values Central Hub uses for an unresolved profile. */
+const UNRESOLVED_CITIES = new Set(["unspecified", "unknown", "n/a", "none", "-"]);
+
 /**
  * The location level an automatic group is built from. The configured scope
  * can narrow it (city / high street / local mall); otherwise businesses are
  * grouped by city + borough ("local area"), which is what the dashboard copy
  * promises. Missing finer levels fall back to the borough.
+ *
+ * A business without a usable location (no city, or a placeholder such as
+ * "Unspecified") gets no automatic group: there is nothing to group it with,
+ * and the group name would end up as "Unspecified Network".
  */
 function automaticNetworkLevel(
   business: Business,
   scope: string,
 ): AutomaticNetworkLevel | null {
+  const city = business.city?.trim();
+  const usableCity =
+    city && !UNRESOLVED_CITIES.has(city.toLowerCase()) ? city : null;
+  if (!usableCity) return null;
+
   const normalized = scope.trim().toLowerCase();
   if (normalized.includes("mall") && business.localMallName) {
     return "localMall";
@@ -2077,12 +2145,11 @@ function automaticNetworkLevel(
   if (normalized.includes("street") && business.highStreet) {
     return "highStreet";
   }
-  if (normalized.includes("city") && business.city) {
+  if (normalized.includes("city")) {
     return "city";
   }
   if (business.localArea) return "borough";
-  if (business.city) return "city";
-  return null;
+  return "city";
 }
 
 function automaticNetworkName(

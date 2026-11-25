@@ -10,15 +10,12 @@ import { toMinorPence } from "../../common/money.js";
 import { AdminAuditService } from "../../admin/admin-audit.service.js";
 import {
   mapPlan,
-  mapRewardDeal,
 } from "../../admin/admin.mappers.js";
 import type {
   AdminListQueryDto,
   CreatePlanDto,
-  CreateRewardDealDto,
   PlanVariantConfigDto,
   UpdatePlanDto,
-  UpdateRewardDealDto,
 } from "../../admin/dto/admin.dto.js";
 
 type PlanVariant = "Standard" | "Pro" | "Pro+";
@@ -37,7 +34,7 @@ export class AdminCatalogService {
   async listPlans(query: AdminListQueryDto) {
     const [plans, subscriptions] = await Promise.all([
       this.prisma.plan.findMany({
-        orderBy: [{ name: "asc" }, { variant: "asc" }],
+        orderBy: [{ createdAt: "desc" }, { name: "asc" }, { variant: "asc" }],
       }),
       this.prisma.businessPlan.findMany({
         select: {
@@ -155,13 +152,17 @@ export class AdminCatalogService {
       throw new BadRequestException("A plan name is required.");
     }
 
-    const existing = await this.prisma.plan.findMany({
-      where: { name },
-      select: { id: true, variant: true },
-    });
+    // One interactive transaction so the three variants and the audit entry all
+    // commit together or roll back together. Each variant is a single upsert on
+    // the unique (name, variant) index — a fixed number of statements, never N+1.
+    const plans = await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.plan.findMany({
+        where: { name },
+        select: { id: true, variant: true },
+      });
 
-    const plans = await this.prisma.$transaction(
-      configs.map(([variant, config]) => {
+      const written = [];
+      for (const [variant, config] of configs) {
         const data = {
           name,
           priceMinor: toMinorPence(config.priceMonthly),
@@ -171,27 +172,35 @@ export class AdminCatalogService {
           revenueSharePercent: config.revenueSharePercent ?? 0,
           features: config.features ?? [],
         };
-        return this.prisma.plan.upsert({
-          where: { name_variant: { name, variant } },
-          create: {
-            id: randomUUID(),
-            variant,
-            ...data,
-          },
-          update: data,
-        });
-      }),
-    );
+        written.push(
+          await tx.plan.upsert({
+            where: { name_variant: { name, variant } },
+            create: {
+              id: randomUUID(),
+              variant,
+              ...data,
+            },
+            update: data,
+          }),
+        );
+      }
 
-    await this.audit.record(actor, {
-      action: "config-updated",
-      targetType: "config",
-      targetId: plans[0]?.id ?? name,
-      targetName: `${name} plans`,
-      detail:
-        existing.length > 0
-          ? "Plan variants configured (Standard, Pro, Pro+)"
-          : "Plan variants created (Standard, Pro, Pro+)",
+      await tx.auditLog.create({
+        data: {
+          action: "config-updated",
+          actorId: actor?.id ?? "system",
+          actorName: actor?.name ?? "System",
+          targetType: "config",
+          targetId: written[0]?.id ?? name,
+          targetName: `${name} plans`,
+          detail:
+            existing.length > 0
+              ? "Plan variants configured (Standard, Pro, Pro+)"
+              : "Plan variants created (Standard, Pro, Pro+)",
+        },
+      });
+
+      return written;
     });
 
     return plans.map(mapPlan);
@@ -249,125 +258,5 @@ export class AdminCatalogService {
     const plan = await this.prisma.plan.findUnique({ where: { id } });
     if (!plan) throw new NotFoundException(`Plan ${id} not found`);
     return plan;
-  }
-
-  // -------------------------------------------------------------------------
-  // Rewards & deals
-  // -------------------------------------------------------------------------
-
-  async listRewards(query: AdminListQueryDto) {
-    const deals = await this.prisma.rewardDeal.findMany({
-      orderBy: { createdAt: "desc" },
-    });
-    const search = query.search?.trim().toLowerCase();
-
-    return deals
-      .filter((deal) => {
-        if (query.category && query.category !== "all" && deal.category !== query.category) {
-          return false;
-        }
-        if (query.status && query.status !== "all" && deal.status !== query.status) {
-          return false;
-        }
-        if (search && !deal.title.toLowerCase().includes(search)) return false;
-        return true;
-      })
-      .map(mapRewardDeal);
-  }
-
-  async getRewardStats() {
-    const [totalDeals, liveOnFrontend, aggregate] = await Promise.all([
-      this.prisma.rewardDeal.count(),
-      this.prisma.rewardDeal.count({ where: { liveOnFrontend: true } }),
-      this.prisma.rewardDeal.aggregate({ _sum: { claimsCount: true } }),
-    ]);
-    return {
-      totalDeals,
-      liveOnFrontend,
-      totalRedemptions: aggregate._sum.claimsCount ?? 0,
-      frontendDelivery: liveOnFrontend > 0 ? "Live" : "Paused",
-    };
-  }
-
-  async createReward(dto: CreateRewardDealDto, actor?: SessionUser) {
-    const deal = await this.prisma.rewardDeal.create({
-      data: {
-        id: randomUUID(),
-        title: dto.title,
-        category: dto.category,
-        discountValue: dto.discountValue,
-        code: dto.code,
-        targetAudience: dto.targetAudience,
-        liveOnFrontend: dto.liveOnFrontend ?? false,
-        status: dto.status ?? "Draft",
-        expiryDate: new Date(dto.expiryDate),
-        claimsCount: dto.claimsCount ?? 0,
-        maxClaims: dto.maxClaims ?? 0,
-        sponsorBusiness: dto.sponsorBusiness ?? "Central Solution Admin",
-      },
-    });
-
-    await this.audit.record(actor, {
-      action: "config-updated",
-      targetType: "config",
-      targetId: deal.id,
-      targetName: deal.title,
-      detail: "Reward or deal created",
-    });
-
-    return mapRewardDeal(deal);
-  }
-
-  async updateReward(
-    id: string,
-    dto: UpdateRewardDealDto,
-    actor?: SessionUser,
-  ) {
-    await this.ensureReward(id);
-    const deal = await this.prisma.rewardDeal.update({
-      where: { id },
-      data: {
-        title: dto.title,
-        category: dto.category,
-        discountValue: dto.discountValue,
-        code: dto.code,
-        targetAudience: dto.targetAudience,
-        liveOnFrontend: dto.liveOnFrontend,
-        status: dto.status,
-        expiryDate: dto.expiryDate ? new Date(dto.expiryDate) : undefined,
-        claimsCount: dto.claimsCount,
-        maxClaims: dto.maxClaims,
-        sponsorBusiness: dto.sponsorBusiness,
-      },
-    });
-
-    await this.audit.record(actor, {
-      action: "config-updated",
-      targetType: "config",
-      targetId: deal.id,
-      targetName: deal.title,
-      detail: "Reward or deal updated",
-    });
-
-    return mapRewardDeal(deal);
-  }
-
-  async removeReward(id: string, actor?: SessionUser) {
-    const deal = await this.ensureReward(id);
-    await this.prisma.rewardDeal.delete({ where: { id } });
-    await this.audit.record(actor, {
-      action: "config-updated",
-      targetType: "config",
-      targetId: id,
-      targetName: deal.title,
-      detail: "Reward or deal deleted",
-    });
-    return { ok: true };
-  }
-
-  private async ensureReward(id: string) {
-    const deal = await this.prisma.rewardDeal.findUnique({ where: { id } });
-    if (!deal) throw new NotFoundException(`Reward deal ${id} not found`);
-    return deal;
   }
 }

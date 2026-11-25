@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Check, Lock, RotateCcw, Search, Send, SlidersHorizontal, Sparkles } from "lucide-react";
+import { Check, Lock, MapPin, RotateCcw, Search, Send, SlidersHorizontal, Sparkles } from "lucide-react";
 import BottomSheet from "../../components/ui/BottomSheet";
 import Button from "../../components/ui/Button";
 import Card, { CardBody, CardTitle } from "../../components/ui/Card";
@@ -14,6 +14,7 @@ import type { Group, GroupAccessType } from "../../domain/types";
 import { errorMessage } from "../../app/api";
 import { useAppState, useBusinessId, useExploreGroups } from "../../store/selectors";
 import { businessApi, useBusinessData, type BusinessGroup } from "../../business/BusinessDataProvider";
+import type { GeographyBoroughDetail } from "../../business/businessApi";
 import GroupListItem from "./GroupListItem";
 
 const ACCESS_INFO: Record<GroupAccessType, { label: string; hint: string }> = {
@@ -31,17 +32,31 @@ export default function ExploreGroupsPage() {
   const actorId = useBusinessId();
   const explore = useExploreGroups(actorId);
   const { adminConfig, invitations } = useAppState();
-  const { refresh } = useBusinessData();
+  const { refresh, location, locations } = useBusinessData();
+
+  // Central Hub resolves the business's postcode into a city, borough, high
+  // street and local mall. That chain is the default lens on this page — but
+  // only once Central Hub has actually resolved it.
+  const myLocation = location?.current ?? null;
+  const myLocationResolved = Boolean(myLocation?.cityId);
+  const myCity = myLocationResolved ? (myLocation?.city ?? "") : "";
+  const myBorough = myLocation?.borough ?? myLocation?.localArea ?? "";
+  const myHighStreet = myLocation?.highStreet ?? "";
+  const myLocalMall = myLocation?.localMall ?? "";
 
   const [query, setQuery] = useState("");
   const [type, setType] = useState("all");
   const [access, setAccess] = useState("all");
   const [status, setStatus] = useState("all");
-  const [city, setCity] = useState("all");
-  const [localArea, setLocalArea] = useState("all");
+  const [city, setCity] = useState(myCity);
+  const [borough, setBorough] = useState("all");
+  const [highStreet, setHighStreet] = useState("all");
+  const [localMall, setLocalMall] = useState("all");
   const [membership, setMembership] = useState("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [boroughDetail, setBoroughDetail] =
+    useState<GeographyBoroughDetail | null>(null);
 
   const pendingRequestIds = useMemo(
     () =>
@@ -83,18 +98,81 @@ export default function ExploreGroupsPage() {
     [explore]
   );
 
-  const localAreaOptions = useMemo(() => {
-    const areas = explore
-      .filter((group) => city === "all" || group.location?.city === city)
-      .map((group) => group.location?.localArea)
-      .filter((area): area is string => Boolean(area));
-    return [
-      { value: "all", label: "All local areas" },
-      ...Array.from(new Set(areas))
-        .sort()
-        .map((area) => ({ value: area, label: area })),
-    ];
-  }, [explore, city]);
+  // The Central Hub hierarchy drives the selectors; groups that carry a
+  // location outside the hierarchy stay reachable through the fallback lists.
+  const cityOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const city of locations?.cities ?? []) names.add(city.name);
+    for (const group of explore) {
+      if (group.location?.city) names.add(group.location.city);
+    }
+    return [...names].sort();
+  }, [locations, explore]);
+
+  // A business whose city is not in the hierarchy (an unresolved postcode)
+  // must not silently filter everything away.
+  const activeCity = cityOptions.includes(city) ? city : "all";
+
+  const cityNode = useMemo(
+    () => locations?.cities.find((entry) => entry.name === activeCity) ?? null,
+    [locations, activeCity],
+  );
+
+  const boroughOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const entry of cityNode?.boroughs ?? []) names.add(entry.name);
+    for (const group of explore) {
+      if (group.location?.city !== activeCity) continue;
+      if (group.location?.localArea) names.add(group.location.localArea);
+    }
+    return [...names].sort();
+  }, [cityNode, activeCity, explore]);
+
+  const boroughNode = useMemo(
+    () => cityNode?.boroughs.find((entry) => entry.name === borough) ?? null,
+    [cityNode, borough],
+  );
+
+  // High streets and malls are loaded per borough — the full UK hierarchy is
+  // several megabytes and must not ride on every dashboard load.
+  const activeBoroughDetail =
+    boroughDetail && boroughDetail.boroughId === boroughNode?.id
+      ? boroughDetail
+      : null;
+
+  const loadBoroughDetail = (boroughName: string) => {
+    setBoroughDetail(null);
+    const node = cityNode?.boroughs.find((entry) => entry.name === boroughName);
+    if (!node) return;
+    businessApi
+      .locationBorough(node.id)
+      .then((detail) => setBoroughDetail(detail))
+      .catch(() => setBoroughDetail(null));
+  };
+
+  const highStreetOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const entry of activeBoroughDetail?.highStreets ?? []) {
+      names.add(entry.name);
+    }
+    for (const group of explore) {
+      if (group.location?.localArea !== borough) continue;
+      if (group.location?.highStreet) names.add(group.location.highStreet);
+    }
+    return [...names].sort();
+  }, [activeBoroughDetail, borough, explore]);
+
+  const localMallOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const entry of activeBoroughDetail?.localMalls ?? []) {
+      names.add(entry.name);
+    }
+    for (const group of explore) {
+      if (group.location?.localArea !== borough) continue;
+      if (group.location?.localMall) names.add(group.location.localMall);
+    }
+    return [...names].sort();
+  }, [activeBoroughDetail, borough, explore]);
 
   const membershipStates = useMemo(() => {
     const map = new Map<string, string>();
@@ -130,18 +208,22 @@ export default function ExploreGroupsPage() {
         if (type !== "all" && group.type !== type) return false;
         if (access !== "all" && group.accessType !== access) return false;
         if (status !== "all" && group.status !== status) return false;
-        if (city !== "all" && group.location?.city !== city) return false;
-        if (localArea !== "all" && group.location?.localArea !== localArea) return false;
+        if (activeCity !== "all" && group.location?.city !== activeCity) return false;
+        if (borough !== "all" && group.location?.localArea !== borough) return false;
+        if (highStreet !== "all" && group.location?.highStreet !== highStreet) return false;
+        if (localMall !== "all" && group.location?.localMall !== localMall) return false;
         if (membership !== "all" && membershipStates.get(group.id) !== membership) return false;
         if (!search) return true;
         return `${group.name} ${group.purpose} ${group.type} ${
           group.location?.city ?? ""
-        } ${group.location?.localArea ?? ""}`
+        } ${group.location?.localArea ?? ""} ${group.location?.highStreet ?? ""} ${
+          group.location?.localMall ?? ""
+        }`
           .toLowerCase()
           .includes(search);
       })
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [explore, query, type, access, status, city, localArea, membership, membershipStates]);
+  }, [explore, query, type, access, status, activeCity, borough, highStreet, localMall, membership, membershipStates]);
 
   const joinPlan = (group: Group) => {
     const apiPlan = (group as BusinessGroup).joinPlan;
@@ -190,9 +272,35 @@ export default function ExploreGroupsPage() {
     setAccess("all");
     setStatus("all");
     setCity("all");
-    setLocalArea("all");
+    setBorough("all");
+    setHighStreet("all");
+    setLocalMall("all");
     setMembership("all");
   };
+
+  /** Re-applies the business's Central Hub location to every level. */
+  const useMyLocation = () => {
+    setCity(myCity || "all");
+    setBorough(myBorough || "all");
+    setHighStreet(myHighStreet || "all");
+    setLocalMall(myLocalMall || "all");
+    if (myBorough) loadBoroughDetail(myBorough);
+  };
+
+  const clearLocation = () => {
+    setCity("all");
+    setBorough("all");
+    setHighStreet("all");
+    setLocalMall("all");
+    setBoroughDetail(null);
+  };
+
+  const activeLocation = [
+    activeCity !== "all" ? activeCity : null,
+    borough !== "all" ? borough : null,
+    highStreet !== "all" ? highStreet : null,
+    localMall !== "all" ? localMall : null,
+  ].filter(Boolean) as string[];
 
   const openCount = filtered.filter((group) => group.accessType === "open").length;
 
@@ -229,25 +337,57 @@ export default function ExploreGroupsPage() {
       />
       <FilterSelect
         label="City"
-        value={city}
+        value={activeCity}
         options={[
           { value: "all", label: "All cities" },
-          ...Array.from(new Set(explore.map((group) => group.location?.city).filter((entry): entry is string => Boolean(entry))))
-            .sort()
-            .map((entry) => ({ value: entry, label: entry })),
+          ...cityOptions.map((entry) => ({ value: entry, label: entry })),
         ]}
         onChange={(value) => {
           setCity(value);
-          setLocalArea("all");
+          setBorough("all");
+          setHighStreet("all");
+          setLocalMall("all");
+          setBoroughDetail(null);
         }}
         tip="Shows only groups based in the selected city."
       />
       <FilterSelect
-        label="Local area"
-        value={localArea}
-        options={localAreaOptions}
-        onChange={setLocalArea}
-        tip="Narrows results to one local area within the selected city."
+        label="Borough"
+        value={borough}
+        options={[
+          { value: "all", label: "All boroughs" },
+          ...boroughOptions.map((entry) => ({ value: entry, label: entry })),
+        ]}
+        onChange={(value) => {
+          setBorough(value);
+          setHighStreet("all");
+          setLocalMall("all");
+          loadBoroughDetail(value);
+        }}
+        tip="Narrows results to one borough within the selected city."
+      />
+      <FilterSelect
+        label="High street"
+        value={highStreet}
+        options={[
+          { value: "all", label: "All high streets" },
+          ...highStreetOptions.map((entry) => ({ value: entry, label: entry })),
+        ]}
+        onChange={(value) => {
+          setHighStreet(value);
+          setLocalMall("all");
+        }}
+        tip="Narrows results to one high street within the selected borough."
+      />
+      <FilterSelect
+        label="Local mall"
+        value={localMall}
+        options={[
+          { value: "all", label: "All local malls" },
+          ...localMallOptions.map((entry) => ({ value: entry, label: entry })),
+        ]}
+        onChange={setLocalMall}
+        tip="Narrows results to one local mall within the selected borough."
       />
       <FilterSelect
         label="Membership"
@@ -266,15 +406,22 @@ export default function ExploreGroupsPage() {
     </>
   );
 
-  const activeFilterCount = [type, access, status, city, localArea, membership].filter(
-    (value) => value !== "all"
-  ).length;
+  const activeFilterCount = [
+    type,
+    access,
+    status,
+    city,
+    borough,
+    highStreet,
+    localMall,
+    membership,
+  ].filter((value) => value !== "all").length;
 
   return (
     <div className="flex flex-col gap-4">
       <SectionHeader
         title="05 — Explore Groups"
-        subtitle="Discover groups you can join — search, filter by type, access rules, status, city, local area and membership state, then join instantly or send a request."
+        subtitle="Discover groups you can join — search, filter by type, access rules, status, city, borough, high street, local mall and membership state, then join instantly or send a request."
         back="/business/groups"
         backLabel="Group Circle"
         actions={
@@ -285,9 +432,56 @@ export default function ExploreGroupsPage() {
       />
 
       <div data-tour="filters" className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-ink-950/60 px-3 py-2">
+          <p className="flex items-center gap-1.5 text-[11px] text-slate-400">
+            <MapPin className="size-3.5 shrink-0 text-gold-400" />
+            {activeLocation.length > 0 ? (
+              <span>
+                Showing groups in{" "}
+                <span className="font-semibold text-slate-200">
+                  {activeLocation.join(" → ")}
+                </span>
+                .
+              </span>
+            ) : myLocationResolved ? (
+              <span>
+                Your location is{" "}
+                <span className="font-semibold text-slate-200">
+                  {[
+                    myCity,
+                    myBorough,
+                    myHighStreet,
+                    myLocalMall,
+                  ]
+                    .filter(Boolean)
+                    .join(" → ")}
+                </span>{" "}
+                — filter by it to see the groups around you.
+              </span>
+            ) : (
+              <span>
+                Central Hub has not resolved your location yet. Add a postcode
+                to your Central Hub profile to see the groups around you.
+              </span>
+            )}
+          </p>
+          <div className="flex items-center gap-2">
+            {myLocationResolved && (
+              <Button variant="outline" size="sm" onClick={useMyLocation}>
+                <MapPin className="size-3.5" /> My location
+              </Button>
+            )}
+            {activeLocation.length > 0 && (
+              <Button variant="ghost" size="sm" onClick={clearLocation}>
+                All UK
+              </Button>
+            )}
+          </div>
+        </div>
+
         <label className="flex flex-col gap-1.5">
           <span className="text-[11px] font-medium text-slate-400">Search groups</span>
-          <FieldHint>Matches group name, purpose, type and city as you type.</FieldHint>
+          <FieldHint>Matches group name, purpose, type and location as you type.</FieldHint>
           <div className="flex h-11 items-center gap-2 rounded-xl border border-white/10 bg-ink-900/70 px-3">
             <Search className="size-4 shrink-0 text-slate-500" />
             <input
@@ -384,7 +578,11 @@ export default function ExploreGroupsPage() {
       ) : filtered.length === 0 ? (
         <EmptyState
           title="No groups match these filters"
-          description="Clear the filters or search for a different name, type or city."
+          description={
+            activeCity !== "all"
+              ? "No groups are pinned to this location yet. Widen the city or clear the location filters to see everything near you."
+              : "Clear the filters or search for a different name, type or city."
+          }
           action={
             <Button variant="outline" size="sm" onClick={resetFilters}>
               Clear filters

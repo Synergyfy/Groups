@@ -92,6 +92,8 @@ export interface NewGroupInput {
   status?: "Active" | "Recruiting" | "Pending Review";
   city?: string;
   localArea?: string;
+  highStreet?: string;
+  localMall?: string;
   requiredSize?: number;
   stage?: string;
   visibility?: GroupVisibility;
@@ -565,8 +567,18 @@ function createGroup(state: AppState, action: Extract<AppAction, { type: "group/
     visibility: action.input.visibility ?? "directory",
     interactionLevel: action.input.interactionLevel ?? "message",
     createdAt: now.slice(0, 10),
-    ...(action.input.city || action.input.localArea
-      ? { location: { city: action.input.city, localArea: action.input.localArea } }
+    ...(action.input.city ||
+    action.input.localArea ||
+    action.input.highStreet ||
+    action.input.localMall
+      ? {
+          location: {
+            city: action.input.city,
+            localArea: action.input.localArea,
+            highStreet: action.input.highStreet,
+            localMall: action.input.localMall,
+          },
+        }
       : {}),
     ...(action.input.requiredSize ? { requiredSize: action.input.requiredSize } : {}),
     ...(action.input.stage ? { stage: action.input.stage } : {}),

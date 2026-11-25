@@ -7,14 +7,17 @@ import {
   Patch,
   Post,
   Query,
+  Res,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import type { Response } from "express";
 import type { SessionUser } from "../../auth/auth.types.js";
 import { CurrentUser } from "../../auth/current-user.decorator.js";
 import { centralProfileConflict } from "../../mcom/central-profile.js";
 import { AllowLockedBusinessAccess } from "../business-access.decorator.js";
 import { BusinessOnly } from "../business-only.decorator.js";
 import { BusinessContextService } from "../business-context.service.js";
+import { BusinessMediaService } from "../business.media.js";
 import {
   ActivatePlanDto,
   BusinessCampaignsQueryDto,
@@ -103,6 +106,7 @@ export class BusinessPlatformController {
   constructor(
     private readonly platform: BusinessPlatformService,
     private readonly context: BusinessContextService,
+    private readonly mediaService: BusinessMediaService,
   ) {}
 
   @Get("directory")
@@ -166,5 +170,19 @@ export class BusinessPlatformController {
   @Get("location")
   async location(@CurrentUser() user: SessionUser) {
     return this.platform.getLocation(await this.context.resolve(user));
+  }
+
+  /**
+   * Proxy for Central Hub member logos. The browser cannot load them
+   * directly — Central Hub serves them privately — so the bytes travel
+   * through this app instead.
+   */
+  @Get("media")
+  async media(@Query("url") url: string, @Res() response: Response) {
+    const media = await this.mediaService.fetch(url);
+    response.setHeader("Content-Type", media.contentType);
+    response.setHeader("Cache-Control", "private, max-age=300");
+    response.setHeader("X-Content-Type-Options", "nosniff");
+    response.send(media.body);
   }
 }
