@@ -134,6 +134,21 @@ export const DEFAULT_CIRCLE_TYPES = [
     requiresBanker: false,
     allowedDurations: [180, 270, 360],
   },
+  {
+    id: "ct-partner",
+    type: "Partner Circle",
+    shortLabel: "Partner",
+    description:
+      "Bring your business partners together in a circle built from your network contacts.",
+    accent: "#38bdf8",
+    accentSoft: "rgba(56, 189, 248, 0.14)",
+    enabled: true,
+    mandatory: false,
+    minMembers: 1,
+    maxMembers: null,
+    requiresBanker: false,
+    allowedDurations: [90, 180, 270, 360],
+  },
 ];
 
 export const DEFAULT_MANDATORY_CIRCLES = [

@@ -11,7 +11,8 @@
     "smoke": "tsx --tsconfig tsconfig.app.json scripts/smoke.ts",
     "test:store": "tsx --tsconfig tsconfig.app.json scripts/store-smoke.ts",
     "test:invitations": "tsx --tsconfig tsconfig.app.json scripts/invitation-access-smoke.ts",
-    "test": "pnpm run test:store && pnpm run test:invitations && pnpm run smoke",
+    "test:rings": "tsx --tsconfig tsconfig.app.json scripts/ring-paging-smoke.tsx",
+    "test": "pnpm run test:store && pnpm run test:invitations && pnpm run test:rings && pnpm run smoke",
     "preview": "vite preview"
   },
   "dependencies": {

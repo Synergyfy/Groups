@@ -280,6 +280,20 @@ export interface BusinessCircle extends GroupCircle {
   typeConfig?: CircleTypeConfigEntry;
 }
 
+/**
+ * What happened to the sign-up invitation that goes out with a new contact.
+ */
+export interface ContactInvitationResult {
+  /** True when the invitation email was accepted by the mail provider. */
+  sent: boolean;
+  /** Why it was skipped, or what went wrong. */
+  reason?: string;
+  /** The address the invitation was addressed to. */
+  email?: string;
+  /** True when the contact already has an account on the platform. */
+  alreadyRegistered: boolean;
+}
+
 export interface CircleMemberView {
   id: string;
   fullName: string;
@@ -769,10 +783,13 @@ export const businessApi = {
       `/business/network/contacts${queryString(params)}`,
     ),
   createContact: (body: Record<string, unknown>) =>
-    apiRequest<NetworkContact>("/business/network/contacts", {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
+    apiRequest<NetworkContact & { invitation?: ContactInvitationResult }>(
+      "/business/network/contacts",
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+      },
+    ),
   confirmContact: (id: string, consent?: boolean) =>
     apiRequest<NetworkContact>(
       `/business/network/contacts/${encodeURIComponent(id)}/confirm`,

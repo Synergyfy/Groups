@@ -494,6 +494,8 @@ model Invitation {
   @@index([groupId])
   @@index([createdAt])
   @@index([groupId, createdAt])
+  @@index([inviteeId])
+  @@index([inviteeEmail])
   @@map("invitations")
 }
 

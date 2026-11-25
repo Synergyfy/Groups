@@ -369,7 +369,7 @@ function normalizeRecruitmentTargets(
   return result;
 }
 
-function normalizeCircleTypes(value: unknown): CircleTypeConfigEntry[] {
+export function normalizeCircleTypes(value: unknown): CircleTypeConfigEntry[] {
   if (!Array.isArray(value) || value.length === 0) {
     return DEFAULT_CIRCLE_TYPES as CircleTypeConfigEntry[];
   }

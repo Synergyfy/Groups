@@ -64,7 +64,34 @@ VITE_MCOM_PROFILE_URL="http://localhost:3000/dashboard/profile"
 WEB_PUBLIC_URL="http://localhost:4088"
 VITE_STRIPE_PUBLISHABLE_KEY="pk_test_..."
 VITE_MCOM_WALLET_TOPUP_URL="http://localhost:3000/dashboard/wallet"
+
+# Transactional email — Resend
+RESEND_API_KEY="re_..."
+SMTP_FROM="Central Hub Solution <no-reply@centralhubsolution.com>"
 ```
+
+### Contact onboarding email
+
+When a business adds a contact whose email is not on the platform yet, the API
+sends an HTML invitation (through Resend) asking the contact to create a
+Central Hub account. The link lands on the Central Hub registration page with
+their name and email pre-filled, and returns them to
+`/consumer/invitations` once they sign in.
+
+When they sign in, the API reconciles the contact record with the profile they
+signed up with (name, category, location, phone), marks the contact as
+confirmed, adds them to every circle built from their network list and claims
+their pending invitations for the new account.
+
+- `RESEND_API_KEY` — required to send mail. Without it the contact is still
+  created and the API logs that the invitation was skipped.
+- `SMTP_FROM` — the sender address. `RESEND_FROM` overrides it when a
+  different Resend domain should be used.
+- `API_PUBLIC_URL` — optional. The API is reached at `WEB_PUBLIC_URL/api` by
+  default; set this when the API is served from another origin.
+
+Run `pnpm --filter @247gbs/api run smoke:contacts` to assert the
+reconciliation behaviour.
 
 ### MCOM Pay
 
