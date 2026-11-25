@@ -1842,9 +1842,23 @@ export class BusinessGroupsService {
         memberId: ctx.business.id,
         group: { source: "automatic", type: "Network" },
       },
-      select: { id: true },
+      select: {
+        id: true,
+        group: { select: { id: true, city: true, localArea: true } },
+      },
     });
-    if (existing) return;
+    if (existing) {
+      // The business keeps its group unless its location moved: an automatic
+      // group is the businesses trading in the same area, so a new location
+      // means a new group.
+      const group = existing.group;
+      const moved =
+        (group.city ?? "") !== (ctx.business.city ?? "") ||
+        (level !== "city" &&
+          (group.localArea ?? "") !== (ctx.business.localArea ?? ""));
+      if (!moved) return;
+      await this.removeAutomaticNetworkMembership(ctx.business.id);
+    }
 
     const threshold = Math.max(1, Number(config.threshold) || 1);
     const baseName = automaticNetworkName(ctx.business, level);

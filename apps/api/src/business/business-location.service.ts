@@ -64,7 +64,11 @@ export class BusinessLocationService {
     if (this.hasResolvedLocation(business)) {
       // Already canonical — only the groups may still carry a placeholder.
       await this.normaliseOwnedGroups(business);
-      return business;
+      // A chain that was resolved before the hierarchy was known may not hang
+      // together (a borough under the wrong city). Repair it once.
+      const repaired = await this.repairChain(business);
+      if (repaired) await this.normaliseOwnedGroups(repaired);
+      return repaired ?? business;
     }
 
     try {
@@ -236,7 +240,154 @@ export class BusinessLocationService {
     if (!postcode) return null;
     const chain = await this.postcode.resolve(postcode);
     if (!chain?.cityId) return null;
-    return { ...chain, postcode };
+    const reconciled = await this.reconcileWithHierarchy(chain);
+    return { ...reconciled, postcode };
+  }
+
+  /**
+   * Repair a stored chain whose levels do not hang together.
+   *
+   * Returns the updated business, or null when the chain is already
+   * consistent and nothing needs to change.
+   */
+  private async repairChain(business: Business): Promise<Business | null> {
+    const snapshot = await this.geography.getSnapshotOrNull();
+    if (!snapshot) return null;
+
+    const city = snapshot.cities.find((entry) => entry.id === business.cityId);
+    const borough = business.boroughId
+      ? snapshot.boroughs.find((entry) => entry.id === business.boroughId)
+      : null;
+    const street = business.highStreetId
+      ? snapshot.highStreets.find((entry) => entry.id === business.highStreetId)
+      : null;
+    const mall = business.localMallId
+      ? snapshot.localMalls.find((entry) => entry.id === business.localMallId)
+      : null;
+
+    const consistent =
+      (!borough || !city || borough.cityId === city.id) &&
+      (!street || !borough || street.boroughId === borough.id) &&
+      (!mall || !street || mall.highStreetId === street.id);
+    if (consistent) return null;
+
+    const reconciled = await this.reconcileWithHierarchy({
+      cityId: business.cityId,
+      city: business.city,
+      boroughId: business.boroughId,
+      borough: business.localArea,
+      highStreetId: business.highStreetId,
+      highStreet: business.highStreet,
+      localMallId: business.localMallId,
+      localMall: business.localMallName,
+    });
+
+    this.logger.log(
+      `Repaired the location chain for ${business.name}: ${[
+        reconciled.city,
+        reconciled.borough,
+        reconciled.highStreet,
+        reconciled.localMall,
+      ]
+        .filter(Boolean)
+        .join(" → ")}`,
+    );
+
+    return this.prisma.business.update({
+      where: { id: business.id },
+      data: {
+        city: reconciled.city ?? business.city,
+        localArea: reconciled.borough ?? business.localArea,
+        highStreet: reconciled.highStreet ?? business.highStreet,
+        localMallName: reconciled.localMall ?? business.localMallName,
+        cityId: reconciled.cityId ?? business.cityId,
+        boroughId: reconciled.boroughId ?? business.boroughId,
+        highStreetId: reconciled.highStreetId ?? business.highStreetId,
+        localMallId: reconciled.localMallId ?? business.localMallId,
+      },
+    });
+  }
+
+  /**
+   * Make a chain consistent with the hierarchy.
+   *
+   * The postcode lookup resolves each level on its own, so it can answer with
+   * a borough that belongs to a different city (or a mall that sits on another
+   * street). The deepest level is the anchor: its parents are taken from the
+   * hierarchy, so the stored chain always hangs together.
+   */  private async reconcileWithHierarchy(
+    chain: PostcodeChain,
+  ): Promise<PostcodeChain> {
+    const snapshot = await this.geography.getSnapshotOrNull();
+    if (!snapshot) return chain;
+
+    const city = (id: string | null) =>
+      snapshot.cities.find((entry) => entry.id === id) ?? null;
+    const borough = (id: string | null) =>
+      snapshot.boroughs.find((entry) => entry.id === id) ?? null;
+    const highStreet = (id: string | null) =>
+      snapshot.highStreets.find((entry) => entry.id === id) ?? null;
+
+    const mall = chain.localMallId
+      ? snapshot.localMalls.find((entry) => entry.id === chain.localMallId)
+      : snapshot.localMalls.find((entry) => entry.name === chain.localMall);
+
+    if (mall) {
+      const street = highStreet(mall.highStreetId);
+      const district = borough(mall.boroughId);
+      // The city comes from the borough, not from the mall: a mall can point
+      // at a wider "city" (a region) while its borough sits in a narrower one.
+      const place = city(district?.cityId ?? mall.cityId);
+      return {
+        cityId: place?.id ?? chain.cityId,
+        city: place?.name ?? chain.city,
+        boroughId: district?.id ?? chain.boroughId,
+        borough: district?.name ?? chain.borough,
+        highStreetId: street?.id ?? chain.highStreetId,
+        highStreet: street?.name ?? chain.highStreet,
+        localMallId: mall.id,
+        localMall: mall.name,
+      };
+    }
+
+    const street = chain.highStreetId
+      ? highStreet(chain.highStreetId)
+      : snapshot.highStreets.find((entry) => entry.name === chain.highStreet);
+
+    if (street) {
+      const district = borough(street.boroughId);
+      const place = city(district?.cityId ?? street.cityId);
+      return {
+        cityId: place?.id ?? chain.cityId,
+        city: place?.name ?? chain.city,
+        boroughId: district?.id ?? chain.boroughId,
+        borough: district?.name ?? chain.borough,
+        highStreetId: street.id,
+        highStreet: street.name,
+        localMallId: chain.localMallId,
+        localMall: chain.localMall,
+      };
+    }
+
+    const district = chain.boroughId
+      ? borough(chain.boroughId)
+      : snapshot.boroughs.find((entry) => entry.name === chain.borough);
+
+    if (district) {
+      const place = city(district.cityId);
+      return {
+        cityId: place?.id ?? chain.cityId,
+        city: place?.name ?? chain.city,
+        boroughId: district.id,
+        borough: district.name,
+        highStreetId: chain.highStreetId,
+        highStreet: chain.highStreet,
+        localMallId: chain.localMallId,
+        localMall: chain.localMall,
+      };
+    }
+
+    return chain;
   }
 
   /** The postcode of a business, wherever it was recorded. */
