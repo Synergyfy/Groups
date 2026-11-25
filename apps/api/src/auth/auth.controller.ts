@@ -24,6 +24,17 @@ import { JwtAuthGuard } from "./jwt-auth.guard.js";
 const OAUTH_COOKIE = "mcom_oauth";
 const OAUTH_COOKIE_TTL_MS = 10 * 60 * 1000;
 
+/**
+ * The account types a visitor can sign up for from this app. Each one has a
+ * matching registration page on Central Hub Solution.
+ */
+export type RegisterAccountType = "business" | "customer";
+
+const REGISTER_TARGET_PATHS: Record<RegisterAccountType, string> = {
+  business: "/getstarted/business",
+  customer: "/register/customer",
+};
+
 interface OauthStateCookie {
   state: string;
   next: string | null;
@@ -57,10 +68,14 @@ export class AuthController {
 
   @Get("mcom/register")
   mcomRegister(
+    @Query("type") type: string | undefined,
     @Query("next") next: string | undefined,
+    @Query("email") email: string | undefined,
+    @Query("name") name: string | undefined,
     @Res() response: Response,
   ) {
     const state = randomBytes(32).toString("hex");
+    const accountType = normalizeRegisterType(type);
     const cookie: OauthStateCookie = {
       state,
       next: normalizeNext(next),
@@ -82,10 +97,24 @@ export class AuthController {
         "profile email business membership packages",
       ),
       state,
+      role: accountType,
     });
 
+    // Pre-fill the registration form with what the inviting business already
+    // knows, so the person only has to confirm their details.
+    const prefilledEmail = email?.trim();
+    if (prefilledEmail) {
+      params.set("email", prefilledEmail);
+    }
+    const prefilledName = name?.trim();
+    if (prefilledName) {
+      params.set("name", prefilledName);
+    }
+
+    // Business sign-ups continue on the Central Hub business onboarding flow,
+    // customer sign-ups on the Central Hub customer registration flow.
     return response.redirect(
-      `${frontendUrl}/getstarted/business?${params.toString()}`,
+      `${frontendUrl}${REGISTER_TARGET_PATHS[accountType]}?${params.toString()}`,
     );
   }
 
@@ -187,6 +216,25 @@ function normalizeNext(next?: string): string | null {
   }
 
   return next.startsWith("/") && !next.startsWith("//") ? next : null;
+}
+
+/**
+ * Map the account type requested by the visitor to the Central Hub Solution
+ * registration page that serves it. Unknown values fall back to business so
+ * the historic single-button sign-up keeps working.
+ */
+function normalizeRegisterType(type?: string): RegisterAccountType {
+  const normalized = (type ?? "").trim().toLowerCase();
+
+  if (
+    normalized === "customer" ||
+    normalized === "consumer" ||
+    normalized === "client"
+  ) {
+    return "customer";
+  }
+
+  return "business";
 }
 
 function parseOauthCookie(raw: unknown): OauthStateCookie | null {

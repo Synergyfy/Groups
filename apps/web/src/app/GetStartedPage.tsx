@@ -8,7 +8,39 @@ import {
   Sparkles,
   User,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import ChsLogo from "../components/ui/ChsLogo";
+import { authApi } from "./api";
+
+type AccountType = "business" | "customer";
+
+interface AccountOption {
+  id: AccountType;
+  title: string;
+  description: string;
+  icon: LucideIcon;
+  /** Where the visitor lands inside this app once Central Hub signs them in. */
+  destination: string;
+}
+
+const ACCOUNT_OPTIONS: AccountOption[] = [
+  {
+    id: "business",
+    title: "Sign up as a Business",
+    description:
+      "Register your company, invite your team and run your groups & circles.",
+    icon: Briefcase,
+    destination: "/business/groups",
+  },
+  {
+    id: "customer",
+    title: "Sign up as a Customer",
+    description:
+      "Create a personal account to join circles, communities and local groups.",
+    icon: User,
+    destination: "/consumer",
+  },
+];
 
 const BENEFITS = [
   "Central Hub Solution manages identity verification, billing and privacy compliance",
@@ -23,10 +55,15 @@ export default function GetStartedPage() {
 
   const [searchParams] = useSearchParams();
   const invitationId = searchParams.get("invitationId");
-  const next = invitationId
-    ? `/business/invitations`
-    : "/business/groups";
-  const registerHref = `/api/auth/mcom/register?next=${encodeURIComponent(next)}`;
+
+  const registerHref = (option: AccountOption) => {
+    const next =
+      option.id === "business" && invitationId
+        ? "/business/invitations"
+        : option.destination;
+    return authApi.mcomRegisterUrl(option.id, next);
+  };
+
   const loginHref = invitationId
     ? `/login?invitationId=${encodeURIComponent(invitationId)}`
     : "/login";
@@ -47,9 +84,9 @@ export default function GetStartedPage() {
               Create your Central Hub account
             </h1>
             <p className="mt-2 text-xs leading-relaxed text-slate-300">
-              Registration is completed on MCOM Solutions Central Hub. Groups &amp;
-              Circles never stores a separate password for business or consumer
-              accounts.
+              Choose how you want to join. Registration is completed on MCOM
+              Solutions Central Hub, and Groups &amp; Circles never stores a
+              separate password for business or consumer accounts.
             </p>
           </div>
 
@@ -70,13 +107,35 @@ export default function GetStartedPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-2 rounded-xl border border-white/10 bg-ink-950/70 p-1.5">
-            <div className="flex items-center justify-center gap-2 rounded-lg py-2.5 text-xs font-semibold text-gold-300">
-              <User className="size-4" /> Consumer
-            </div>
-            <div className="flex items-center justify-center gap-2 rounded-lg py-2.5 text-xs font-semibold text-gold-300">
-              <Briefcase className="size-4" /> Business Owner
-            </div>
+          <div className="flex flex-col gap-3">
+            <p className="text-center text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+              How would you like to sign up?
+            </p>
+
+            {ACCOUNT_OPTIONS.map((option) => {
+              const Icon = option.icon;
+              return (
+                <a
+                  key={option.id}
+                  id={`btn-signup-${option.id}-chs`}
+                  href={registerHref(option)}
+                  className="group flex items-start gap-3 rounded-xl border border-white/10 bg-ink-950/70 p-4 text-left transition-all hover:border-gold-500/60 hover:bg-gold-500/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-500"
+                >
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-gold-500/15 text-gold-300 transition-colors group-hover:bg-gold-500/25">
+                    <Icon className="size-5" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold text-white">
+                      {option.title}
+                    </span>
+                    <span className="mt-0.5 block text-[11px] leading-relaxed text-slate-400">
+                      {option.description}
+                    </span>
+                  </span>
+                  <ArrowRight className="mt-2 size-4 shrink-0 text-gold-400 transition-transform group-hover:translate-x-0.5" />
+                </a>
+              );
+            })}
           </div>
 
           <ul className="flex flex-col gap-1.5 text-[11px] text-slate-400">
@@ -88,27 +147,16 @@ export default function GetStartedPage() {
             ))}
           </ul>
 
-          <div className="flex flex-col gap-3">
-            <a
-              href={registerHref}
-              id="btn-signup-chs"
-              className="group relative flex w-full items-center justify-center gap-2.5 rounded-xl bg-gradient-to-r from-gold-500 via-amber-400 to-gold-500 py-3 text-center text-sm font-bold text-ink-950 shadow-lg shadow-gold-500/20 transition-all hover:brightness-105 active:scale-[0.98]"
+          <div className="text-center">
+            <span className="text-xs text-slate-400">
+              Already have an account?{" "}
+            </span>
+            <Link
+              to={loginHref}
+              className="text-xs font-semibold text-gold-400 hover:text-gold-300 hover:underline"
             >
-              <span>Continue to Central Hub registration</span>
-              <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
-            </a>
-
-            <div className="text-center">
-              <span className="text-xs text-slate-400">
-                Already have an account?{" "}
-              </span>
-              <Link
-                to={loginHref}
-                className="text-xs font-semibold text-gold-400 hover:text-gold-300 hover:underline"
-              >
-                Sign in with Central Hub
-              </Link>
-            </div>
+              Sign in with Central Hub
+            </Link>
           </div>
         </div>
       </div>

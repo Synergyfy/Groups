@@ -13,6 +13,8 @@ import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
 import Card, { CardBody } from "../../components/ui/Card";
 import ChsLogo from "../../components/ui/ChsLogo";
+import RingOverflowNode from "../../components/circle/RingOverflowNode";
+import { useRingPager } from "../../components/circle/ringPaging";
 import { readAuthSession } from "../../app/authSession";
 import { useAppState } from "../../store/selectors";
 import { memberCountOf } from "./groupUtils";
@@ -89,7 +91,7 @@ export default function CentralCirclePage() {
   }, [state.groups, activeUser]);
 
   // Assemble orbital nodes
-  const nodes: CentralNode[] = useMemo(() => {
+  const orbitalNodes: Omit<CentralNode, "x" | "y">[] = useMemo(() => {
     const list: Omit<CentralNode, "x" | "y">[] = [];
 
     // Joined groups (Emerald)
@@ -122,11 +124,21 @@ export default function CentralCirclePage() {
       }
     });
 
+    return list;
+  }, [myJoinedGroups, pendingInvites, recommendedGroups, state.groups]);
+
+  // A ring only holds so many nodes — the rest fold behind a "+N" node.
+  const nodePager = useRingPager(orbitalNodes);
+  const nodeSlots =
+    nodePager.visible.length + (nodePager.hasOverflow ? 1 : 0);
+
+  const nodes: CentralNode[] = useMemo(() => {
+    const visible = nodePager.visible;
     // Place symmetrically along an orbital ring (radius 38%)
-    const count = list.length;
+    const count = nodeSlots;
     const radius = 38;
 
-    return list.map((item, i) => {
+    return visible.map((item, i) => {
       const angle = ((360 / Math.max(count, 1)) * i - 90) * (Math.PI / 180);
       return {
         ...item,
@@ -134,7 +146,13 @@ export default function CentralCirclePage() {
         y: 50 + radius * Math.sin(angle),
       };
     });
-  }, [myJoinedGroups, pendingInvites, recommendedGroups, state.groups]);
+  }, [nodePager.visible, nodeSlots]);
+
+  const overflowAngle =
+    ((360 / Math.max(nodeSlots, 1)) * nodePager.visible.length - 90) *
+    (Math.PI / 180);
+  const overflowX = 50 + 38 * Math.cos(overflowAngle);
+  const overflowY = 50 + 38 * Math.sin(overflowAngle);
 
   return (
     <div className="min-h-screen bg-ink-950 text-slate-100 pb-16">
@@ -270,6 +288,23 @@ export default function CentralCirclePage() {
               </div>
             );
           })}
+
+          {/* OVERFLOW NODE — connections folded behind the ring */}
+          {nodePager.hasOverflow && (
+            <RingOverflowNode
+              count={nodePager.hiddenCount}
+              x={overflowX}
+              y={overflowY}
+              size={36}
+              expanded={nodePager.showingOverflow}
+              label={
+                nodePager.showingOverflow
+                  ? `Show the first ${nodePager.firstSliceSize} groups again`
+                  : `Show ${nodePager.hiddenCount} more group${nodePager.hiddenCount === 1 ? "" : "s"}`
+              }
+              onToggle={nodePager.next}
+            />
+          )}
         </div>
 
         {/* Selected Node Inspector Card */}

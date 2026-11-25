@@ -4,6 +4,8 @@ import type { Group } from "../../domain/types";
 import { CURRENT_BUSINESS, findDirectoryEntry } from "../../data/businessData";
 import Avatar from "../../components/ui/Avatar";
 import NodePopover from "../../components/ui/NodePopover";
+import RingOverflowNode from "../../components/circle/RingOverflowNode";
+import { useRingPager } from "../../components/circle/ringPaging";
 import { contributionLabel } from "./groupUtils";
 
 interface CircleMember {
@@ -35,36 +37,30 @@ function ringPositions(count: number, radiusPercent: number) {
   });
 }
 
-function fitMembers(count: number, width: number) {
+/**
+ * Picks the largest node size that still fits the requested number of nodes
+ * on both rings without them overlapping.
+ */
+function fitNodeSize(innerCount: number, outerCount: number, width: number) {
   const rIn = (INNER_RADIUS / 100) * width;
   const rOut = (OUTER_RADIUS / 100) * width;
   const radialGap = ((OUTER_RADIUS - INNER_RADIUS) / 100) * width;
   const capacity = (r: number, s: number) =>
     Math.max(1, Math.floor((2 * Math.PI * r) / (s + NODE_GAP)));
 
-  let size = MIN_SIZE;
-  let takeIn = Math.min(count, capacity(rIn, MIN_SIZE));
-  let takeOut = Math.min(count - takeIn, capacity(rOut, MIN_SIZE));
+  const centerFit = 2 * (rIn - CENTER_HALF - 4);
+  const ringFit = radialGap - 4;
+  const maxSize = Math.min(MAX_SIZE, centerFit, ringFit);
 
-  for (let candidate = MAX_SIZE; candidate >= MIN_SIZE; candidate -= 2) {
-    const centerFit = 2 * (rIn - CENTER_HALF - 4);
-    const ringFit = radialGap - 4;
-    if (candidate > centerFit || candidate > ringFit) continue;
-    const innerCap = capacity(rIn, candidate);
-    const outerCap = capacity(rOut, candidate);
-    const wantIn = count <= 4 ? count : Math.ceil(count / 2);
-    size = candidate;
-    takeIn = Math.min(wantIn, innerCap);
-    takeOut = Math.min(count - takeIn, outerCap);
-    if (takeIn + takeOut >= count) break;
+  for (let candidate = Math.floor(maxSize); candidate >= MIN_SIZE; candidate -= 2) {
+    if (
+      capacity(rIn, candidate) >= innerCount &&
+      capacity(rOut, candidate) >= outerCount
+    ) {
+      return candidate;
+    }
   }
-
-  return {
-    size,
-    innerCount: takeIn,
-    outerCount: takeOut,
-    overflow: count - takeIn - takeOut,
-  };
+  return MIN_SIZE;
 }
 
 function fontClassFor(size: number) {
@@ -136,15 +132,31 @@ export default function GroupCircleView({
 
   const effectiveWidth = width > 0 ? width : FALLBACK_WIDTH;
   const satellites = useMemo(() => members.filter((member) => !member.owner), [members]);
-  const fit = useMemo(
-    () => fitMembers(satellites.length, effectiveWidth),
-    [satellites.length, effectiveWidth]
+  // The split between both rings stays fixed so paging never moves a member
+  // from one ring to the other.
+  const innerTotal =
+    satellites.length <= 4 ? satellites.length : Math.ceil(satellites.length / 2);
+  const innerMembers = useMemo(
+    () => satellites.slice(0, innerTotal),
+    [satellites, innerTotal]
+  );
+  const outerMembers = useMemo(
+    () => satellites.slice(innerTotal),
+    [satellites, innerTotal]
+  );
+  const innerPager = useRingPager(innerMembers);
+  const outerPager = useRingPager(outerMembers);
+  const inner = innerPager.visible;
+  const outer = outerPager.visible;
+  const size = useMemo(
+    () => fitNodeSize(inner.length, outer.length, effectiveWidth),
+    [inner.length, outer.length, effectiveWidth]
   );
 
-  const inner = satellites.slice(0, fit.innerCount);
-  const outer = satellites.slice(fit.innerCount, fit.innerCount + fit.outerCount);
-  const innerPositions = ringPositions(Math.max(inner.length, 1), INNER_RADIUS);
-  const outerPositions = ringPositions(Math.max(outer.length, 1), OUTER_RADIUS);
+  const innerSlots = inner.length + (innerPager.hasOverflow ? 1 : 0);
+  const outerSlots = outer.length + (outerPager.hasOverflow ? 1 : 0);
+  const innerPositions = ringPositions(Math.max(innerSlots, 1), INNER_RADIUS);
+  const outerPositions = ringPositions(Math.max(outerSlots, 1), OUTER_RADIUS);
   const total = members.length;
   const onlineCount = members.filter((member) => member.online).length;
   const selectedId =
@@ -280,7 +292,7 @@ export default function GroupCircleView({
               member={member}
               x={pos.x}
               y={pos.y}
-              size={fit.size}
+              size={size}
               index={i}
               open={selectedId === member.id}
               anyOpen={selectedId !== null}
@@ -297,7 +309,7 @@ export default function GroupCircleView({
               member={member}
               x={pos.x}
               y={pos.y}
-              size={fit.size}
+              size={size}
               index={i + 7}
               open={selectedId === member.id}
               anyOpen={selectedId !== null}
@@ -306,19 +318,36 @@ export default function GroupCircleView({
           );
         })}
 
-        {fit.overflow > 0 && (
-          <div
-            className="absolute z-10 -translate-x-1/2 -translate-y-1/2"
-            style={{
-              left: `${outerPositions[outer.length]?.x ?? 50}%`,
-              top: `${outerPositions[outer.length]?.y ?? 50}%`,
-            }}
-            title={`${fit.overflow} more member${fit.overflow === 1 ? "" : "s"} beyond the displayed ring`}
-          >
-            <div className="flex size-9 items-center justify-center rounded-full border border-dashed border-white/30 bg-ink-800 text-[10px] font-semibold text-slate-300">
-              +{fit.overflow}
-            </div>
-          </div>
+        {innerPager.hasOverflow && (
+          <RingOverflowNode
+            count={innerPager.hiddenCount}
+            x={innerPositions[inner.length]?.x ?? 50}
+            y={innerPositions[inner.length]?.y ?? 50}
+            size={36}
+            expanded={innerPager.showingOverflow}
+            label={
+              innerPager.showingOverflow
+                ? `Show the first ${innerPager.firstSliceSize} inner ring members again`
+                : `Show ${innerPager.hiddenCount} more inner ring member${innerPager.hiddenCount === 1 ? "" : "s"}`
+            }
+            onToggle={innerPager.next}
+          />
+        )}
+
+        {outerPager.hasOverflow && (
+          <RingOverflowNode
+            count={outerPager.hiddenCount}
+            x={outerPositions[outer.length]?.x ?? 50}
+            y={outerPositions[outer.length]?.y ?? 50}
+            size={36}
+            expanded={outerPager.showingOverflow}
+            label={
+              outerPager.showingOverflow
+                ? `Show the first ${outerPager.firstSliceSize} outer ring members again`
+                : `Show ${outerPager.hiddenCount} more outer ring member${outerPager.hiddenCount === 1 ? "" : "s"}`
+            }
+            onToggle={outerPager.next}
+          />
         )}
 
         {total === 0 && (

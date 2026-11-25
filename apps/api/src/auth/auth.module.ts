@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtModule } from "@nestjs/jwt";
+import { ContactsModule } from "../contacts/contact-onboarding.module.js";
 import { McomModule } from "../mcom/mcom.module.js";
 import { AuthController } from "./auth.controller.js";
 import { AuthService } from "./auth.service.js";
@@ -9,6 +10,7 @@ import { JwtAuthGuard } from "./jwt-auth.guard.js";
 @Module({
   imports: [
     McomModule,
+    ContactsModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({

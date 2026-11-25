@@ -9,6 +9,7 @@ import type {
 } from "../../generated/prisma/client.js";
 import { Prisma } from "../../generated/prisma/client.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
+import { ContactOnboardingService } from "../../contacts/contact-onboarding.service.js";
 import { BusinessContextService } from "../business-context.service.js";
 import type { BusinessContext } from "../business.types.js";
 import {
@@ -38,6 +39,7 @@ export class BusinessNetworkService {
     private readonly prisma: PrismaService,
     private readonly context: BusinessContextService,
     private readonly media: BusinessMediaService,
+    private readonly onboarding: ContactOnboardingService,
   ) {}
 
   async listLists(ctx: BusinessContext) {
@@ -245,7 +247,29 @@ export class BusinessNetworkService {
     });
 
     await this.audit(ctx, "network-contact-added", contact.id, contact.fullName);
-    return this.contactView(contact);
+
+    // A contact without an account gets an invitation to create one, so their
+    // pending invitations and circles are waiting when they sign in.
+    const invitation = await this.onboarding.inviteUnknownContact({
+      contact,
+      business: {
+        id: ctx.business.id,
+        name: ctx.business.name,
+        contactName: ctx.business.contactName,
+        email: ctx.business.email,
+        city: ctx.business.city,
+      },
+    });
+
+    return {
+      ...(await this.contactView(contact)),
+      invitation: {
+        sent: invitation.sent,
+        reason: invitation.reason,
+        email: invitation.email,
+        alreadyRegistered: invitation.alreadyRegistered,
+      },
+    };
   }
 
   async getContact(ctx: BusinessContext, contactId: string) {
