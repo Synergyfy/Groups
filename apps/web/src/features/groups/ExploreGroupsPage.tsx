@@ -35,9 +35,11 @@ export default function ExploreGroupsPage() {
   const { refresh, location, locations } = useBusinessData();
 
   // Central Hub resolves the business's postcode into a city, borough, high
-  // street and local mall. That chain is the default lens on this page.
+  // street and local mall. That chain is the default lens on this page — but
+  // only once Central Hub has actually resolved it.
   const myLocation = location?.current ?? null;
-  const myCity = myLocation?.city ?? "";
+  const myLocationResolved = Boolean(myLocation?.cityId);
+  const myCity = myLocationResolved ? (myLocation?.city ?? "") : "";
   const myBorough = myLocation?.borough ?? myLocation?.localArea ?? "";
   const myHighStreet = myLocation?.highStreet ?? "";
   const myLocalMall = myLocation?.localMall ?? "";
@@ -441,7 +443,7 @@ export default function ExploreGroupsPage() {
                 </span>
                 .
               </span>
-            ) : myCity ? (
+            ) : myLocationResolved ? (
               <span>
                 Your location is{" "}
                 <span className="font-semibold text-slate-200">
@@ -458,12 +460,13 @@ export default function ExploreGroupsPage() {
               </span>
             ) : (
               <span>
-                No postcode location yet. Add one in Central Hub to see the groups around you.
+                Central Hub has not resolved your location yet. Add a postcode
+                to your Central Hub profile to see the groups around you.
               </span>
             )}
           </p>
           <div className="flex items-center gap-2">
-            {myCity && (
+            {myLocationResolved && (
               <Button variant="outline" size="sm" onClick={useMyLocation}>
                 <MapPin className="size-3.5" /> My location
               </Button>

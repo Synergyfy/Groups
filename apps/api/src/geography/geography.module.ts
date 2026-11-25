@@ -4,11 +4,17 @@ import { AdminRoleGuard } from "../admin/admin-role.guard.js";
 import { GeographyClient } from "./geography.client.js";
 import { AdminGeographyController } from "./geography.controller.js";
 import { GeographyService } from "./geography.service.js";
+import { PostcodeLookupService } from "./geography.postcode.js";
 
 @Module({
   imports: [AuthModule],
   controllers: [AdminGeographyController],
-  providers: [GeographyClient, GeographyService, AdminRoleGuard],
-  exports: [GeographyService],
+providers: [
+    GeographyClient,
+    GeographyService,
+    PostcodeLookupService,
+    AdminRoleGuard,
+  ],
+  exports: [GeographyService, PostcodeLookupService],
 })
 export class GeographyModule {}
