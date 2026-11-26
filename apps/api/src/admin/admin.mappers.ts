@@ -30,6 +30,7 @@ export const jsonArray = (value: unknown): unknown[] =>
 
 type GroupWithMembers = Group & {
   members?: Pick<GroupMember, "memberId">[];
+  linkedCircles?: Array<{ circleId: string }>;
 };
 
 export function mapGroup(group: GroupWithMembers) {
@@ -38,6 +39,9 @@ export function mapGroup(group: GroupWithMembers) {
     name: group.name,
     slug: group.slug,
     description: group.description ?? undefined,
+    imageUrl: group.imageUrl ?? undefined,
+    chatConversationId: group.chatConversationId ?? undefined,
+    circleIds: group.linkedCircles?.map((entry) => entry.circleId) ?? undefined,
     type: group.type,
     source: group.source,
     headStart: group.headStart,

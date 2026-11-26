@@ -449,7 +449,7 @@ export class BusinessCirclesService {
     const unique = [...new Set(ids)];
     const lists = await this.prisma.networkList.findMany({
       where: { businessId: ctx.business.id, id: { in: unique } },
-      include: { _count: { select: { contacts: true } } },
+      include: { _count: { select: { contacts: true, memberships: true } } },
     });
     if (lists.length !== unique.length) {
       throw new NotFoundException("One or more source lists were not found.");
@@ -462,7 +462,9 @@ export class BusinessCirclesService {
           .join(", ")}`,
       );
     }
-    const empty = lists.filter((list) => list._count.contacts < 1);
+    const empty = lists.filter(
+      (list) => list._count.contacts + list._count.memberships < 1,
+    );
     if (empty.length > 0) {
       throw new BadRequestException(
         `Empty lists cannot be used as circle sources: ${empty
@@ -483,8 +485,11 @@ export class BusinessCirclesService {
       const contacts = await this.prisma.networkContact.findMany({
         where: {
           businessId: ctx.business.id,
-          listId: { in: sourceListIds },
-          confirmation: "confirmed",
+          confirmation: { in: ["confirmed", "pending"] },
+          OR: [
+            { listId: { in: sourceListIds } },
+            { memberships: { some: { listId: { in: sourceListIds } } } },
+          ],
         },
         select: { id: true },
       });

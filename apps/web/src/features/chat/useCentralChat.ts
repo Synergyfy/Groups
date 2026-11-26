@@ -239,7 +239,7 @@ export function useCentralChat() {
   }, [applyMessage, joinConversation]);
 
   /** Opens a conversation and loads its history. */
-  const openConversation = useCallback(
+  const openResolvedConversation = useCallback(
     async (resolve: () => Promise<ChatConversation>) => {
       setLoading(true);
       setError(null);
@@ -282,7 +282,7 @@ export function useCentralChat() {
         return openingRef.current.promise;
       }
 
-      const promise = openConversation(resolve);
+      const promise = openResolvedConversation(resolve);
       openingRef.current = { target, promise };
       try {
         await promise;
@@ -292,7 +292,7 @@ export function useCentralChat() {
         }
       }
     },
-    [openConversation],
+    [openResolvedConversation],
   );
 
   /** Opens the conversation with a circle member. */
@@ -309,6 +309,20 @@ export function useCentralChat() {
   const openGroup = useCallback(
     (circleId: string, title?: string) =>
       open(`group:${circleId}`, () => chatApi.openGroup(circleId, title)),
+    [open],
+  );
+
+  const openGroupForGroup = useCallback(
+    (groupId: string, title?: string) =>
+      open(`group-entity:${groupId}`, () =>
+        chatApi.openGroupForGroup(groupId, title),
+      ),
+    [open],
+  );
+
+  const openConversation = useCallback(
+    (conv: ChatConversation) =>
+      open(`conv:${conv.id}`, () => Promise.resolve(conv)),
     [open],
   );
 
@@ -503,6 +517,8 @@ export function useCentralChat() {
     loading,
     openMember,
     openGroup,
+    openGroupForGroup,
+    openConversation,
     updateGroup,
     refreshConversation,
     send,

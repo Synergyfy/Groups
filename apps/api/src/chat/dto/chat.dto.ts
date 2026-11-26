@@ -29,8 +29,13 @@ export class OpenDirectConversationDto {
  * circle members join as group members.
  */
 export class OpenGroupConversationDto {
+  @IsOptional()
   @IsUUID("4", { message: "The circle id must be a valid id." })
-  circleId!: string;
+  circleId?: string;
+
+  @IsOptional()
+  @IsUUID("4", { message: "The group id must be a valid id." })
+  groupId?: string;
 
   @IsOptional()
   @IsString()

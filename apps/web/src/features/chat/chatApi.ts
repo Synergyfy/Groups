@@ -96,6 +96,15 @@ export const chatApi = {
       body: JSON.stringify({ circleId, ...(title ? { title } : {}) }),
     }),
 
+  /**
+   * Opens (or creates) the shared group conversation of a Group.
+   */
+  openGroupForGroup: (groupId: string, title?: string) =>
+    apiRequest<ChatConversation>("/chat/conversations/group", {
+      method: "POST",
+      body: JSON.stringify({ groupId, ...(title ? { title } : {}) }),
+    }),
+
   addGroupParticipant: (conversationId: string, memberId: string) =>
     apiRequest<ChatConversation>(
       `/chat/conversations/${encodeURIComponent(conversationId)}/participants`,

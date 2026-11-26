@@ -31,7 +31,12 @@ import {
   pageResult,
 } from "../business.utils.js";
 
-type NetworkListWithContacts = NetworkList & { contacts?: NetworkContact[] };
+type NetworkListWithContacts = NetworkList & {
+  contacts?: Array<NetworkContact & { memberships?: Array<{ listId: string }> }>;
+  memberships?: Array<{
+    contact: NetworkContact & { memberships?: Array<{ listId: string }> };
+  }>;
+};
 
 @Injectable()
 export class BusinessNetworkService {
@@ -45,21 +50,37 @@ export class BusinessNetworkService {
   async listLists(ctx: BusinessContext) {
     const lists = await this.prisma.networkList.findMany({
       where: { businessId: ctx.business.id },
-      include: { contacts: { orderBy: { createdAt: "desc" } } },
+      include: {
+        contacts: {
+          orderBy: { createdAt: "desc" },
+          include: { memberships: { select: { listId: true } } },
+        },
+        memberships: {
+          include: {
+            contact: {
+              include: { memberships: { select: { listId: true } } },
+            },
+          },
+        },
+      },
       orderBy: { createdAt: "desc" },
     });
 
     return {
-      items: lists.map((list) => ({
-        ...mapNetworkList(list),
-        contactCount: list.contacts?.length ?? 0,
-        pendingCount:
-          list.contacts?.filter((contact) => contact.confirmation === "pending")
-            .length ?? 0,
-        confirmedCount:
-          list.contacts?.filter((contact) => contact.confirmation === "confirmed")
-            .length ?? 0,
-      })),
+      items: lists.map((list) => {
+        const mapped = mapNetworkList(list);
+        const listContacts = mapped.contacts ?? [];
+        return {
+          ...mapped,
+          contactCount: listContacts.length,
+          pendingCount: listContacts.filter(
+            (contact) => contact.confirmation === "pending",
+          ).length,
+          confirmedCount: listContacts.filter(
+            (contact) => contact.confirmation === "confirmed",
+          ).length,
+        };
+      }),
       stats: this.statsFor(lists),
       total: lists.length,
     };
@@ -67,17 +88,18 @@ export class BusinessNetworkService {
 
   async getList(ctx: BusinessContext, listId: string) {
     const list = await this.findList(ctx, listId);
+    const mapped = mapNetworkList(list);
+    const listContacts = mapped.contacts ?? [];
     return {
-      ...mapNetworkList(list),
-      contactCount: list.contacts?.length ?? 0,
+      ...mapped,
+      contactCount: listContacts.length,
       stats: {
-        pending:
-          list.contacts?.filter((contact) => contact.confirmation === "pending")
-            .length ?? 0,
-        confirmed:
-          list.contacts?.filter(
-            (contact) => contact.confirmation === "confirmed",
-          ).length ?? 0,
+        pending: listContacts.filter(
+          (contact) => contact.confirmation === "pending",
+        ).length,
+        confirmed: listContacts.filter(
+          (contact) => contact.confirmation === "confirmed",
+        ).length,
       },
     };
   }
@@ -166,7 +188,14 @@ export class BusinessNetworkService {
     const search = query.search?.trim();
     const where: Prisma.NetworkContactWhereInput = {
       businessId: ctx.business.id,
-      ...(query.listId ? { listId: query.listId } : {}),
+      ...(query.listId
+        ? {
+            OR: [
+              { listId: query.listId },
+              { memberships: { some: { listId: query.listId } } },
+            ],
+          }
+        : {}),
       ...(query.confirmation
         ? { confirmation: query.confirmation }
         : {}),
@@ -187,6 +216,7 @@ export class BusinessNetworkService {
       this.prisma.networkContact.count({ where }),
       this.prisma.networkContact.findMany({
         where,
+        include: { memberships: { select: { listId: true } } },
         orderBy: { createdAt: "desc" },
         skip: params.skip,
         take: params.limit,
@@ -208,22 +238,62 @@ export class BusinessNetworkService {
   }
 
   async createContact(ctx: BusinessContext, dto: CreateNetworkContactDto) {
-    const list = await this.prisma.networkList.findFirst({
-      where: { id: dto.listId, businessId: ctx.business.id },
+    const requestedListIds = Array.from(
+      new Set([dto.listId, ...(dto.listIds ?? [])]),
+    );
+    const lists = await this.prisma.networkList.findMany({
+      where: { id: { in: requestedListIds }, businessId: ctx.business.id },
     });
-    if (!list) {
+    if (lists.length !== requestedListIds.length) {
       throw new NotFoundException(`Network list ${dto.listId} not found`);
     }
+    const primaryList = lists.find((entry) => entry.id === dto.listId) ?? lists[0];
 
     const email = dto.email ? normaliseEmail(dto.email) : null;
     if (email) {
-      const duplicate = await this.prisma.networkContact.findFirst({
+      const existing = await this.prisma.networkContact.findFirst({
         where: { businessId: ctx.business.id, email },
+        include: { memberships: { select: { listId: true } } },
       });
-      if (duplicate) {
-        throw new ConflictException(
-          `${dto.fullName} is already on your network with ${email}.`,
+      if (existing) {
+        const currentListIds = new Set([
+          existing.listId,
+          ...existing.memberships.map((m) => m.listId),
+        ]);
+        const newListIds = requestedListIds.filter(
+          (id) => !currentListIds.has(id),
         );
+        if (newListIds.length === 0) {
+          throw new ConflictException(
+            `${existing.fullName} is already in the selected network list(s) with ${email}.`,
+          );
+        }
+        await this.prisma.networkListMembership.createMany({
+          data: newListIds.map((listId) => ({
+            listId,
+            contactId: existing.id,
+          })),
+          skipDuplicates: true,
+        });
+        await this.audit(
+          ctx,
+          "network-contact-added-to-lists",
+          existing.id,
+          existing.fullName,
+        );
+        const refreshed = await this.prisma.networkContact.findUniqueOrThrow({
+          where: { id: existing.id },
+          include: { memberships: { select: { listId: true } } },
+        });
+        return {
+          ...(await this.contactView(refreshed)),
+          invitation: {
+            sent: false,
+            reason: "existing-contact-linked",
+            email,
+            alreadyRegistered: Boolean(existing.mcomUserId),
+          },
+        };
       }
     }
 
@@ -236,14 +306,18 @@ export class BusinessNetworkService {
         phone: dto.phone ?? null,
         category: dto.category ?? null,
         location: dto.location ?? null,
-        geography: dto.geography ?? list.geography,
+        geography: dto.geography ?? primaryList.geography,
         role: dto.role ?? "peripheral",
         tier: dto.tier ?? "Bronze",
         confirmation: "pending",
         intake: dto.intake ?? "manual",
         consentAt: dto.consent ? new Date() : null,
         addedByName: ctx.business.contactName,
+        memberships: {
+          create: requestedListIds.map((listId) => ({ listId })),
+        },
       },
+      include: { memberships: { select: { listId: true } } },
     });
 
     await this.audit(ctx, "network-contact-added", contact.id, contact.fullName);
@@ -299,8 +373,64 @@ export class BusinessNetworkService {
     return this.contactView(updated);
   }
 
+  async assignContactLists(
+    ctx: BusinessContext,
+    contactId: string,
+    listIds: string[],
+  ) {
+    const contact = await this.ensureContact(ctx, contactId);
+    const unique = [...new Set(listIds)];
+    if (unique.length === 0) {
+      throw new ConflictException("A contact must belong to at least one list.");
+    }
+    const lists = await this.prisma.networkList.findMany({
+      where: { id: { in: unique }, businessId: ctx.business.id },
+    });
+    if (lists.length !== unique.length) {
+      throw new NotFoundException("One or more network lists were not found.");
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.networkListMembership.deleteMany({ where: { contactId } });
+      await tx.networkListMembership.createMany({
+        data: unique.map((listId) => ({ listId, contactId })),
+        skipDuplicates: true,
+      });
+      if (!unique.includes(contact.listId)) {
+        await tx.networkContact.update({
+          where: { id: contactId },
+          data: { listId: unique[0] },
+        });
+      }
+    });
+
+    const updated = await this.prisma.networkContact.findUniqueOrThrow({
+      where: { id: contactId },
+      include: { memberships: { select: { listId: true } } },
+    });
+    await this.audit(ctx, "network-contact-lists-updated", updated.id, updated.fullName);
+    return this.contactView(updated);
+  }
+
+  async updateContactStatus(
+    ctx: BusinessContext,
+    contactId: string,
+    confirmation: string,
+  ) {
+    await this.ensureContact(ctx, contactId);
+    const updated = await this.prisma.networkContact.update({
+      where: { id: contactId },
+      data: { confirmation },
+      include: { memberships: { select: { listId: true } } },
+    });
+    await this.audit(ctx, "network-contact-status-updated", updated.id, updated.fullName);
+    return this.contactView(updated);
+  }
+
   /** A contact with the Central Hub avatar of the user behind its email. */
-  private async contactView(contact: NetworkContact) {
+  private async contactView(
+    contact: NetworkContact & { memberships?: Array<{ listId: string }> },
+  ) {
     const photos = await centralHubPhotos(this.prisma, this.media, [contact], []);
     return {
       ...mapNetworkContact(contact),
@@ -351,7 +481,19 @@ export class BusinessNetworkService {
   ): Promise<NetworkListWithContacts> {
     const list = await this.prisma.networkList.findFirst({
       where: { id: listId, businessId: ctx.business.id },
-      include: { contacts: { orderBy: { createdAt: "desc" } } },
+      include: {
+        contacts: {
+          orderBy: { createdAt: "desc" },
+          include: { memberships: { select: { listId: true } } },
+        },
+        memberships: {
+          include: {
+            contact: {
+              include: { memberships: { select: { listId: true } } },
+            },
+          },
+        },
+      },
     });
     if (!list) throw new NotFoundException(`Network list ${listId} not found`);
     return list;
@@ -368,6 +510,7 @@ export class BusinessNetworkService {
   private async ensureContact(ctx: BusinessContext, contactId: string) {
     const contact = await this.prisma.networkContact.findFirst({
       where: { id: contactId, businessId: ctx.business.id },
+      include: { memberships: { select: { listId: true } } },
     });
     if (!contact) {
       throw new NotFoundException(`Network contact ${contactId} not found`);
@@ -376,7 +519,16 @@ export class BusinessNetworkService {
   }
 
   private statsFor(lists: NetworkListWithContacts[]) {
-    const contacts = lists.flatMap((list) => list.contacts ?? []);
+    const byId = new Map<string, NetworkContact>();
+    for (const list of lists) {
+      for (const contact of list.contacts ?? []) {
+        byId.set(contact.id, contact);
+      }
+      for (const entry of list.memberships ?? []) {
+        byId.set(entry.contact.id, entry.contact);
+      }
+    }
+    const contacts = [...byId.values()];
     return {
       lists: lists.length,
       activeLists: lists.filter((list) => list.status === "Active").length,

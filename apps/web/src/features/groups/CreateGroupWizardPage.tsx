@@ -295,7 +295,7 @@ function CreateGroupWizard({
   const [searchParams, setSearchParams] = useSearchParams();
   const { adminConfig } = useAppState();
   const actorId = useBusinessId();
-  const { refresh, locations, location } = useBusinessData();
+  const { refresh, locations, location, circles } = useBusinessData();
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const ownedGroups = useOwnedGroups(actorId);
@@ -351,6 +351,8 @@ function CreateGroupWizard({
   const [type, setType] = useState<UserGroupType | "">(validPreset ? presetCandidate : "");
   const [name, setName] = useState("");
   const [purpose, setPurpose] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
+  const [circleIds, setCircleIds] = useState<string[]>([]);
   // A group created by a business inherits that business's Central Hub
   // location chain — city, borough, high street and local mall — so members
   // in the same area discover it automatically. Only a city Central Hub knows
@@ -550,6 +552,8 @@ function CreateGroupWizard({
             }
           : {}),
         ...(requiredSize ? { requiredSize: Number(requiredSize) } : {}),
+        ...(imageUrl.trim() ? { imageUrl: imageUrl.trim() } : {}),
+        ...(circleIds.length > 0 ? { circleIds } : {}),
       });
       await refresh();
       navigate("/business/groups/create/success", {
@@ -686,6 +690,54 @@ function CreateGroupWizard({
                   className={`${FIELD_CLASS} h-auto py-2 leading-relaxed`}
                 />
               </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[11px] font-medium text-slate-400">
+                  Group image URL (optional)
+                </span>
+                <input
+                  type="url"
+                  value={imageUrl}
+                  onChange={(event) => setImageUrl(event.target.value)}
+                  placeholder="https://…"
+                  className={FIELD_CLASS}
+                />
+              </label>
+              {(circles?.items ?? []).length > 0 && (
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-[11px] font-medium text-slate-400">
+                    Link Circles to this Group (optional)
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {(circles?.items ?? []).map((circle) => {
+                      const checked = circleIds.includes(circle.id);
+                      return (
+                        <label
+                          key={circle.id}
+                          className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-1.5 text-xs ${
+                            checked
+                              ? "border-gold-500/40 bg-gold-500/10 text-gold-200"
+                              : "border-white/10 bg-ink-800 text-slate-300"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() =>
+                              setCircleIds((prev) =>
+                                prev.includes(circle.id)
+                                  ? prev.filter((id) => id !== circle.id)
+                                  : [...prev, circle.id]
+                              )
+                            }
+                            className="size-3.5 accent-gold-500"
+                          />
+                          {circle.config.name || circle.type}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <Select
                   label="City (optional)"

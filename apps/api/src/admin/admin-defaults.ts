@@ -176,9 +176,9 @@ export const DEFAULT_MANDATORY_CIRCLES = [
 ];
 
 export const DEFAULT_MANDATORY_GROUPS = [
-  { type: "Marketing", required: true, pricing: "owner-choice" },
-  { type: "Advertising", required: true, pricing: "owner-choice" },
-  { type: "Partner", required: true, pricing: "paid" },
+  { type: "Marketing", required: true, pricing: "owner-choice", order: 1, allowedFrequencies: ["once", "daily", "weekly", "monthly"] },
+  { type: "Advertising", required: true, pricing: "owner-choice", order: 2, allowedFrequencies: ["once", "daily", "weekly", "monthly"] },
+  { type: "Partner", required: true, pricing: "paid", order: 3, allowedFrequencies: ["once", "daily", "weekly", "monthly"] },
 ];
 
 export const FREE_PARTNER_PERMISSIONS = {

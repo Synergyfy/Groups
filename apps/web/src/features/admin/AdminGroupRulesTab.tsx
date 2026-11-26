@@ -130,6 +130,16 @@ function RulesEditor({
     );
   };
 
+  const setGroupOrder = (type: string, order: number) => {
+    setGroupRules((current) =>
+      current.map((rule) =>
+        rule.type === type
+          ? { ...rule, order: Number.isFinite(order) && order > 0 ? order : 1 }
+          : rule,
+      ),
+    );
+  };
+
   const toggleCircle = (type: string) => {
     setCircleRules((current) => {
       if (current.some((rule) => rule.circleType === type)) {
@@ -269,23 +279,37 @@ function RulesEditor({
 
                       <div className="flex flex-wrap items-center gap-3">
                         {rule?.required && (
-                          <label className="flex items-center gap-2 text-[11px] text-slate-400">
-                            Pricing
-                            <select
-                              value={rule.pricing}
-                              onChange={(event) =>
-                                setGroupPricing(
-                                  type,
-                                  event.target
-                                    .value as MandatoryGroupRule["pricing"],
-                                )
-                              }
-                              className={FIELD_CLASS}
-                            >
-                              <option value="owner-choice">Free or paid</option>
-                              <option value="paid">Paid group</option>
-                            </select>
-                          </label>
+                          <>
+                            <label className="flex items-center gap-2 text-[11px] text-slate-400">
+                              Order
+                              <input
+                                type="number"
+                                min={1}
+                                value={rule.order ?? 1}
+                                onChange={(event) =>
+                                  setGroupOrder(type, Number(event.target.value))
+                                }
+                                className={`${FIELD_CLASS} w-16`}
+                              />
+                            </label>
+                            <label className="flex items-center gap-2 text-[11px] text-slate-400">
+                              Pricing
+                              <select
+                                value={rule.pricing}
+                                onChange={(event) =>
+                                  setGroupPricing(
+                                    type,
+                                    event.target
+                                      .value as MandatoryGroupRule["pricing"],
+                                  )
+                                }
+                                className={FIELD_CLASS}
+                              >
+                                <option value="owner-choice">Free or paid</option>
+                                <option value="paid">Paid group</option>
+                              </select>
+                            </label>
+                          </>
                         )}
                         <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-300">
                           <input

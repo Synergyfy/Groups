@@ -20,7 +20,7 @@ const TIERS = ["Bronze", "Silver", "Gold", "Platinum"] as const;
 const VARIANTS = ["Standard", "Pro", "Pro+"] as const;
 const ACCESS_TYPES = ["open", "request", "eligibility", "invitation"] as const;
 const VISIBILITIES = ["directory", "members"] as const;
-const INTERACTION_LEVELS = ["read", "message", "collaborate"] as const;
+const INTERACTION_LEVELS = ["read", "message"] as const;
 const CIRCLE_INTERACTION_LEVELS = ["read", "message"] as const;
 const PRICING_MODES = ["free", "paid"] as const;
 const CONTRIBUTION_FREQUENCIES = ["once", "daily", "weekly", "monthly"] as const;
@@ -116,6 +116,11 @@ export class CreateBusinessGroupDto {
   @IsString() @MaxLength(80) type!: string;
   @IsString() @MaxLength(2000) purpose!: string;
   @IsOptional() @IsString() @MaxLength(2000) description?: string;
+  @IsOptional() @IsString() @MaxLength(2048) imageUrl?: string;
+  @IsOptional()
+  @IsArray()
+  @IsUUID(undefined, { each: true })
+  circleIds?: string[];
   @IsOptional() @IsIn(ACCESS_TYPES) accessType?: string;
   @IsOptional() @IsIn(VISIBILITIES) visibility?: string;
   @IsOptional() @IsIn(INTERACTION_LEVELS) interactionLevel?: string;
@@ -135,6 +140,11 @@ export class UpdateBusinessGroupDto {
   @IsOptional() @IsString() @MaxLength(120) name?: string;
   @IsOptional() @IsString() @MaxLength(2000) purpose?: string;
   @IsOptional() @IsString() @MaxLength(2000) description?: string;
+  @IsOptional() @IsString() @MaxLength(2048) imageUrl?: string;
+  @IsOptional()
+  @IsArray()
+  @IsUUID(undefined, { each: true })
+  circleIds?: string[];
   /** Owners may close their group; activation status is server-managed. */
   @IsOptional() @IsIn(["Closed"]) status?: string;
   @IsOptional() @IsIn(ACCESS_TYPES) accessType?: string;
@@ -202,6 +212,10 @@ export class UpdateNetworkListDto {
 
 export class CreateNetworkContactDto {
   @IsUUID() listId!: string;
+  @IsOptional()
+  @IsArray()
+  @IsUUID(undefined, { each: true })
+  listIds?: string[];
   @IsString() @MaxLength(160) fullName!: string;
   @IsOptional() @IsEmail() email?: string;
   @IsOptional() @IsString() @MaxLength(40) phone?: string;
@@ -212,6 +226,17 @@ export class CreateNetworkContactDto {
   @IsOptional() @IsIn(TIERS) tier?: string;
   @IsOptional() @IsIn(["manual", "join-link"]) intake?: string;
   @IsOptional() @IsBoolean() consent?: boolean;
+}
+
+export class AssignContactListsDto {
+  @IsArray()
+  @IsUUID(undefined, { each: true })
+  listIds!: string[];
+}
+
+export class UpdateContactStatusDto {
+  @IsIn(["pending", "confirmed", "inactive", "declined"])
+  confirmation!: string;
 }
 
 export class ConfirmNetworkContactDto {

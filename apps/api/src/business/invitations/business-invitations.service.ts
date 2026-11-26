@@ -86,6 +86,10 @@ export class BusinessInvitationsService {
         : null,
     ]);
 
+    const eligibility = target.group
+      ? await this.checkMemberPlanEligibility(target.group, ctx.business.id)
+      : { eligible: true, requiredPlans: [] as Array<{ id: string; name: string; variant: string }> };
+
     return {
       invitation: mapInvitationForBusiness(
         target.invitation,
@@ -100,6 +104,7 @@ export class BusinessInvitationsService {
       canRespond:
         target.invitation.status === "pending" &&
         (await this.canRespond(ctx, target)),
+      eligibility,
     };
   }
 
@@ -597,11 +602,18 @@ export class BusinessInvitationsService {
    * acceptance previously inserted the member without checking their plan,
    * which let a plan-gated group be bypassed.
    */
-  private async assertMemberPlanEligibility(
+  private async checkMemberPlanEligibility(
     group: Pick<Group, "requiredPlanIds">,
     memberId: string,
-  ): Promise<void> {
-    if (group.requiredPlanIds.length === 0) return;
+  ): Promise<{
+    eligible: boolean;
+    reason?: string;
+    requiredPlans: Array<{ id: string; name: string; variant: string }>;
+    upgradeUrl?: string;
+  }> {
+    if (group.requiredPlanIds.length === 0) {
+      return { eligible: true, requiredPlans: [] };
+    }
 
     const [plans, memberPlan] = await Promise.all([
       this.prisma.plan.findMany({
@@ -617,6 +629,7 @@ export class BusinessInvitationsService {
           status: true,
           paid: true,
           accessExpiresAt: true,
+          upgradeUrl: true,
         },
       }),
     ]);
@@ -634,7 +647,25 @@ export class BusinessInvitationsService {
         : null,
     );
 
-    if (!eligible) {
+    if (eligible) {
+      return { eligible: true, requiredPlans: plans };
+    }
+
+    return {
+      eligible: false,
+      reason:
+        "Your current plan does not include access to this group. Upgrade to an eligible plan to accept this invitation — your invitation remains saved.",
+      requiredPlans: plans,
+      upgradeUrl: memberPlan?.upgradeUrl ?? "/business/plan",
+    };
+  }
+
+  private async assertMemberPlanEligibility(
+    group: Pick<Group, "requiredPlanIds">,
+    memberId: string,
+  ): Promise<void> {
+    const result = await this.checkMemberPlanEligibility(group, memberId);
+    if (!result.eligible) {
       throw new ForbiddenException({
         code: "PLAN_REQUIRED",
         message:

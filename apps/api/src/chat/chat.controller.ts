@@ -59,7 +59,10 @@ export class ChatController {
     @CurrentUser() user: SessionUser,
     @Body() dto: OpenGroupConversationDto,
   ) {
-    return this.chat.openGroupConversation(user, dto.circleId, dto.title);
+    if (dto.groupId) {
+      return this.chat.openGroupEntityConversation(user, dto.groupId, dto.title);
+    }
+    return this.chat.openGroupConversation(user, dto.circleId ?? "", dto.title);
   }
 
   @Post("conversations/:id/participants")

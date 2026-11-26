@@ -302,6 +302,18 @@ export default function InvitationDetailPage() {
             </p>
           ) : isInvitee && detail.canRespond ? (
             <div className="flex flex-col gap-3">
+              {detail.eligibility && !detail.eligibility.eligible && (
+                <div className="rounded-xl border border-warning-500/30 bg-warning-500/10 p-3 text-xs text-warning-200">
+                  <p className="font-semibold">
+                    {detail.eligibility.reason ?? "Plan upgrade required to accept this invitation."}
+                  </p>
+                  <div className="mt-2">
+                    <LinkButton to="/business/plans" variant="outline" size="sm">
+                      View Plans &amp; Upgrade
+                    </LinkButton>
+                  </div>
+                </div>
+              )}
               <p className="text-xs leading-relaxed text-slate-400">
                 This invitation is addressed to you. Accepting adds you to the{" "}
                 {circle ? "circle" : "group"} straight away; declining closes the

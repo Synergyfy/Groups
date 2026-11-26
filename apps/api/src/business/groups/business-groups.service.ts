@@ -68,7 +68,10 @@ import type {
   UpdateBusinessGroupDto,
 } from "../dto/business.dto.js";
 
-type GroupWithMembers = Group & { members?: GroupMember[] };
+type GroupWithMembers = Group & {
+  members?: GroupMember[];
+  linkedCircles?: Array<{ circleId: string }>;
+};
 
 export interface DecoratedGroup {
   id: string;
@@ -638,6 +641,27 @@ export class BusinessGroupsService {
       circles: await this.prisma.groupCircle
         .findMany({ where: { groupId: group.id }, orderBy: { createdAt: "asc" } })
         .then((circles) => circles.map(mapGroupCircle)),
+      linkedCircles: await this.prisma.groupLinkedCircle
+        .findMany({
+          where: { groupId: group.id },
+          include: { circle: true },
+          orderBy: { createdAt: "asc" },
+        })
+        .then((links) =>
+          links.map((link) => {
+            const cfg = (link.circle.config ?? {}) as Record<string, unknown>;
+            return {
+              id: link.circle.id,
+              type: link.circle.type,
+              name: String(cfg.name ?? link.circle.type),
+              description: String(cfg.description ?? ""),
+              memberIds: link.circle.memberIds,
+              sourceListIds: link.circle.sourceListIds,
+              status: link.circle.status,
+              chatConversationId: link.circle.chatConversationId ?? undefined,
+            };
+          }),
+        ),
     };
   }
 
@@ -810,24 +834,33 @@ export class BusinessGroupsService {
         : "Recruiting";
 
     const owned = await this.prisma.group.findMany({
-      where: { ownerId: ctx.business.id },
+      where: {
+        ownerId: ctx.business.id,
+        status: { notIn: ["Closed", "Suspended"] },
+      },
       select: { type: true },
     });
-    const missingMandatory = ctx.config.mandatoryGroups.filter(
-      (rule) =>
-        rule.required && !owned.some((group) => group.type === rule.type),
-    );
-    if (
-      missingMandatory.length > 0 &&
-      !missingMandatory.some((rule) => rule.type === dto.type)
-    ) {
-      throw new ConflictException({
-        code: "MANDATORY_GROUPS_REQUIRED",
-        message: `Create the required group types first: ${missingMandatory
-          .map((rule) => rule.type)
-          .join(", ")}`,
-        requiredTypes: missingMandatory.map((rule) => rule.type),
-      });
+    const missingMandatory = ctx.config.mandatoryGroups
+      .filter(
+        (rule) =>
+          rule.required && !owned.some((group) => group.type === rule.type),
+      )
+      .sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+    if (missingMandatory.length > 0) {
+      const nextOrder = missingMandatory[0].order ?? 1;
+      const dueNow = missingMandatory.filter(
+        (rule) => (rule.order ?? 999) === nextOrder,
+      );
+      if (!dueNow.some((rule) => rule.type === dto.type)) {
+        throw new ConflictException({
+          code: "MANDATORY_GROUPS_REQUIRED",
+          message: `Complete your required group setup in order. Next required: ${dueNow
+            .map((rule) => rule.type)
+            .join(", ")}`,
+          nextRequiredType: dueNow[0].type,
+          requiredTypes: missingMandatory.map((rule) => rule.type),
+        });
+      }
     }
 
     const mandatoryCircles = applicableMandatoryCircles(
@@ -871,6 +904,31 @@ export class BusinessGroupsService {
         "A contribution amount is required for a paid group.",
       );
     }
+    if (
+      pricing === "paid" &&
+      mandatoryRule?.allowedFrequencies &&
+      mandatoryRule.allowedFrequencies.length > 0
+    ) {
+      const freq = dto.contributionFrequency ?? "once";
+      if (!mandatoryRule.allowedFrequencies.includes(freq)) {
+        throw new BadRequestException(
+          `Contribution frequency "${freq}" is not allowed for ${dto.type} groups.`,
+        );
+      }
+    }
+
+    const circleIds = Array.from(new Set(dto.circleIds ?? []));
+    if (circleIds.length > 0) {
+      const validCircles = await this.prisma.circle.findMany({
+        where: { id: { in: circleIds }, businessId: ctx.business.id },
+        select: { id: true },
+      });
+      if (validCircles.length !== circleIds.length) {
+        throw new BadRequestException(
+          "One or more selected circles do not belong to your business.",
+        );
+      }
+    }
 
     const planQuota = await this.groupQuota(ctx);
     const quota = partnerPermissions
@@ -890,6 +948,7 @@ export class BusinessGroupsService {
           name: dto.name,
           slug,
           description: dto.description ?? dto.purpose,
+          imageUrl: dto.imageUrl?.trim() || null,
           type: dto.type,
           source: "user-created",
           headStart: false,
@@ -928,6 +987,16 @@ export class BusinessGroupsService {
         },
         include: { members: true },
       });
+
+      if (circleIds.length > 0) {
+        await tx.groupLinkedCircle.createMany({
+          data: circleIds.map((circleId) => ({
+            groupId: group.id,
+            circleId,
+          })),
+          skipDuplicates: true,
+        });
+      }
 
       await tx.groupMember.create({
         data: {
@@ -1095,8 +1164,23 @@ export class BusinessGroupsService {
     if (dto.requiredSize !== undefined) data.requiredSize = dto.requiredSize;
     if (dto.stage !== undefined) data.stage = dto.stage.trim() || null;
     if (dto.campaignIds !== undefined) data.campaignIds = dto.campaignIds;
+    if (dto.imageUrl !== undefined) data.imageUrl = dto.imageUrl.trim() || null;
 
-    if (Object.keys(data).length === 0) {
+    const circleIds =
+      dto.circleIds !== undefined ? Array.from(new Set(dto.circleIds)) : null;
+    if (circleIds && circleIds.length > 0) {
+      const validCircles = await this.prisma.circle.findMany({
+        where: { id: { in: circleIds }, businessId: ctx.business.id },
+        select: { id: true },
+      });
+      if (validCircles.length !== circleIds.length) {
+        throw new BadRequestException(
+          "One or more selected circles do not belong to your business.",
+        );
+      }
+    }
+
+    if (Object.keys(data).length === 0 && circleIds === null) {
       return this.decorateGroup(group, ctx);
     }
 
@@ -1104,8 +1188,20 @@ export class BusinessGroupsService {
       const result = await tx.group.update({
         where: { id: groupId },
         data,
-        include: { members: true },
+        include: {
+          members: true,
+          linkedCircles: { select: { circleId: true } },
+        },
       });
+      if (circleIds !== null) {
+        await tx.groupLinkedCircle.deleteMany({ where: { groupId } });
+        if (circleIds.length > 0) {
+          await tx.groupLinkedCircle.createMany({
+            data: circleIds.map((circleId) => ({ groupId, circleId })),
+            skipDuplicates: true,
+          });
+        }
+      }
       await tx.groupActivity.create({
         data: {
           groupId,
@@ -2001,7 +2097,10 @@ export class BusinessGroupsService {
   private async findGroup(groupId: string): Promise<GroupWithMembers> {
     const group = await this.prisma.group.findUnique({
       where: { id: groupId },
-      include: { members: true },
+      include: {
+        members: true,
+        linkedCircles: { select: { circleId: true } },
+      },
     });
     if (!group) throw new NotFoundException(`Group ${groupId} not found`);
     return group;

@@ -74,6 +74,8 @@ export interface MandatoryGroupRule {
   type: string;
   required: boolean;
   pricing: "owner-choice" | "paid";
+  order?: number;
+  allowedFrequencies?: string[];
 }
 
 export interface PartnerPermissions {

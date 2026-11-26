@@ -250,6 +250,9 @@ export class ChatService {
       );
     }
 
+    if (!circleId) {
+      throw new BadRequestException("Provide a circleId or groupId.");
+    }
     const circle = await this.prisma.circle.findFirst({
       where: { id: circleId, businessId },
       select: { id: true, config: true, memberIds: true, chatConversationId: true },
@@ -289,6 +292,91 @@ export class ChatService {
 
     await this.prisma.circle.update({
       where: { id: circle.id },
+      data: { chatConversationId: created.id },
+    });
+
+    return this.mapConversation(created, viewerCentralId);
+  }
+
+  /**
+   * Opens (or creates) the shared group conversation of a Group.
+   *
+   * Resolves all Group members (and linked Circle members) that have a Central
+   * Hub account so members can communicate together in one Group Chat.
+   */
+  async openGroupEntityConversation(
+    session: SessionUser,
+    groupId: string,
+    title?: string,
+  ): Promise<ChatConversationView> {
+    this.assertEnabled();
+    const viewerCentralId = await this.centralUserId(session);
+    const { businessId } = await this.identity(session);
+    if (!businessId) {
+      throw new ForbiddenException(
+        "Only a business account can start a group chat.",
+      );
+    }
+
+    const group = await this.prisma.group.findFirst({
+      where: {
+        id: groupId,
+        OR: [
+          { ownerId: businessId },
+          { members: { some: { memberId: businessId } } },
+        ],
+      },
+      include: {
+        members: { select: { memberId: true } },
+        linkedCircles: {
+          include: { circle: { select: { memberIds: true } } },
+        },
+      },
+    });
+    if (!group) {
+      throw new NotFoundException("That group could not be found.");
+    }
+
+    if (group.chatConversationId) {
+      try {
+        const existing = await this.central.getConversation(
+          session.id,
+          group.chatConversationId,
+        );
+        return this.mapConversation(existing, viewerCentralId);
+      } catch (error) {
+        this.logger.warn(
+          `The stored group conversation for group ${groupId} is unusable: ${
+            error instanceof Error ? error.message : "unknown error"
+          }. Creating a new one.`,
+        );
+      }
+    }
+
+    const candidateIds = new Set<string>(
+      group.members.map((member) => member.memberId),
+    );
+    for (const link of group.linkedCircles) {
+      for (const memberId of link.circle.memberIds) {
+        candidateIds.add(memberId);
+      }
+    }
+    candidateIds.delete(businessId);
+
+    const resolved = await this.resolveCircleMembers(session, [...candidateIds]);
+    if (resolved.length === 0) {
+      throw new BadRequestException(
+        "None of the members of this group has a Central Hub account yet, so there is nobody to chat with.",
+      );
+    }
+
+    const created = await this.central.createGroupConversation(session.id, {
+      title: title?.trim() || group.name,
+      participantIds: resolved.map((entry) => entry.centralUserId),
+    });
+
+    await this.prisma.group.update({
+      where: { id: group.id },
       data: { chatConversationId: created.id },
     });
 
@@ -494,15 +582,28 @@ export class ChatService {
       );
     }
 
-    // The member has to sit in one of this business' circles. Contacts and
-    // partner businesses are both stored in the circle member list.
-    const circle = await this.prisma.circle.findFirst({
-      where: { businessId, memberIds: { has: memberId } },
-      select: { id: true },
-    });
-    if (!circle) {
+    // The member has to sit in one of this business' circles or groups.
+    const [circle, groupMember] = await Promise.all([
+      this.prisma.circle.findFirst({
+        where: { businessId, memberIds: { has: memberId } },
+        select: { id: true },
+      }),
+      this.prisma.groupMember.findFirst({
+        where: {
+          memberId,
+          group: {
+            OR: [
+              { ownerId: businessId },
+              { members: { some: { memberId: businessId } } },
+            ],
+          },
+        },
+        select: { id: true },
+      }),
+    ]);
+    if (!circle && !groupMember) {
       throw new ForbiddenException(
-        "That member is not part of your circles, so they cannot be messaged.",
+        "That member is not part of your circles or groups, so they cannot be messaged.",
       );
     }
 

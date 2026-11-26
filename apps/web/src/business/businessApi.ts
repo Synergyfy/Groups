@@ -271,6 +271,12 @@ export interface InvitationDetailResponse {
   invitee: BusinessRecordView | null;
   responderRole: string;
   canRespond: boolean;
+  eligibility?: {
+    eligible: boolean;
+    reason?: string;
+    requiredPlans: Array<{ id: string; name: string; variant: string }>;
+    upgradeUrl?: string;
+  };
 }
 
 export interface BusinessCircle extends GroupCircle {
@@ -667,6 +673,16 @@ export const businessApi = {
         circles: number;
       };
       circles: GroupCircle[];
+      linkedCircles?: Array<{
+        id: string;
+        type: string;
+        name: string;
+        description: string;
+        memberIds: string[];
+        sourceListIds: string[];
+        status: string;
+        chatConversationId?: string;
+      }>;
     }>(`/business/groups/${id}`),
   updateGroup: (id: string, body: Record<string, unknown>) =>
     apiRequest<BusinessGroup>(`/business/groups/${id}`, {
@@ -783,6 +799,16 @@ export const businessApi = {
   } = {}) =>
     apiRequest<PageResult<NetworkContact>>(
       `/business/network/contacts${queryString(params)}`,
+    ),
+  assignContactLists: (contactId: string, listIds: string[]) =>
+    apiRequest<NetworkContact>(
+      `/business/network/contacts/${encodeURIComponent(contactId)}/lists`,
+      { method: "POST", body: JSON.stringify({ listIds }) },
+    ),
+  updateContactStatus: (contactId: string, confirmation: string) =>
+    apiRequest<NetworkContact>(
+      `/business/network/contacts/${encodeURIComponent(contactId)}/status`,
+      { method: "PATCH", body: JSON.stringify({ confirmation }) },
     ),
   createContact: (body: Record<string, unknown>) =>
     apiRequest<NetworkContact & { invitation?: ContactInvitationResult }>(

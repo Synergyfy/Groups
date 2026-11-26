@@ -419,14 +419,25 @@ function normalizeMandatoryGroups(value: unknown): MandatoryGroupRule[] {
   if (!Array.isArray(value) || value.length === 0) {
     return DEFAULT_MANDATORY_GROUPS as MandatoryGroupRule[];
   }
-  return value.map((entry) => {
-    const item = jsonObject(entry);
-    return {
-      type: String(item.type ?? "Other"),
-      required: item.required === true,
-      pricing: item.pricing === "paid" ? "paid" : "owner-choice",
-    };
-  });
+  return value
+    .map((entry, index) => {
+      const item = jsonObject(entry);
+      const orderNum = Number(item.order);
+      return {
+        type: String(item.type ?? "Other"),
+        required: item.required === true,
+        pricing: item.pricing === "paid" ? ("paid" as const) : ("owner-choice" as const),
+        order: Number.isFinite(orderNum) && orderNum > 0 ? orderNum : index + 1,
+        ...(Array.isArray(item.allowedFrequencies)
+          ? {
+              allowedFrequencies: item.allowedFrequencies
+                .map(String)
+                .filter(Boolean),
+            }
+          : {}),
+      };
+    })
+    .sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
 }
 
 function numberOrNull(value: unknown): number | null {

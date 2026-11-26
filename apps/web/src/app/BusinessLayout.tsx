@@ -1,11 +1,14 @@
 import {
   CircleDot,
   Compass,
+  Contact,
   Crown,
-  // Gift,
+  FolderKanban,
   Globe,
+  ListChecks,
+  Mail,
   MapPin,
-  // Megaphone,
+  MessageSquare,
   Settings,
   Users,
 } from "lucide-react";
@@ -21,11 +24,30 @@ import { useAppState } from "../store/selectors";
 
 const BUSINESS_NAV: NavSection[] = [
   {
+    title: "Groups",
     items: [
       {
         to: "/business/groups",
-        label: "Group",
+        label: "Overview",
         icon: <Users className="size-4" />,
+        end: true,
+      },
+      {
+        to: "/business/groups/required",
+        label: "Required Groups",
+        icon: <ListChecks className="size-4" />,
+        end: true,
+      },
+      {
+        to: "/business/groups/explore",
+        label: "Explore Groups",
+        icon: <Compass className="size-4" />,
+        end: true,
+      },
+      {
+        to: "/business/groups/mine",
+        label: "My Groups",
+        icon: <FolderKanban className="size-4" />,
         end: true,
       },
     ],
@@ -34,15 +56,33 @@ const BUSINESS_NAV: NavSection[] = [
     title: "Network",
     items: [
       {
+        to: "/business/contacts",
+        label: "Contacts",
+        icon: <Contact className="size-4" />,
+        end: true,
+      },
+      {
         to: "/business/network/lists",
-        label: "My Network Lists",
+        label: "Network Lists",
         icon: <Globe className="size-4" />,
         end: true,
       },
       {
         to: "/business/circles",
-        label: "Circle",
+        label: "Circles",
         icon: <CircleDot className="size-4" />,
+        end: true,
+      },
+      {
+        to: "/business/invitations",
+        label: "Invitations",
+        icon: <Mail className="size-4" />,
+        end: true,
+      },
+      {
+        to: "/business/messages",
+        label: "Messages",
+        icon: <MessageSquare className="size-4" />,
         end: true,
       },
     ],

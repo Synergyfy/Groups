@@ -8,6 +8,9 @@ import CirclesWorkspacePage from "../features/circles/CirclesWorkspacePage";
 import CircleCreatePage from "../features/circles/CircleCreatePage";
 import CircleWorkspaceDetailPage from "../features/circles/CircleWorkspaceDetailPage";
 import MyNetworkListsPage from "../features/network/MyNetworkListsPage";
+import ContactsPage from "../features/network/ContactsPage";
+import MessagesPage from "../features/chat/MessagesPage";
+import RequiredGroupsPage from "../features/groups/RequiredGroupsPage";
 import GroupsOverviewPage from "../features/groups/GroupsOverviewPage";
 import MyGroupsPage from "../features/groups/MyGroupsPage";
 import NetworkGroupPage from "../features/groups/NetworkGroupPage";
@@ -87,6 +90,10 @@ const businessRoutes = [
     element: <GroupsOverviewPage />,
   },
   {
+    path: "groups/required",
+    element: <RequiredGroupsPage />,
+  },
+  {
     path: "groups/mine",
     element: <MyGroupsPage />,
   },
@@ -141,6 +148,14 @@ const businessRoutes = [
   {
     path: "invitations/:invitationId",
     element: <InvitationDetailPage />,
+  },
+  {
+    path: "contacts",
+    element: <ContactsPage />,
+  },
+  {
+    path: "messages",
+    element: <MessagesPage />,
   },
   {
     path: "network/lists",

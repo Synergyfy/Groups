@@ -14,10 +14,12 @@ import { CurrentUser } from "../../auth/current-user.decorator.js";
 import { BusinessOnly } from "../business-only.decorator.js";
 import { BusinessContextService } from "../business-context.service.js";
 import {
+  AssignContactListsDto,
   BusinessNetworkContactQueryDto,
   ConfirmNetworkContactDto,
   CreateNetworkContactDto,
   CreateNetworkListDto,
+  UpdateContactStatusDto,
   UpdateNetworkListDto,
 } from "../dto/business.dto.js";
 import { BusinessNetworkService } from "./business-network.service.js";
@@ -118,6 +120,32 @@ export class BusinessNetworkController {
       await this.context.resolve(user),
       id,
       dto,
+    );
+  }
+
+  @Post("contacts/:id/lists")
+  async assignContactLists(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: AssignContactListsDto,
+    @CurrentUser() user: SessionUser,
+  ) {
+    return this.network.assignContactLists(
+      await this.context.resolve(user),
+      id,
+      dto.listIds,
+    );
+  }
+
+  @Patch("contacts/:id/status")
+  async updateContactStatus(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: UpdateContactStatusDto,
+    @CurrentUser() user: SessionUser,
+  ) {
+    return this.network.updateContactStatus(
+      await this.context.resolve(user),
+      id,
+      dto.confirmation,
     );
   }
 
