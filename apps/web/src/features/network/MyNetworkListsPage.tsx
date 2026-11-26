@@ -47,6 +47,11 @@ export default function MyNetworkListsPage() {
   const navigate = useNavigate();
   const { networkLists, contacts, refresh } = useBusinessData();
   const [addFlowOpen, setAddFlowOpen] = useState(false);
+  const [addFlowListId, setAddFlowListId] = useState<string | undefined>(undefined);
+  const openAddContact = (listId?: string) => {
+    setAddFlowListId(listId);
+    setAddFlowOpen(true);
+  };
   const [listOpen, setListOpen] = useState(false);
   const [listName, setListName] = useState("");
   const [listType, setListType] = useState("B2B");
@@ -183,7 +188,7 @@ export default function MyNetworkListsPage() {
         subtitle="The intake layer beneath every circle: B2B and B2C lists captured from manual contacts, QR plaque scans, affiliate signups and the Traffic & Leads Directory."
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" onClick={() => setAddFlowOpen(true)}>
+            <Button size="sm" onClick={() => openAddContact()}>
               <UserPlus className="size-4" /> Add Contact
             </Button>
             <Button
@@ -239,7 +244,7 @@ export default function MyNetworkListsPage() {
               Add your first contact to start building a network list, then create a circle
               from it.
             </p>
-            <Button size="sm" onClick={() => setAddFlowOpen(true)}>
+            <Button size="sm" onClick={() => openAddContact()}>
               <UserPlus className="size-4" /> Add Contact
             </Button>
           </CardBody>
@@ -339,8 +344,14 @@ export default function MyNetworkListsPage() {
                 <div className="mt-auto flex flex-wrap items-center justify-between gap-2">
                   <button
                     type="button"
+                    disabled={contactCount < 1}
+                    title={
+                      contactCount < 1
+                        ? "Add at least one contact before building a circle from this list"
+                        : undefined
+                    }
                     onClick={() => navigate(`/business/circles/create?list=${list.id}`)}
-                    className="inline-flex h-10 cursor-pointer items-center gap-1.5 rounded-lg bg-gold-500 px-3 text-xs font-semibold text-ink-950 transition-colors hover:bg-gold-400"
+                    className="inline-flex h-10 cursor-pointer items-center gap-1.5 rounded-lg bg-gold-500 px-3 text-xs font-semibold text-ink-950 transition-colors hover:bg-gold-400 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-gold-500"
                   >
                     <Plus className="size-3.5" /> Build a circle from this list
                   </button>
@@ -379,8 +390,6 @@ export default function MyNetworkListsPage() {
           </ul>
         </CardBody>
       </Card>
-
-      <AddContactFlow open={addFlowOpen} onClose={() => setAddFlowOpen(false)} />
 
       <Modal
         open={listOpen}
@@ -550,9 +559,17 @@ export default function MyNetworkListsPage() {
         title={`Contacts — ${manageTarget?.name ?? ""}`}
         onClose={() => setManageTarget(null)}
         footer={
-          <Button variant="secondary" size="sm" onClick={() => setManageTarget(null)}>
-            Done
-          </Button>
+          <>
+            <Button
+              size="sm"
+              onClick={() => manageTarget && openAddContact(manageTarget.id)}
+            >
+              <UserPlus className="size-3.5" /> Add contact
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setManageTarget(null)}>
+              Done
+            </Button>
+          </>
         }
       >
         <div className="flex flex-col gap-3">
@@ -615,6 +632,16 @@ export default function MyNetworkListsPage() {
           </p>
         </div>
       </Modal>
+
+      <AddContactFlow
+        key={addFlowOpen ? (addFlowListId ?? "any") : "closed"}
+        open={addFlowOpen}
+        defaultListId={addFlowListId}
+        onClose={() => {
+          setAddFlowOpen(false);
+          setAddFlowListId(undefined);
+        }}
+      />
     </div>
   );
 }

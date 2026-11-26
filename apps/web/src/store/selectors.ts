@@ -85,6 +85,8 @@ export interface MandatoryGroupStatus {
   type: UserGroupType;
   required: boolean;
   pricing: MandatoryGroupPricing;
+  order?: number;
+  allowedFrequencies?: string[];
   /** True once the actor owns a group of this type. */
   satisfied: boolean;
   group?: Group;
@@ -100,16 +102,20 @@ export function selectMandatoryGroupStatuses(
   actorId: string
 ): MandatoryGroupStatus[] {
   const owned = selectOwnedGroups(state, actorId);
-  return state.adminConfig.mandatoryGroups.map((rule) => {
-    const group = owned.find((entry) => entry.type === rule.type);
-    return {
-      type: rule.type,
-      required: rule.required,
-      pricing: rule.pricing,
-      satisfied: Boolean(group),
-      group,
-    };
-  });
+  return [...state.adminConfig.mandatoryGroups]
+    .sort((a, b) => (a.order ?? 999) - (b.order ?? 999))
+    .map((rule) => {
+      const group = owned.find((entry) => entry.type === rule.type);
+      return {
+        type: rule.type,
+        required: rule.required,
+        pricing: rule.pricing,
+        order: rule.order,
+        allowedFrequencies: rule.allowedFrequencies,
+        satisfied: Boolean(group),
+        group,
+      };
+    });
 }
 
 export function selectExploreGroups(state: AppState, actorId: string): Group[] {

@@ -23,6 +23,9 @@ import type {
 } from "../domain/types";
 import { useAppStore } from "../store/context";
 import type { BusinessHydratePayload, BusinessStats } from "../store/reducer";
+import { useNavigate } from "react-router-dom";
+import { ApiError } from "../app/api";
+import { clearAuthSession, loginPathForRole, type AuthRole } from "../app/authSession";
 import {
   businessApi,
   type BusinessCampaignsResponse,
@@ -90,6 +93,17 @@ async function optional<T>(request: Promise<T>): Promise<Optional<T>> {
   } catch {
     return null;
   }
+}
+
+/** Where a visitor whose session died is sent to sign in again. */
+function loginTarget(role: AuthRole): string {
+  const next = `${window.location.pathname}${window.location.search}`;
+  return `${loginPathForRole(role)}?next=${encodeURIComponent(next)}`;
+}
+
+/** True when the error means the API session is gone, not that a request failed. */
+function isUnauthorised(cause: unknown): boolean {
+  return cause instanceof ApiError && cause.status === 401;
 }
 
 function mergeGroups(...lists: Array<Group[] | undefined>): Group[] {
@@ -178,6 +192,7 @@ function toCircleActivity(
 
 export function BusinessDataProvider({ children }: { children: ReactNode }) {
   const { dispatch } = useAppStore();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -204,6 +219,7 @@ export function BusinessDataProvider({ children }: { children: ReactNode }) {
   const [journey, setJourney] = useState<BusinessJourneyResponse | null>(null);
 
   const requestId = useRef(0);
+  const redirectingToLogin = useRef(false);
 
   const load = useCallback(
     async (initial: boolean) => {
@@ -352,8 +368,19 @@ export function BusinessDataProvider({ children }: { children: ReactNode }) {
         setLocation(locationResult);
         setLocations(locationsResult);
         setJourney(journeyResult);
+        redirectingToLogin.current = false;
       } catch (cause) {
         if (current !== requestId.current) return;
+        // The http-only session cookie can expire while the client still holds
+        // a stored login. Clear it and send the visitor back to the login page
+        // instead of showing an unusable "Not signed in" panel.
+        if (isUnauthorised(cause)) {
+          if (redirectingToLogin.current) return;
+          redirectingToLogin.current = true;
+          clearAuthSession();
+          navigate(loginTarget("business"), { replace: true });
+          return;
+        }
         const message =
           cause instanceof Error
             ? cause.message
@@ -366,7 +393,7 @@ export function BusinessDataProvider({ children }: { children: ReactNode }) {
         }
       }
     },
-    [dispatch],
+    [dispatch, navigate],
   );
 
   useEffect(() => {

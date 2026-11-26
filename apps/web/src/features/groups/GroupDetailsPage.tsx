@@ -8,6 +8,7 @@ import {
   CircleDollarSign,
   Lock,
   MapPin,
+  MessageSquare,
   Send,
   Settings,
   ShieldCheck,
@@ -408,6 +409,15 @@ export default function GroupDetailsPage() {
         className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-ink-900/70 p-3"
       >
         <p className="mr-auto text-xs leading-relaxed text-slate-400">{actionHint}</p>
+        {isMember && (
+          <LinkButton
+            to={`/business/messages?groupId=${group.id}`}
+            variant="outline"
+            size="sm"
+          >
+            <MessageSquare className="size-4" /> Group Chat
+          </LinkButton>
+        )}
         {isOwner && (
           <LinkButton to={`${base}/settings`} size="sm">
             <Settings className="size-4" /> Manage Group
@@ -488,6 +498,19 @@ export default function GroupDetailsPage() {
             </div>
 
             <p className="text-sm leading-relaxed text-slate-400">{group.purpose}</p>
+
+            {detail?.linkedCircles && detail.linkedCircles.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[11px] font-medium text-slate-400">
+                  Linked Circles:
+                </span>
+                {detail.linkedCircles.map((circle) => (
+                  <Badge key={circle.id} variant="info">
+                    {circle.name}
+                  </Badge>
+                ))}
+              </div>
+            )}
 
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <MetaTile icon={<Users className="size-4" />} label="Owner" value={group.ownerName} />

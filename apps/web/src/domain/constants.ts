@@ -145,6 +145,20 @@ export const SEED_CIRCLE_TYPES: CircleTypeConfigEntry[] = [
     requiresBanker: false,
     allowedDurations: [120, 365],
   },
+  {
+    id: "ct-partner",
+    type: "Partner Circle",
+    shortLabel: "Partner",
+    description: "Bring your business partners together in a circle built from your network contacts.",
+    accent: "#38bdf8",
+    accentSoft: "rgba(56, 189, 248, 0.14)",
+    enabled: true,
+    mandatory: false,
+    minMembers: 1,
+    maxMembers: null,
+    requiresBanker: false,
+    allowedDurations: [90, 180, 270, 360],
+  },
 ];
 
 export function circleTypeMetaFrom(entry: CircleTypeConfigEntry): CircleTypeMeta {
@@ -191,6 +205,10 @@ export const TIER_ORDER: Tier[] = ["Bronze", "Silver", "Gold", "Platinum"];
 
 export const RECOMMENDED_START = 25;
 
-export const CORE_SHORTLIST_LIMIT = 12;
+/**
+ * How many members a single ring of the circle canvas renders before the
+ * rest are folded behind the "+N" overflow node.
+ */
+export const RING_PAGE_SIZE = 10;
 
 export const ROLES = ["core", "peripheral", "banker", "partner"] as const;

@@ -134,6 +134,21 @@ export const DEFAULT_CIRCLE_TYPES = [
     requiresBanker: false,
     allowedDurations: [180, 270, 360],
   },
+  {
+    id: "ct-partner",
+    type: "Partner Circle",
+    shortLabel: "Partner",
+    description:
+      "Bring your business partners together in a circle built from your network contacts.",
+    accent: "#38bdf8",
+    accentSoft: "rgba(56, 189, 248, 0.14)",
+    enabled: true,
+    mandatory: false,
+    minMembers: 1,
+    maxMembers: null,
+    requiresBanker: false,
+    allowedDurations: [90, 180, 270, 360],
+  },
 ];
 
 export const DEFAULT_MANDATORY_CIRCLES = [
@@ -161,9 +176,9 @@ export const DEFAULT_MANDATORY_CIRCLES = [
 ];
 
 export const DEFAULT_MANDATORY_GROUPS = [
-  { type: "Marketing", required: true, pricing: "owner-choice" },
-  { type: "Advertising", required: true, pricing: "owner-choice" },
-  { type: "Partner", required: true, pricing: "paid" },
+  { type: "Marketing", required: true, pricing: "owner-choice", order: 1, allowedFrequencies: ["once", "daily", "weekly", "monthly"] },
+  { type: "Advertising", required: true, pricing: "owner-choice", order: 2, allowedFrequencies: ["once", "daily", "weekly", "monthly"] },
+  { type: "Partner", required: true, pricing: "paid", order: 3, allowedFrequencies: ["once", "daily", "weekly", "monthly"] },
 ];
 
 export const FREE_PARTNER_PERMISSIONS = {

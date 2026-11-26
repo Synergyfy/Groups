@@ -97,6 +97,19 @@ export const authApi = {
     return `${API_BASE_URL}/auth/mcom/login${query}`;
   },
 
+  /**
+   * Registration always happens on Central Hub Solution. The API records the
+   * OAuth state and forwards the visitor to the Central Hub page that matches
+   * the chosen account type.
+   */
+  mcomRegisterUrl(type: "business" | "customer", next?: string): string {
+    const query = new URLSearchParams({ type });
+    if (next) {
+      query.set("next", next);
+    }
+    return `${API_BASE_URL}/auth/mcom/register?${query.toString()}`;
+  },
+
   mcomCallback(code: string, state: string): Promise<AuthResponse> {
     return apiRequest<AuthResponse>("/auth/mcom/callback", {
       method: "POST",

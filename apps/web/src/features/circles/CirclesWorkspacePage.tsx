@@ -12,8 +12,8 @@ import FieldHint from "../../components/ui/FieldHint";
 import Modal from "../../components/ui/Modal";
 import Toast from "../../components/ui/Toast";
 import SectionHeader from "../../components/ui/SectionHeader";
+import ChatPanel from "../chat/ChatPanel";
 import type { BusinessCircle } from "../../business/businessApi";
-import { DURATIONS } from "../../domain/constants";
 import { useAppStore } from "../../store/context";
 import { useActiveCircle, useCircles, useCircleActivity, useCircleTypeMeta, useNetworkContacts } from "../../store/selectors";
 import { errorMessage, mediaUrl } from "../../app/api";
@@ -151,6 +151,7 @@ export default function CirclesWorkspacePage({
         joinedAt: member.joinedAt ?? "",
         lastActiveAt: member.lastActiveAt ?? "",
         photoUrl: mediaUrl(member.photoUrl),
+        chatable: member.chatable,
       }));
     }
     return (activeCircle?.memberIds ?? [])
@@ -186,8 +187,42 @@ export default function CirclesWorkspacePage({
   const handleViewProfile = (member: CircleMember) =>
     setFeedback(`Opening profile for ${member.businessName}…`);
 
-  const handleSendMessage = (member: CircleMember) =>
-    setFeedback(`Message composer opened for ${member.fullName}…`);
+  // Messaging runs on the Central Hub chat backbone: the conversation is
+  // shared with every other app in the ecosystem.
+  const [chatMember, setChatMember] = useState<CircleMember | null>(null);
+  const [chatGroup, setChatGroup] = useState<{
+    circleId: string;
+    title: string;
+    members: CircleMember[];
+  } | null>(null);
+
+  const handleSendMessage = (member: CircleMember) => {
+    // Only real Central Hub users can be chatted with — somebody who was
+    // only added to a network list has no account yet.
+    if (member.chatable === false) {
+      setFeedback(
+        `${member.fullName} has not created a Central Hub account yet, so they cannot be messaged.`,
+      );
+      return;
+    }
+    setChatMember(member);
+  };
+
+  const handleGroupChat = () => {
+    if (!activeCircle) return;
+    const chatable = circleMembers.filter((member) => member.chatable !== false);
+    if (chatable.length === 0) {
+      setFeedback(
+        "None of the members of this circle has a Central Hub account yet, so there is nobody to chat with.",
+      );
+      return;
+    }
+    setChatGroup({
+      circleId: activeCircle.id,
+      title: activeCircle.config.name,
+      members: circleMembers,
+    });
+  };
 
   const handleAddCategory = (member: CircleMember) =>
     setFeedback(`Category suggestion sent to ${member.businessName}…`);
@@ -233,7 +268,6 @@ export default function CirclesWorkspacePage({
   const [editOpen, setEditOpen] = useState(false);
   const [editName, setEditName] = useState("");
   const [editDescription, setEditDescription] = useState("");
-  const [editDuration, setEditDuration] = useState(60);
   const [editVisibility, setEditVisibility] = useState("public");
   const [editInteraction, setEditInteraction] = useState("message");
   const [editStatus, setEditStatus] = useState("Active");
@@ -244,9 +278,10 @@ export default function CirclesWorkspacePage({
     if (!activeCircle) return;
     setEditName(activeCircle.config.name);
     setEditDescription(activeCircle.config.description);
-    setEditDuration(activeCircle.config.duration);
     setEditVisibility(activeCircle.config.visibility);
-    setEditInteraction(activeCircle.config.interactionLevel);
+    setEditInteraction(
+      activeCircle.config.interactionLevel === "read" ? "read" : "message",
+    );
     setEditStatus((activeCircle as BusinessCircle).status ?? "Active");
     setCircleError(null);
     setEditOpen(true);
@@ -261,7 +296,6 @@ export default function CirclesWorkspacePage({
         config: {
           name: editName.trim(),
           description: editDescription.trim(),
-          duration: editDuration,
           visibility: editVisibility,
           interactionLevel: editInteraction,
         },
@@ -366,7 +400,7 @@ export default function CirclesWorkspacePage({
                 totalInCircle={circleMembers.length}
                 accent={meta.accent}
                 onViewProfile={handleViewProfile}
-                onSendMessage={handleSendMessage}
+                onSendMessage={canManage ? handleSendMessage : undefined}
                 onAddCategory={handleAddCategory}
                 self={
                   business?.profile
@@ -410,6 +444,7 @@ export default function CirclesWorkspacePage({
                   }
                 : undefined
             }
+            onGroupChat={canManage ? handleGroupChat : undefined}
             participantMode={participantMode}
           />
         </div>
@@ -465,20 +500,6 @@ export default function CirclesWorkspacePage({
               </label>
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="flex flex-col gap-1.5 text-xs">
-                  <span className="font-semibold text-white">Duration</span>
-                  <select
-                    value={editDuration}
-                    onChange={(event) => setEditDuration(Number(event.target.value))}
-                    className="h-10 rounded-lg border border-white/10 bg-ink-800 px-3 text-xs text-slate-200 focus:border-gold-500/50 focus:outline-none"
-                  >
-                    {DURATIONS.map((value) => (
-                      <option key={value} value={value}>
-                        {value} days
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="flex flex-col gap-1.5 text-xs">
                   <span className="font-semibold text-white">Visibility</span>
                   <select
                     value={editVisibility}
@@ -499,7 +520,7 @@ export default function CirclesWorkspacePage({
                     onChange={(event) => setEditInteraction(event.target.value)}
                     className="h-10 rounded-lg border border-white/10 bg-ink-800 px-3 text-xs text-slate-200 focus:border-gold-500/50 focus:outline-none"
                   >
-                    {["read", "message", "collaborate"].map((value) => (
+                    {["read", "message"].map((value) => (
                       <option key={value} value={value}>
                         {value}
                       </option>
@@ -597,6 +618,16 @@ export default function CirclesWorkspacePage({
       )}
 
       {feedback && <Toast message={feedback} onDismiss={() => setFeedback(null)} />}
+
+      <ChatPanel
+        key={chatGroup ? `group:${chatGroup.circleId}` : `member:${chatMember?.id ?? "closed"}`}
+        member={chatGroup ? null : chatMember}
+        group={chatGroup}
+        onClose={() => {
+          setChatMember(null);
+          setChatGroup(null);
+        }}
+      />
     </>
   );
 }

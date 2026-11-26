@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -23,6 +24,15 @@ import {
   type ConsumerInvitationResponse,
   type ConsumerProfile,
 } from "./consumerApi";
+import { useNavigate } from "react-router-dom";
+import { ApiError } from "../app/api";
+import { clearAuthSession, loginPathForRole } from "../app/authSession";
+
+/** Where a visitor whose session died is sent to sign in again. */
+function loginTarget(): string {
+  const next = `${window.location.pathname}${window.location.search}`;
+  return `${loginPathForRole("consumer")}?next=${encodeURIComponent(next)}`;
+}
 
 interface ConsumerData {
   profile: ConsumerProfile | null;
@@ -108,6 +118,8 @@ export function ConsumerDataProvider({ children }: { children: ReactNode }) {
   const [explore, setExplore] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate();
+  const redirectingToLogin = useRef(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -130,12 +142,22 @@ export function ConsumerDataProvider({ children }: { children: ReactNode }) {
         ),
       );
       setError(null);
+      redirectingToLogin.current = false;
     } catch (cause) {
+      // The http-only session cookie can expire while the client still holds a
+      // stored login. Clear it and send the visitor back to the login page.
+      if (cause instanceof ApiError && cause.status === 401) {
+        if (redirectingToLogin.current) return;
+        redirectingToLogin.current = true;
+        clearAuthSession();
+        navigate(loginTarget(), { replace: true });
+        return;
+      }
       setError(cause instanceof Error ? cause.message : "Could not load consumer data");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [navigate]);
 
   useEffect(() => {
     // Initial dashboard load; refresh only updates state after the request.

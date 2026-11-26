@@ -11,6 +11,8 @@ import Button from "../../components/ui/Button";
 import Card, { CardBody } from "../../components/ui/Card";
 import NodePopover from "../../components/ui/NodePopover";
 import Toast from "../../components/ui/Toast";
+import RingOverflowNode from "../../components/circle/RingOverflowNode";
+import { useRingPager } from "../../components/circle/ringPaging";
 import { useAdminDirectoryEntry } from "../../admin/AdminDataProvider";
 import { adminApi } from "../../admin/adminApi";
 import type { Group } from "../../domain/types";
@@ -131,11 +133,33 @@ export default function AdminGroupCircleVisualization({
   const count = filteredSatellites.length;
   // If count is large, split into inner and outer orbital rings
   const useTwoRings = count > 12;
-  const innerCount = useTwoRings ? Math.ceil(count * 0.45) : count;
-  const outerCount = useTwoRings ? count - innerCount : 0;
+  const innerTotal = useTwoRings ? Math.ceil(count * 0.45) : count;
+  const innerMembers = useTwoRings
+    ? filteredSatellites.slice(0, innerTotal)
+    : filteredSatellites;
+  const outerMembers = useTwoRings ? filteredSatellites.slice(innerTotal) : [];
 
-  const innerPositions = calculatePositions(innerCount, useTwoRings ? INNER_RADIUS_PCT : 38);
-  const outerPositions = calculatePositions(outerCount, OUTER_RADIUS_PCT);
+  const innerPager = useRingPager(innerMembers);
+  const outerPager = useRingPager(outerMembers);
+  const innerSlots = innerPager.visible.length + (innerPager.hasOverflow ? 1 : 0);
+  const outerSlots = outerPager.visible.length + (outerPager.hasOverflow ? 1 : 0);
+
+  const innerPositions = calculatePositions(
+    innerSlots,
+    useTwoRings ? INNER_RADIUS_PCT : 38
+  );
+  const outerPositions = calculatePositions(outerSlots, OUTER_RADIUS_PCT);
+
+  const visibleMembers = [
+    ...innerPager.visible.map((member, index) => ({
+      member,
+      pos: innerPositions[index],
+    })),
+    ...outerPager.visible.map((member, index) => ({
+      member,
+      pos: outerPositions[index],
+    })),
+  ];
 
   const selectedMember = allMembers.find((m) => m.id === selectedId) ?? null;
 
@@ -209,9 +233,7 @@ export default function AdminGroupCircleVisualization({
           className="absolute inset-0 size-full pointer-events-none"
           xmlns="http://www.w3.org/2000/svg"
         >
-          {filteredSatellites.map((member, i) => {
-            const isInner = i < innerPositions.length;
-            const pos = isInner ? innerPositions[i] : outerPositions[i - innerPositions.length];
+          {visibleMembers.map(({ member, pos }) => {
             if (!pos) return null;
             const isSelected = selectedId === member.id;
             return (
@@ -302,9 +324,7 @@ export default function AdminGroupCircleVisualization({
         )}
 
         {/* ORBITING SATELLITE MEMBERS */}
-        {filteredSatellites.map((member, i) => {
-          const isInner = i < innerPositions.length;
-          const pos = isInner ? innerPositions[i] : outerPositions[i - innerPositions.length];
+        {visibleMembers.map(({ member, pos }) => {
           if (!pos) return null;
           const isSelected = selectedId === member.id;
 
@@ -364,6 +384,39 @@ export default function AdminGroupCircleVisualization({
             </div>
           );
         })}
+
+        {/* OVERFLOW NODES — hidden members folded behind the ring */}
+        {innerPager.hasOverflow && (
+          <RingOverflowNode
+            count={innerPager.hiddenCount}
+            x={innerPositions[innerPager.visible.length]?.x ?? 50}
+            y={innerPositions[innerPager.visible.length]?.y ?? 50}
+            size={36}
+            expanded={innerPager.showingOverflow}
+            label={
+              innerPager.showingOverflow
+                ? `Show the first ${innerPager.firstSliceSize} inner ring members again`
+                : `Show ${innerPager.hiddenCount} more inner ring member${innerPager.hiddenCount === 1 ? "" : "s"}`
+            }
+            onToggle={innerPager.next}
+          />
+        )}
+
+        {outerPager.hasOverflow && (
+          <RingOverflowNode
+            count={outerPager.hiddenCount}
+            x={outerPositions[outerPager.visible.length]?.x ?? 50}
+            y={outerPositions[outerPager.visible.length]?.y ?? 50}
+            size={36}
+            expanded={outerPager.showingOverflow}
+            label={
+              outerPager.showingOverflow
+                ? `Show the first ${outerPager.firstSliceSize} outer ring members again`
+                : `Show ${outerPager.hiddenCount} more outer ring member${outerPager.hiddenCount === 1 ? "" : "s"}`
+            }
+            onToggle={outerPager.next}
+          />
+        )}
       </div>
 
       {/* Selected Member Detail Panel */}

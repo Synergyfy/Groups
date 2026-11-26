@@ -12,10 +12,15 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { JwtService } from "@nestjs/jwt";
 import type { CookieOptions, Request, Response } from "express";
 import { randomBytes } from "node:crypto";
 import { AuthService } from "./auth.service.js";
-import type { SessionRole, SessionUser } from "./auth.types.js";
+import type {
+  SessionRole,
+  SessionTokenPayload,
+  SessionUser,
+} from "./auth.types.js";
 import { CurrentUser } from "./current-user.decorator.js";
 import { AdminLoginDto } from "./dto/admin-login.dto.js";
 import { McomCallbackDto } from "./dto/mcom-callback.dto.js";
@@ -23,6 +28,17 @@ import { JwtAuthGuard } from "./jwt-auth.guard.js";
 
 const OAUTH_COOKIE = "mcom_oauth";
 const OAUTH_COOKIE_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * The account types a visitor can sign up for from this app. Each one has a
+ * matching registration page on Central Hub Solution.
+ */
+export type RegisterAccountType = "business" | "customer";
+
+const REGISTER_TARGET_PATHS: Record<RegisterAccountType, string> = {
+  business: "/getstarted/business",
+  customer: "/register/customer",
+};
 
 interface OauthStateCookie {
   state: string;
@@ -34,6 +50,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly config: ConfigService,
+    private readonly jwt: JwtService,
   ) {}
 
   @Get("mcom/login")
@@ -57,10 +74,14 @@ export class AuthController {
 
   @Get("mcom/register")
   mcomRegister(
+    @Query("type") type: string | undefined,
     @Query("next") next: string | undefined,
+    @Query("email") email: string | undefined,
+    @Query("name") name: string | undefined,
     @Res() response: Response,
   ) {
     const state = randomBytes(32).toString("hex");
+    const accountType = normalizeRegisterType(type);
     const cookie: OauthStateCookie = {
       state,
       next: normalizeNext(next),
@@ -82,10 +103,24 @@ export class AuthController {
         "profile email business membership packages",
       ),
       state,
+      role: accountType,
     });
 
+    // Pre-fill the registration form with what the inviting business already
+    // knows, so the person only has to confirm their details.
+    const prefilledEmail = email?.trim();
+    if (prefilledEmail) {
+      params.set("email", prefilledEmail);
+    }
+    const prefilledName = name?.trim();
+    if (prefilledName) {
+      params.set("name", prefilledName);
+    }
+
+    // Business sign-ups continue on the Central Hub business onboarding flow,
+    // customer sign-ups on the Central Hub customer registration flow.
     return response.redirect(
-      `${frontendUrl}/getstarted/business?${params.toString()}`,
+      `${frontendUrl}${REGISTER_TARGET_PATHS[accountType]}?${params.toString()}`,
     );
   }
 
@@ -154,7 +189,24 @@ export class AuthController {
 
   @Post("logout")
   @HttpCode(HttpStatus.OK)
-  logout(@Res({ passthrough: true }) response: Response) {
+  async logout(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    // Drop the stored Central Hub SSO credentials so a signed-out session can
+    // never be used to mint chat credentials. A broken cookie is not an error.
+    const token = request.cookies?.[this.sessionCookieName];
+    if (typeof token === "string" && token) {
+      try {
+        const payload = await this.jwt.verify<SessionTokenPayload>(token);
+        if (payload?.sub) {
+          await this.authService.clearCentralSession(payload.sub);
+        }
+      } catch {
+        // The session was already invalid — nothing to clean up.
+      }
+    }
+
     response.clearCookie(this.sessionCookieName, { path: "/" });
     response.clearCookie(OAUTH_COOKIE, { path: "/" });
     return { ok: true };
@@ -187,6 +239,25 @@ function normalizeNext(next?: string): string | null {
   }
 
   return next.startsWith("/") && !next.startsWith("//") ? next : null;
+}
+
+/**
+ * Map the account type requested by the visitor to the Central Hub Solution
+ * registration page that serves it. Unknown values fall back to business so
+ * the historic single-button sign-up keeps working.
+ */
+function normalizeRegisterType(type?: string): RegisterAccountType {
+  const normalized = (type ?? "").trim().toLowerCase();
+
+  if (
+    normalized === "customer" ||
+    normalized === "consumer" ||
+    normalized === "client"
+  ) {
+    return "customer";
+  }
+
+  return "business";
 }
 
 function parseOauthCookie(raw: unknown): OauthStateCookie | null {

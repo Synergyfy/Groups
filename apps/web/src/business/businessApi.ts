@@ -271,6 +271,12 @@ export interface InvitationDetailResponse {
   invitee: BusinessRecordView | null;
   responderRole: string;
   canRespond: boolean;
+  eligibility?: {
+    eligible: boolean;
+    reason?: string;
+    requiredPlans: Array<{ id: string; name: string; variant: string }>;
+    upgradeUrl?: string;
+  };
 }
 
 export interface BusinessCircle extends GroupCircle {
@@ -278,6 +284,20 @@ export interface BusinessCircle extends GroupCircle {
   memberCount?: number;
   activityCount?: number;
   typeConfig?: CircleTypeConfigEntry;
+}
+
+/**
+ * What happened to the sign-up invitation that goes out with a new contact.
+ */
+export interface ContactInvitationResult {
+  /** True when the invitation email was accepted by the mail provider. */
+  sent: boolean;
+  /** Why it was skipped, or what went wrong. */
+  reason?: string;
+  /** The address the invitation was addressed to. */
+  email?: string;
+  /** True when the contact already has an account on the platform. */
+  alreadyRegistered: boolean;
 }
 
 export interface CircleMemberView {
@@ -291,6 +311,8 @@ export interface CircleMemberView {
   role: string;
   tier: string;
   confirmation?: string;
+  /** True when the member has a Central Hub account and can be messaged. */
+  chatable?: boolean;
   joinedAt?: string;
   lastActiveAt?: string;
   photoUrl?: string;
@@ -651,6 +673,16 @@ export const businessApi = {
         circles: number;
       };
       circles: GroupCircle[];
+      linkedCircles?: Array<{
+        id: string;
+        type: string;
+        name: string;
+        description: string;
+        memberIds: string[];
+        sourceListIds: string[];
+        status: string;
+        chatConversationId?: string;
+      }>;
     }>(`/business/groups/${id}`),
   updateGroup: (id: string, body: Record<string, unknown>) =>
     apiRequest<BusinessGroup>(`/business/groups/${id}`, {
@@ -768,11 +800,24 @@ export const businessApi = {
     apiRequest<PageResult<NetworkContact>>(
       `/business/network/contacts${queryString(params)}`,
     ),
+  assignContactLists: (contactId: string, listIds: string[]) =>
+    apiRequest<NetworkContact>(
+      `/business/network/contacts/${encodeURIComponent(contactId)}/lists`,
+      { method: "POST", body: JSON.stringify({ listIds }) },
+    ),
+  updateContactStatus: (contactId: string, confirmation: string) =>
+    apiRequest<NetworkContact>(
+      `/business/network/contacts/${encodeURIComponent(contactId)}/status`,
+      { method: "PATCH", body: JSON.stringify({ confirmation }) },
+    ),
   createContact: (body: Record<string, unknown>) =>
-    apiRequest<NetworkContact>("/business/network/contacts", {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
+    apiRequest<NetworkContact & { invitation?: ContactInvitationResult }>(
+      "/business/network/contacts",
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+      },
+    ),
   confirmContact: (id: string, consent?: boolean) =>
     apiRequest<NetworkContact>(
       `/business/network/contacts/${encodeURIComponent(id)}/confirm`,

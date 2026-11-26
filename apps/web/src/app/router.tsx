@@ -8,6 +8,9 @@ import CirclesWorkspacePage from "../features/circles/CirclesWorkspacePage";
 import CircleCreatePage from "../features/circles/CircleCreatePage";
 import CircleWorkspaceDetailPage from "../features/circles/CircleWorkspaceDetailPage";
 import MyNetworkListsPage from "../features/network/MyNetworkListsPage";
+import ContactsPage from "../features/network/ContactsPage";
+import MessagesPage from "../features/chat/MessagesPage";
+import RequiredGroupsPage from "../features/groups/RequiredGroupsPage";
 import GroupsOverviewPage from "../features/groups/GroupsOverviewPage";
 import MyGroupsPage from "../features/groups/MyGroupsPage";
 import NetworkGroupPage from "../features/groups/NetworkGroupPage";
@@ -24,8 +27,8 @@ import CreateGroupWizardPage from "../features/groups/CreateGroupWizardPage";
 import GroupCreatedPage from "../features/groups/GroupCreatedPage";
 import NationalCommunityPage from "../features/platform/NationalCommunityPage";
 import MyLocationPage from "../features/platform/MyLocationPage";
-import CampaignsPage from "../features/platform/CampaignsPage";
-import RewardsPage from "../features/platform/RewardsPage";
+// import CampaignsPage from "../features/platform/CampaignsPage";
+// import RewardsPage from "../features/platform/RewardsPage";
 import BusinessSettingsPage from "../features/settings/BusinessSettingsPage";
 import PlanPage from "../features/plan/PlanPage";
 import JourneyPage from "../journey/JourneyPage";
@@ -87,6 +90,10 @@ const businessRoutes = [
     element: <GroupsOverviewPage />,
   },
   {
+    path: "groups/required",
+    element: <RequiredGroupsPage />,
+  },
+  {
     path: "groups/mine",
     element: <MyGroupsPage />,
   },
@@ -143,6 +150,14 @@ const businessRoutes = [
     element: <InvitationDetailPage />,
   },
   {
+    path: "contacts",
+    element: <ContactsPage />,
+  },
+  {
+    path: "messages",
+    element: <MessagesPage />,
+  },
+  {
     path: "network/lists",
     element: <MyNetworkListsPage />,
   },
@@ -166,14 +181,14 @@ const businessRoutes = [
     path: "location",
     element: <MyLocationPage />,
   },
-  {
-    path: "campaigns",
-    element: <CampaignsPage />,
-  },
-  {
-    path: "rewards",
-    element: <RewardsPage />,
-  },
+  // {
+  //   path: "campaigns",
+  //   element: <CampaignsPage />,
+  // },
+  // {
+  //   path: "rewards",
+  //   element: <RewardsPage />,
+  // },
   {
     path: "settings",
     element: <BusinessSettingsPage />,

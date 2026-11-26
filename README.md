@@ -64,7 +64,34 @@ VITE_MCOM_PROFILE_URL="http://localhost:3000/dashboard/profile"
 WEB_PUBLIC_URL="http://localhost:4088"
 VITE_STRIPE_PUBLISHABLE_KEY="pk_test_..."
 VITE_MCOM_WALLET_TOPUP_URL="http://localhost:3000/dashboard/wallet"
+
+# Transactional email — Resend
+RESEND_API_KEY="re_..."
+SMTP_FROM="Central Hub Solution <no-reply@centralhubsolution.com>"
 ```
+
+### Contact onboarding email
+
+When a business adds a contact whose email is not on the platform yet, the API
+sends an HTML invitation (through Resend) asking the contact to create a
+Central Hub account. The link lands on the Central Hub registration page with
+their name and email pre-filled, and returns them to
+`/consumer/invitations` once they sign in.
+
+When they sign in, the API reconciles the contact record with the profile they
+signed up with (name, category, location, phone), marks the contact as
+confirmed, adds them to every circle built from their network list and claims
+their pending invitations for the new account.
+
+- `RESEND_API_KEY` — required to send mail. Without it the contact is still
+  created and the API logs that the invitation was skipped.
+- `SMTP_FROM` — the sender address. `RESEND_FROM` overrides it when a
+  different Resend domain should be used.
+- `API_PUBLIC_URL` — optional. The API is reached at `WEB_PUBLIC_URL/api` by
+  default; set this when the API is served from another origin.
+
+Run `pnpm --filter @247gbs/api run smoke:contacts` to assert the
+reconciliation behaviour.
 
 ### MCOM Pay
 
@@ -434,6 +461,92 @@ Outbound mesh access is deny-by-default. If the service-token request returns
 `403`, configure the app's allowed audiences/scopes in **MCOM Console → Service
 Mesh Policy** first.
 
+### Central Hub chat (circle messaging)
+
+Members of a circle can be messaged straight from the circles workspace: click a
+member, press **Message**, and the conversation opens as a drawer inside Groups
+& Circles. The conversation itself is not stored here — **Central Hub runs the
+single messaging backbone for the whole ecosystem**, so the same person can be
+chatting with you from any app and the history follows the person, not the app.
+
+How it is wired:
+
+| Piece                | Owner                                                                       |
+| -------------------- | --------------------------------------------------------------------------- |
+| Conversation, messages, read receipts, blocks | Central Hub                                |
+| Real-time transport  | Central Hub — Socket.IO namespace `/chat`                                   |
+| Canonical identity   | Central Hub — the immutable `mcomUserId` of both people                     |
+| The chat UI          | This app — `apps/web/src/features/chat`                                     |
+| REST proxy, tokens   | This app — `apps/api/src/chat`                                              |
+
+The browser never holds a long-lived Central Hub credential:
+
+1. The API exchanges the user's Central Hub SSO token for a scoped chat
+   session (`POST /api/v1/chat/session`). Central Hub verifies the SSO token
+   and confirms a live SSO session for that user on this app.
+2. The 15-minute chat access token stays on the API and is used for every REST
+   call the app proxies.
+3. Only the single-use, 90-second socket token reaches the browser, in
+   `handshake.auth.token` — never in a URL, never in `localStorage`.
+4. Every reconnect mints a fresh socket token, because Central Hub consumes
+   each one exactly once.
+
+The Central Hub SSO token is captured during the SSO code exchange and stored
+**encrypted at rest** (`users.mcom_access_token`, `users.mcom_refresh_token`).
+It is renewed with the SSO refresh token before it expires and dropped on
+sign-out. The key comes from `MCOM_TOKEN_ENCRYPTION_KEY`, falling back to
+`AUTH_JWT_SECRET`.
+
+A circle member is messaged through their canonical Central Hub user id. It is
+resolved from the contact row (`network_contacts.mcom_user_id`), the local
+account behind their email, and finally the Central Hub people directory — the
+result is then cached on the contact row. A member without a Central Hub
+account gets a clear message instead of a broken chat.
+
+### Circle group chats
+
+A circle can also have a **group conversation** — one thread the whole circle
+sees. Press **Start a group chat with this circle** in the circle panel.
+
+| Role        | Who                                   | What they may do                        |
+| ----------- | ------------------------------------- | ---------------------------------------- |
+| **Owner**   | the business that owns the circle      | creates the group, manages it, may post  |
+| **Admin**   | promoted by the owner                  | may post and manage the group            |
+| **Member**  | the circle members                     | read the group and get the notifications |
+
+The creator is automatically the owner and an admin; everybody else joins as a
+member. The rules are enforced by Central Hub on every send, in the socket and
+over REST alike — a client-side switch is only a convenience.
+
+- The conversation id is remembered on the circle (`circles.chat_conversation_id`),
+  so opening the group chat again opens the same conversation.
+- Only members who are real Central Hub users take part. Somebody who was only
+  added to a network list has no account to talk with yet and is left out, with
+  a note in the panel saying so.
+- An admin can turn the group into a **read-only broadcast**: everybody still
+  reads it and gets the notifications, but only admins may post. Connected
+  clients switch their composer to read-only straight away, through the
+  `conversation_updated` socket event.
+- Every group change is written to the transcript as a system message, so the
+  group keeps an audit trail.
+
+Console setup (**MCOM Console → this app → Configuration**):
+
+| Setting                    | Value                                          |
+| -------------------------- | ---------------------------------------------- |
+| CORS Origins               | the web app origin, e.g. `http://localhost:4088` |
+| Service Access             | Enabled                                         |
+
+The CORS origin list feeds both the HTTP CORS allowlist and the WebSocket
+origin allowlist, and is refreshed from the database every 60 seconds, so a new
+origin works without a redeploy.
+
+Switch messaging off without a redeploy:
+
+```bash
+MCOM_CHAT_ENABLED="false"
+```
+
 ## Useful scripts
 
 | Command            | Description                                  |
@@ -471,6 +584,19 @@ The API is a NestJS application using Prisma 7 with the PostgreSQL driver adapte
 | `POST`   | `/api/groups`                  | Create a group (admin only)             |
 | `PATCH`  | `/api/groups/:id`              | Update a group (admin only)             |
 | `DELETE` | `/api/groups/:id`              | Delete a group (admin only)             |
+| `GET`    | `/api/chat/session`            | Single-use socket token for Central Hub chat |
+| `GET`    | `/api/chat/conversations`      | The signed-in user's Central Hub conversations |
+| `POST`   | `/api/chat/conversations/direct` | Open the conversation with a circle member |
+| `POST`   | `/api/chat/conversations/group` | Open (or create) the group chat of a circle |
+| `POST`   | `/api/chat/conversations/:id/participants` | Add a circle member to the group |
+| `DELETE` | `/api/chat/conversations/:id/participants/:memberId` | Remove a member from the group |
+| `PATCH`  | `/api/chat/conversations/:id`  | Group settings — title, read-only mode (admins only) |
+| `PATCH`  | `/api/chat/conversations/:id/participants/:memberId` | Promote/demote a group admin |
+| `POST`   | `/api/chat/conversations/:id/transfer-ownership` | Hand the group over (owner only) |
+| `GET`    | `/api/chat/conversations/:id/messages` | Cursor-paginated message history  |
+| `POST`   | `/api/chat/conversations/:id/messages` | Send a message (HTTP fallback)     |
+| `POST`   | `/api/chat/conversations/:id/read` | Mark the conversation as read      |
+| `GET`    | `/api/chat/directory`          | Central Hub people directory (`?q=`)     |
 
 Business group creation and updates use `/api/business/groups`, where plan
 creation rights, group/circle quotas and plan-gated group membership are

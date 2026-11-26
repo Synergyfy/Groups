@@ -24,6 +24,10 @@ interface DoneInfo {
   fullName: string;
   email: string;
   listId: string;
+  /** Whether the sign-up invitation email went out. */
+  invited: boolean;
+  /** True when the contact already has a Central Hub account. */
+  alreadyRegistered: boolean;
 }
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -34,13 +38,15 @@ const FIELD_CLASS =
 export default function AddContactFlow({
   open,
   onClose,
+  defaultListId,
 }: {
   open: boolean;
   onClose: () => void;
+  defaultListId?: string;
 }) {
   const { networkLists, refresh } = useBusinessData();
   const [view, setView] = useState<View>("method");
-  const [listId, setListId] = useState("");
+  const [listId, setListId] = useState(defaultListId ?? "");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -59,7 +65,7 @@ export default function AddContactFlow({
 
   const reset = () => {
     setView("method");
-    setListId("");
+    setListId(defaultListId ?? "");
     setFullName("");
     setEmail("");
     setPhone("");
@@ -112,6 +118,8 @@ export default function AddContactFlow({
         fullName: contact.fullName,
         email: contact.email,
         listId: contact.listId,
+        invited: contact.invitation?.sent ?? false,
+        alreadyRegistered: contact.invitation?.alreadyRegistered ?? false,
       });
       setError(null);
       setView("done");
@@ -316,9 +324,10 @@ export default function AddContactFlow({
             <span className="font-semibold text-white">
               {email.trim() || "this address"}
             </span>{" "}
-            a confirmation link. Until they approve, the contact shows as{" "}
-            <span className="font-semibold text-white">Pending</span> — but you can already add
-            them to circles while you wait.
+            an invitation to create their Central Hub account — they sign up, we add them to the
+            right circles and their pending invitations are waiting. Until they sign in, the
+            contact shows as <span className="font-semibold text-white">Pending</span>, but you
+            can already add them to circles while you wait.
           </p>
         </div>
       )}
@@ -363,11 +372,29 @@ export default function AddContactFlow({
             {done.fullName} is pending on {doneList?.name}
           </p>
           <p className="max-w-sm text-xs leading-relaxed text-slate-400">
-            A confirmation email went to{" "}
-            <span className="text-slate-200">{done.email}</span>. Their status changes from{" "}
-            <span className="text-gold-300">Pending</span> to{" "}
-            <span className="text-success-300">Confirmed</span> only when they approve — and you
-            can already add them to circles and groups while you wait.
+            {done.alreadyRegistered ? (
+              <>
+                <span className="text-slate-200">{done.email}</span> already has a Central Hub
+                account, so no sign-up email was needed. Their status changes from{" "}
+                <span className="text-gold-300">Pending</span> to{" "}
+                <span className="text-success-300">Confirmed</span> as soon as they sign in —
+                and you can already add them to circles and groups while you wait.
+              </>
+            ) : done.invited ? (
+              <>
+                We emailed{" "}
+                <span className="text-slate-200">{done.email}</span> an invitation to create
+                their Central Hub account. Once they sign up they land straight in their
+                invitations, and we add them to the right circles and refresh their details with
+                what they signed up with.
+              </>
+            ) : (
+              <>
+                <span className="text-slate-200">{done.email}</span> is on your list. We could
+                not send the sign-up invitation just now — try again from the contact list, or
+                invite them to a group and they will pick it up there.
+              </>
+            )}
           </p>
           <Link
             to={`/join/${done.listId}/confirm/${done.contactId}`}

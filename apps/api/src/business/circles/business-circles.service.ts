@@ -25,6 +25,7 @@ import { BusinessMediaService } from "../business.media.js";
 import {
   accessQuotas,
   applicableMandatoryCircles,
+  unsatisfiedMandatoryCircles,
 } from "../business.rules.js";
 import {
   assertPartnerPermission,
@@ -134,12 +135,34 @@ export class BusinessCirclesService {
         })
       : [];
 
+    // A member can also be a platform account that joined the circle.
+    const businessIdSet = new Set(businesses.map((business) => business.id));
+    const accountIds = circle.memberIds.filter(
+      (id) => !contactIds.has(id) && !businessIdSet.has(id),
+    );
+    const accounts = accountIds.length
+      ? await this.prisma.user.findMany({
+          where: { id: { in: accountIds } },
+          select: {
+            id: true,
+            fullName: true,
+            displayName: true,
+            email: true,
+            avatarUrl: true,
+            mcomUserId: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        })
+      : [];
+
     const photos = await this.memberPhotos(contacts, businesses);
 
     const contactsById = new Map(contacts.map((contact) => [contact.id, contact]));
     const businessesById = new Map(
       businesses.map((business) => [business.id, business]),
     );
+    const accountsById = new Map(accounts.map((account) => [account.id, account]));
     const members = circle.memberIds.map((memberId) => {
       const contact = contactsById.get(memberId);
       if (contact) {
@@ -152,6 +175,10 @@ export class BusinessCirclesService {
           photos.byBusinessId.get(business.id),
         );
       }
+      const account = accountsById.get(memberId);
+      if (account) {
+        return this.memberFromAccount(account);
+      }
       return {
         id: memberId,
         fullName: memberId,
@@ -162,6 +189,7 @@ export class BusinessCirclesService {
         status: "inactive",
         role: "peripheral",
         tier: "Bronze",
+        chatable: false,
         joinedAt: undefined,
         lastActiveAt: undefined,
         photoUrl: undefined,
@@ -208,6 +236,7 @@ export class BusinessCirclesService {
       "Your partner permissions do not allow creating circles.",
     );
     const typeConfig = this.requireType(ctx, dto.type);
+    await this.assertMandatoryCirclesOrder(ctx, typeConfig.type);
     const sourceLists = await this.resolveLists(ctx, dto.sourceListIds ?? []);
     const memberIds = await this.resolveMemberIds(
       ctx,
@@ -216,7 +245,6 @@ export class BusinessCirclesService {
     );
     this.assertCapacity(typeConfig, memberIds, 0);
     await this.assertBanker(ctx, typeConfig, memberIds);
-    this.assertDuration(typeConfig, dto.config.duration ?? 90);
     await this.assertQuota(ctx);
 
     const circle = await this.prisma.circle.create({
@@ -273,9 +301,6 @@ export class BusinessCirclesService {
       ...this.configJsonFrom(circle),
       ...this.definedConfig(dto.config),
     };
-    if (dto.config?.duration !== undefined) {
-      this.assertDuration(typeConfig, dto.config.duration);
-    }
     if (!String(config.name ?? "").trim()) {
       throw new BadRequestException("A circle must have a name.");
     }
@@ -424,7 +449,7 @@ export class BusinessCirclesService {
     const unique = [...new Set(ids)];
     const lists = await this.prisma.networkList.findMany({
       where: { businessId: ctx.business.id, id: { in: unique } },
-      include: { _count: { select: { contacts: true } } },
+      include: { _count: { select: { contacts: true, memberships: true } } },
     });
     if (lists.length !== unique.length) {
       throw new NotFoundException("One or more source lists were not found.");
@@ -433,6 +458,16 @@ export class BusinessCirclesService {
     if (inactive.length > 0) {
       throw new BadRequestException(
         `Inactive lists cannot be used as circle sources: ${inactive
+          .map((list) => list.name)
+          .join(", ")}`,
+      );
+    }
+    const empty = lists.filter(
+      (list) => list._count.contacts + list._count.memberships < 1,
+    );
+    if (empty.length > 0) {
+      throw new BadRequestException(
+        `Empty lists cannot be used as circle sources: ${empty
           .map((list) => list.name)
           .join(", ")}`,
       );
@@ -450,8 +485,11 @@ export class BusinessCirclesService {
       const contacts = await this.prisma.networkContact.findMany({
         where: {
           businessId: ctx.business.id,
-          listId: { in: sourceListIds },
-          confirmation: "confirmed",
+          confirmation: { in: ["confirmed", "pending"] },
+          OR: [
+            { listId: { in: sourceListIds } },
+            { memberships: { some: { listId: { in: sourceListIds } } } },
+          ],
         },
         select: { id: true },
       });
@@ -479,19 +517,6 @@ export class BusinessCirclesService {
     ) {
       throw new ConflictException(
         `${typeConfig.shortLabel} circles allow at most ${typeConfig.maxMembers} members.`,
-      );
-    }
-  }
-
-  private assertDuration(typeConfig: CircleTypeConfigEntry, duration: number) {
-    if (
-      typeConfig.allowedDurations.length > 0 &&
-      !typeConfig.allowedDurations.includes(duration)
-    ) {
-      throw new BadRequestException(
-        `${typeConfig.shortLabel} circles allow ${typeConfig.allowedDurations.join(
-          ", ",
-        )} day durations.`,
       );
     }
   }
@@ -525,6 +550,45 @@ export class BusinessCirclesService {
       throw new ForbiddenException({
         code: "CIRCLE_QUOTA_REACHED",
         message: `Your plan allows ${quota} circles.`,
+      });
+    }
+  }
+
+  /**
+   * When the administrator has configured required circles that are not yet
+   * satisfied, only those required circle types may be created. Other circle
+   * types remain blocked until every required circle exists with its minimum
+   * member count.
+   */
+  private async assertMandatoryCirclesOrder(
+    ctx: BusinessContext,
+    requestedType: string,
+  ) {
+    const mandatoryCircles = applicableMandatoryCircles(
+      ctx.config.mandatoryCircles,
+      ctx.plan.paid,
+    );
+    if (mandatoryCircles.length === 0) return;
+
+    const existing = await this.prisma.circle.findMany({
+      where: { businessId: ctx.business.id },
+      select: { type: true, memberIds: true },
+    });
+    const missing = unsatisfiedMandatoryCircles(mandatoryCircles, existing);
+    if (
+      missing.length > 0 &&
+      !missing.some((entry) => entry.rule.circleType === requestedType)
+    ) {
+      throw new ConflictException({
+        code: "MANDATORY_CIRCLES_REQUIRED",
+        message: `Create the required circle types first: ${missing
+          .map((entry) => entry.rule.circleType)
+          .join(", ")}`,
+        requiredCircles: missing.map((entry) => ({
+          type: entry.rule.circleType,
+          current: entry.current,
+          required: entry.required,
+        })),
       });
     }
   }
@@ -664,13 +728,12 @@ export class BusinessCirclesService {
 
   private configJson(
     dto: CreateCircleDto,
-    typeConfig: CircleTypeConfigEntry,
+    _typeConfig: CircleTypeConfigEntry,
     location: CircleLocation,
   ) {
     return {
       name: dto.config.name.trim(),
       description: dto.config.description?.trim() ?? "",
-      duration: dto.config.duration ?? typeConfig.allowedDurations[0] ?? 90,
       visibility: dto.config.visibility ?? "private",
       interactionLevel: dto.config.interactionLevel ?? "message",
       location,
@@ -682,7 +745,6 @@ export class BusinessCirclesService {
     return {
       name: String(config.name ?? ""),
       description: String(config.description ?? ""),
-      duration: Number(config.duration ?? 90),
       visibility: String(config.visibility ?? "private"),
       interactionLevel: String(config.interactionLevel ?? "message"),
       location: (config.location ?? null) as Prisma.InputJsonValue,
@@ -717,9 +779,47 @@ export class BusinessCirclesService {
       role: contact.role,
       tier: contact.tier,
       confirmation: contact.confirmation,
+      // A contact only becomes a chat-able member once they are a real
+      // Central Hub user. Somebody who was only added to the list has no
+      // account to talk to yet.
+      chatable: Boolean(contact.mcomUserId),
       joinedAt: contact.createdAt.toISOString(),
       lastActiveAt: contact.updatedAt.toISOString(),
       photoUrl: photoUrl ?? null,
+    };
+  }
+
+  /**
+   * A member who is a platform account rather than a network contact — they
+   * signed up themselves, so they are a real Central Hub user and can be
+   * messaged.
+   */
+  private memberFromAccount(account: {
+    id: string;
+    fullName: string | null;
+    displayName: string | null;
+    email: string;
+    avatarUrl: string | null;
+    mcomUserId: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }) {
+    const name = account.displayName ?? account.fullName ?? account.email;
+    return {
+      id: account.id,
+      fullName: name,
+      businessName: name,
+      category: "Member",
+      location: "",
+      geography: "National",
+      status: "active",
+      role: "peripheral",
+      tier: "Bronze",
+      confirmation: "confirmed",
+      chatable: Boolean(account.mcomUserId),
+      joinedAt: account.createdAt.toISOString(),
+      lastActiveAt: account.updatedAt.toISOString(),
+      photoUrl: account.avatarUrl ?? null,
     };
   }
 
@@ -733,6 +833,7 @@ export class BusinessCirclesService {
       tier: string;
       joinedAt: Date;
       updatedAt: Date;
+      mcomUserId?: string | null;
     },
     photoUrl?: string,
   ) {
@@ -747,6 +848,7 @@ export class BusinessCirclesService {
       role: "partner",
       tier: business.tier === "Free" ? "Bronze" : business.tier,
       confirmation: "confirmed",
+      chatable: Boolean(business.mcomUserId),
       joinedAt: business.joinedAt.toISOString(),
       lastActiveAt: business.updatedAt.toISOString(),
       photoUrl: photoUrl ?? null,

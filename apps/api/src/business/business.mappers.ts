@@ -35,8 +35,19 @@ export function mapBusinessPlan(
 }
 
 export function mapNetworkList(
-  list: NetworkList & { contacts?: NetworkContact[] },
+  list: NetworkList & {
+    contacts?: NetworkContact[];
+    memberships?: Array<{ contact: NetworkContact & { memberships?: Array<{ listId: string }> } }>;
+  },
 ) {
+  const byId = new Map<string, NetworkContact & { memberships?: Array<{ listId: string }> }>();
+  for (const contact of list.contacts ?? []) {
+    byId.set(contact.id, contact);
+  }
+  for (const entry of list.memberships ?? []) {
+    byId.set(entry.contact.id, entry.contact);
+  }
+  const merged = [...byId.values()];
   return {
     id: list.id,
     name: list.name,
@@ -44,19 +55,29 @@ export function mapNetworkList(
     geography: list.geography,
     status: list.status,
     source: list.source,
-    contactIds: list.contacts?.map((contact) => contact.id) ?? [],
-    contacts: list.contacts?.map(mapNetworkContact),
+    contactIds: merged.map((contact) => contact.id),
+    contacts: merged.map(mapNetworkContact),
     createdAt: iso(list.createdAt),
   };
 }
 
-export function mapNetworkContact(contact: NetworkContact) {
+export function mapNetworkContact(
+  contact: NetworkContact & { memberships?: Array<{ listId: string }> },
+) {
+  const listIds = Array.from(
+    new Set([
+      contact.listId,
+      ...(contact.memberships?.map((entry) => entry.listId) ?? []),
+    ]),
+  );
   return {
     id: contact.id,
     listId: contact.listId,
+    listIds,
     fullName: contact.fullName,
     email: contact.email ?? undefined,
     phone: contact.phone ?? undefined,
+    mcomUserId: contact.mcomUserId ?? undefined,
     category: contact.category ?? undefined,
     location: contact.location ?? undefined,
     geography: contact.geography ?? undefined,

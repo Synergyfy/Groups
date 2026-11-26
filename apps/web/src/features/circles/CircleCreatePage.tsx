@@ -1,19 +1,20 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowLeft, ArrowRight, Check, MapPin, Users } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Lock, MapPin, Users } from "lucide-react";
 import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
 import Card, { CardBody, CardTitle } from "../../components/ui/Card";
 import EmptyState from "../../components/ui/EmptyState";
 import FieldHint from "../../components/ui/FieldHint";
 import SectionHeader from "../../components/ui/SectionHeader";
+import { SkeletonCard } from "../../components/ui/Skeleton";
 import Stepper from "../../components/ui/Stepper";
 import TipIcon from "../../components/ui/TipIcon";
-import { INTERACTION_LEVELS } from "../../domain/constants";
-import type { CampaignDuration, CircleVisibility, InteractionLevel } from "../../domain/types";
+import type { CircleVisibility, InteractionLevel } from "../../domain/types";
 import { useCircleTypeEntries } from "../../store/selectors";
 import { errorMessage } from "../../app/api";
 import { businessApi, useBusinessData } from "../../business/BusinessDataProvider";
+const CIRCLE_INTERACTION_LEVELS: InteractionLevel[] = ["read", "message"];
 const STEPS = [
   { id: "lists", label: "Select Lists" },
   { id: "type", label: "Define Type" },
@@ -22,7 +23,7 @@ const STEPS = [
 
 export default function CircleCreatePage() {
   const navigate = useNavigate();
-  const { networkLists, contacts, refresh, location } = useBusinessData();
+  const { networkLists, contacts, circles, refresh, location } = useBusinessData();
   const lists = useMemo(() => networkLists?.items ?? [], [networkLists]);
   const [params] = useSearchParams();
 
@@ -36,15 +37,20 @@ export default function CircleCreatePage() {
     myLocation?.localMall,
   ].filter(Boolean) as string[];
 
+  const getListContactCount = (list: (typeof lists)[number]) =>
+    list.contactCount ??
+    list.contactIds?.length ??
+    contacts.filter((contact) => contact.listId === list.id).length;
+
   const [step, setStep] = useState(0);
   const [selected, setSelected] = useState<string[]>(() => {
     const preset = params.get("list");
-    return preset && lists.some((list) => list.id === preset) ? [preset] : [];
+    const presetList = preset ? lists.find((list) => list.id === preset) : undefined;
+    return presetList && getListContactCount(presetList) >= 1 ? [presetList.id] : [];
   });
   const [selectedTypeId, setSelectedTypeId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [duration, setDuration] = useState<CampaignDuration>(90);
   const [visibility, setVisibility] = useState<CircleVisibility>("private");
   const [interaction, setInteraction] = useState<InteractionLevel>("message");
   const [error, setError] = useState<string | null>(null);
@@ -52,7 +58,34 @@ export default function CircleCreatePage() {
 
   const allCircleTypes = useCircleTypeEntries();
   const circleTypes = useMemo(() => allCircleTypes.filter((entry) => entry.enabled), [allCircleTypes]);
-  const meta = circleTypes.find((entry) => entry.id === selectedTypeId) ?? circleTypes[0];
+  const circlesReady = circles !== null;
+  const missingCircles = useMemo(
+    () => (circles?.mandatoryCircles ?? []).filter((entry) => entry.required && !entry.satisfied),
+    [circles]
+  );
+  const mandateActive = missingCircles.length > 0;
+  const missingTypeSet = useMemo(
+    () => new Set(missingCircles.map((entry) => entry.circleType)),
+    [missingCircles]
+  );
+  const requiredRuleByType = useMemo(
+    () =>
+      new Map(
+        (circles?.mandatoryCircles ?? [])
+          .filter((entry) => entry.required)
+          .map((entry) => [entry.circleType, entry])
+      ),
+    [circles]
+  );
+  const allowedCircleTypes = useMemo(
+    () =>
+      mandateActive
+        ? circleTypes.filter((entry) => missingTypeSet.has(entry.type))
+        : circleTypes,
+    [mandateActive, circleTypes, missingTypeSet]
+  );
+  const meta =
+    allowedCircleTypes.find((entry) => entry.id === selectedTypeId) ?? allowedCircleTypes[0];
 
   const memberIds = useMemo(() => {
     const ids = new Set<string>();
@@ -67,6 +100,8 @@ export default function CircleCreatePage() {
   }, [selected, lists, contacts]);
 
   const toggleList = (id: string) => {
+    const target = lists.find((list) => list.id === id);
+    if (!target || getListContactCount(target) < 1) return;
     setError(null);
     setSelected((current) =>
       current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id]
@@ -85,9 +120,27 @@ export default function CircleCreatePage() {
       );
       return;
     }
+    if (step === 1 && mandateActive && allowedCircleTypes.length === 0) {
+      setError(
+        `A required circle type (${missingCircles.map((entry) => entry.circleType).join(", ")}) is currently disabled by your administrator. Ask an administrator to enable it before creating circles.`
+      );
+      return;
+    }
+    if (step === 1 && (!meta || (mandateActive && !missingTypeSet.has(meta.type)))) {
+      setError(
+        `Create the required circle types first: ${missingCircles.map((entry) => entry.circleType).join(", ")}.`
+      );
+      return;
+    }
     if (step === 2) {
       if (!meta) {
         setError("Choose a circle type on the previous step before configuring the circle.");
+        return;
+      }
+      if (mandateActive && !missingTypeSet.has(meta.type)) {
+        setError(
+          `Create the required circle types first: ${missingCircles.map((entry) => entry.circleType).join(", ")}.`
+        );
         return;
       }
       if (name.trim().length === 0) {
@@ -112,9 +165,6 @@ export default function CircleCreatePage() {
           return;
         }
       }
-      const finalDuration: CampaignDuration = meta.allowedDurations.includes(duration)
-        ? duration
-        : (meta.allowedDurations[0] ?? duration);
       setSubmitting(true);
       try {
         const created = await businessApi.createCircle({
@@ -125,7 +175,6 @@ export default function CircleCreatePage() {
               description.trim().length > 0
                 ? description.trim()
                 : `${meta.shortLabel} circle built from ${selected.length} My Network list${selected.length === 1 ? "" : "s"}.`,
-            duration: finalDuration,
             visibility,
             interactionLevel: interaction,
           },
@@ -156,7 +205,34 @@ export default function CircleCreatePage() {
         <Stepper steps={STEPS} current={step} onStepClick={setStep} />
       </div>
 
-      <Card data-tour="step-body">
+      {!circlesReady ? (
+        <SkeletonCard />
+      ) : (
+        <>
+          {mandateActive && (
+            <div className="flex flex-col gap-2 rounded-2xl border border-gold-500/30 bg-gold-500/10 p-4 text-xs text-gold-200">
+              <div className="flex items-start gap-2">
+                <Lock className="mt-0.5 size-4 shrink-0 text-gold-400" />
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-white">Required circles first</p>
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-gold-200/90">
+                    Your administrator requires these circles before any other circle type can be
+                    created. Other circle types unlock once each required circle exists with its
+                    minimum member count.
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2 pl-6">
+                {missingCircles.map((entry) => (
+                  <Badge key={entry.circleType} variant="warning">
+                    {entry.circleType} · {entry.current}/{entry.minMemberCount} members
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <Card data-tour="step-body">
         <CardBody className="flex flex-col gap-4">
           {step === 0 && (
             <div className="flex flex-col gap-3">
@@ -166,15 +242,25 @@ export default function CircleCreatePage() {
               <div className="grid gap-3 sm:grid-cols-2">
                 {lists.map((list) => {
                   const active = selected.includes(list.id);
+                  const listCount = getListContactCount(list);
+                  const isEmpty = listCount < 1;
                   return (
                     <button
                       key={list.id}
                       type="button"
+                      disabled={isEmpty}
+                      title={
+                        isEmpty
+                          ? "Add at least one contact to this list before selecting it"
+                          : undefined
+                      }
                       onClick={() => toggleList(list.id)}
-                      className={`cursor-pointer rounded-2xl border p-4 text-left transition-colors ${
-                        active
-                          ? "border-gold-500/40 bg-gold-500/[0.07]"
-                          : "border-white/10 bg-ink-950/60 hover:border-gold-500/30"
+                      className={`rounded-2xl border p-4 text-left transition-colors ${
+                        isEmpty
+                          ? "cursor-not-allowed border-white/5 bg-ink-950/40 opacity-50"
+                          : active
+                            ? "cursor-pointer border-gold-500/40 bg-gold-500/[0.07]"
+                            : "cursor-pointer border-white/10 bg-ink-950/60 hover:border-gold-500/30"
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">
@@ -197,9 +283,9 @@ export default function CircleCreatePage() {
                       <div className="mt-3 flex flex-wrap items-center gap-2">
                         <Badge variant={list.type === "B2B" ? "gold" : "info"}>{list.type}</Badge>
                         <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
-                          <Users className="size-3.5" />{" "}
-                          {list.contactCount ?? list.contactIds?.length ?? 0}
+                          <Users className="size-3.5" /> {listCount}
                         </span>
+                        {isEmpty && <Badge variant="muted">Empty</Badge>}
                       </div>
                     </button>
                   );
@@ -220,8 +306,8 @@ export default function CircleCreatePage() {
                 <TipIcon text="Circle types are authored by the administrator. Only the types that are enabled in admin configuration appear here." />
               </div>
               <FieldHint>
-                Pick the type that matches what this circle is for. Its rules — member limits,
-                banker requirement and allowed durations — are applied on the next step.
+                Pick the type that matches what this circle is for. Its rules — member limits and
+                banker requirement — are applied on the next step.
               </FieldHint>
               {circleTypes.length === 0 ? (
                 <p className="rounded-xl border border-warning-500/30 bg-warning-500/10 px-3 py-2.5 text-xs text-warning-300">
@@ -231,37 +317,48 @@ export default function CircleCreatePage() {
               ) : (
                 <div className="grid gap-3 sm:grid-cols-2">
                   {circleTypes.map((entry) => {
-                    const active = entry.id === selectedTypeId;
+                    const active = meta?.id === entry.id;
+                    const lockedByMandate = mandateActive && !missingTypeSet.has(entry.type);
+                    const requiredRule = requiredRuleByType.get(entry.type);
+                    const isUnsatisfiedRequired = Boolean(requiredRule && !requiredRule.satisfied);
                     return (
                       <button
                         key={entry.id}
                         type="button"
+                        disabled={lockedByMandate}
                         onClick={() => {
+                          if (lockedByMandate) return;
                           setSelectedTypeId(entry.id);
-                          if (entry.allowedDurations.length > 0 && !entry.allowedDurations.includes(duration)) {
-                            setDuration(entry.allowedDurations[0]);
-                          }
                           setError(null);
                         }}
-                        className={`cursor-pointer rounded-2xl border p-4 text-left transition-colors ${
-                          active
-                            ? "border-gold-500/40 bg-gold-500/[0.07]"
-                            : "border-white/10 bg-ink-950/60 hover:border-gold-500/30"
+                        className={`rounded-2xl border p-4 text-left transition-colors ${
+                          lockedByMandate
+                            ? "cursor-not-allowed border-white/5 bg-ink-950/40 opacity-45"
+                            : active
+                              ? "cursor-pointer border-gold-500/40 bg-gold-500/[0.07]"
+                              : "cursor-pointer border-white/10 bg-ink-950/60 hover:border-gold-500/30"
                         }`}
                       >
                         <div className="flex items-start justify-between gap-2">
                           <p className="text-sm font-semibold text-white">{entry.shortLabel}</p>
                           <span className="flex gap-1.5">
-                            {entry.mandatory && <Badge variant="gold">Mandatory</Badge>}
+                            {lockedByMandate && <Badge variant="warning">Locked</Badge>}
+                            {isUnsatisfiedRequired && <Badge variant="gold">Required first</Badge>}
+                            {requiredRule?.satisfied && <Badge variant="success">Required · Ready</Badge>}
                             {entry.requiresBanker && <Badge variant="info">Banker</Badge>}
                           </span>
                         </div>
                         <p className="mt-1.5 text-[11px] leading-relaxed text-slate-400">
-                          {entry.description}
+                          {lockedByMandate
+                            ? `Available once required circles (${missingCircles.map((item) => item.circleType).join(", ")}) are created.`
+                            : entry.description}
                         </p>
                         <p className="mt-2 text-[11px] text-slate-500">
                           Members: {entry.minMembers ?? 0}
                           {entry.maxMembers === null ? "+" : `–${entry.maxMembers}`}
+                          {isUnsatisfiedRequired && requiredRule && requiredRule.minMemberCount > 0
+                            ? ` · Admin rule requires ${requiredRule.minMemberCount}+`
+                            : ""}
                         </p>
                       </button>
                     );
@@ -304,30 +401,7 @@ export default function CircleCreatePage() {
                 />
               </label>
 
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="flex flex-col gap-1.5 text-xs">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-semibold text-white">Duration</span>
-                    <TipIcon text={`Only the durations allowed by the ${meta.shortLabel} type are offered.`} />
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {meta.allowedDurations.map((value) => (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => setDuration(value)}
-                        className={`h-10 cursor-pointer rounded-lg border px-3 text-xs font-semibold transition-colors ${
-                          duration === value
-                            ? "border-gold-500/40 bg-gold-500/15 text-gold-200"
-                            : "border-white/10 bg-ink-950/60 text-slate-300"
-                        }`}
-                      >
-                        {value}d
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
+              <div className="grid gap-3 sm:grid-cols-2">
                 <div className="flex flex-col gap-1.5 text-xs">
                   <div className="flex items-center gap-1.5">
                     <span className="font-semibold text-white">Visibility</span>
@@ -354,10 +428,10 @@ export default function CircleCreatePage() {
                 <div className="flex flex-col gap-1.5 text-xs">
                   <div className="flex items-center gap-1.5">
                     <span className="font-semibold text-white">Interaction</span>
-                    <TipIcon text="How members may act inside the circle: read only, post messages, or collaborate on shared work." />
+                    <TipIcon text="How members may act inside the circle: read only or post messages." />
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {INTERACTION_LEVELS.map((value) => (
+                    {CIRCLE_INTERACTION_LEVELS.map((value) => (
                       <button
                         key={value}
                         type="button"
@@ -397,8 +471,8 @@ export default function CircleCreatePage() {
                 <p className="font-semibold text-white">Review</p>
                 <p className="mt-1">
                   {meta.shortLabel} circle · {selected.length} list
-                  {selected.length === 1 ? "" : "s"} · {memberIds.length} members · {duration} days ·{" "}
-                  {visibility} · {interaction}
+                  {selected.length === 1 ? "" : "s"} · {memberIds.length} members · {visibility} ·{" "}
+                  {interaction}
                 </p>
               </div>
             </div>
@@ -433,6 +507,8 @@ export default function CircleCreatePage() {
           </div>
         </CardBody>
       </Card>
+        </>
+      )}
 
       {selected.length === 0 && step === 0 && (
         <EmptyState

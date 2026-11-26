@@ -54,10 +54,12 @@ export default function GroupSettingsPage() {
 function GroupSettingsForm({ group, isOwner }: { group: Group; isOwner: boolean }) {
   const { adminConfig } = useAppState();
   const actorId = useBusinessId();
-  const { refresh } = useBusinessData();
+  const { circles, refresh } = useBusinessData();
 
   const [name, setName] = useState(group.name);
   const [purpose, setPurpose] = useState(group.purpose);
+  const [imageUrl, setImageUrl] = useState(group.imageUrl ?? "");
+  const [circleIds, setCircleIds] = useState<string[]>(group.circleIds ?? []);
   const [accessType, setAccessType] = useState<GroupAccessType>(group.accessType);
   const [visibility, setVisibility] = useState<GroupVisibility>(group.visibility ?? "directory");
   const [stage, setStage] = useState(group.stage ?? "");
@@ -65,11 +67,21 @@ function GroupSettingsForm({ group, isOwner }: { group: Group; isOwner: boolean 
 
   const isMember = group.memberIds.includes(actorId) || isOwner;
 
+  const toggleCircle = (circleId: string) => {
+    setCircleIds((current) =>
+      current.includes(circleId)
+        ? current.filter((id) => id !== circleId)
+        : [...current, circleId]
+    );
+  };
+
   const save = async () => {
     try {
       await businessApi.updateGroup(group.id, {
         name: name.trim() || group.name,
         purpose: purpose.trim() || group.purpose,
+        imageUrl: imageUrl.trim() || undefined,
+        circleIds,
         accessType,
         visibility,
         stage,
@@ -104,6 +116,8 @@ function GroupSettingsForm({ group, isOwner }: { group: Group; isOwner: boolean 
   const reset = () => {
     setName(group.name);
     setPurpose(group.purpose);
+    setImageUrl(group.imageUrl ?? "");
+    setCircleIds(group.circleIds ?? []);
     setAccessType(group.accessType);
     setVisibility(group.visibility ?? "directory");
     setStage(group.stage ?? "");
@@ -151,6 +165,48 @@ function GroupSettingsForm({ group, isOwner }: { group: Group; isOwner: boolean 
                 className={`${FIELD_CLASS} h-auto py-2 leading-relaxed`}
               />
             </label>
+
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[11px] font-medium text-slate-400">Group image URL (optional)</span>
+              <input
+                type="url"
+                value={imageUrl}
+                disabled={!isOwner}
+                onChange={(event) => setImageUrl(event.target.value)}
+                placeholder="https://…"
+                className={FIELD_CLASS}
+              />
+            </label>
+
+            {(circles?.items ?? []).length > 0 && (
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[11px] font-medium text-slate-400">Linked Circles</span>
+                <div className="flex flex-wrap gap-2">
+                  {(circles?.items ?? []).map((circle) => {
+                    const checked = circleIds.includes(circle.id);
+                    return (
+                      <label
+                        key={circle.id}
+                        className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-1.5 text-xs ${
+                          checked
+                            ? "border-gold-500/40 bg-gold-500/10 text-gold-200"
+                            : "border-white/10 bg-ink-800 text-slate-300"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={!isOwner}
+                          onChange={() => toggleCircle(circle.id)}
+                          className="size-3.5 accent-gold-500"
+                        />
+                        {circle.config.name || circle.type}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">

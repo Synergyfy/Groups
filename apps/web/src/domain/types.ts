@@ -21,8 +21,7 @@ export interface NetworkList {
   contactCount?: number;
 }
 
-export type ContactConfirmation = "pending" | "confirmed";
-
+export type ContactConfirmation = "pending" | "confirmed" | "inactive" | "declined";
 export type ContactIntakeMethod = "manual" | "join-link";
 
 export interface NetworkContact {
@@ -31,6 +30,8 @@ export interface NetworkContact {
   email: string;
   phone: string;
   listId: string;
+  listIds?: string[];
+  mcomUserId?: string;
   confirmation: ContactConfirmation;
   intake: ContactIntakeMethod;
   consentAt: string;
@@ -136,6 +137,12 @@ export interface CircleMember {
   joinedAt: string;
   lastActiveAt: string;
   photoUrl?: string;
+  /**
+   * True when the member is a real Central Hub user and can therefore be
+   * messaged. Somebody who was only added to a network list has no account to
+   * talk with yet.
+   */
+  chatable?: boolean;
 }
 
 export interface GroupCircle {
@@ -211,6 +218,10 @@ export type ContributionFrequency = "once" | "daily" | "weekly" | "monthly";
 export interface Group {
   id: string;
   name: string;
+  description?: string;
+  imageUrl?: string;
+  chatConversationId?: string;
+  circleIds?: string[];
   type: GroupType;
   source: GroupSource;
   /**
@@ -755,4 +766,8 @@ export interface MandatoryGroupRule {
   required: boolean;
   /** How the group is priced when it is created. */
   pricing: MandatoryGroupPricing;
+  /** Creation sequence order (1, 2, 3...). */
+  order?: number;
+  /** Allowed contribution frequencies for paid required groups. */
+  allowedFrequencies?: string[];
 }

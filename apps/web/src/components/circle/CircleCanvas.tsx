@@ -1,10 +1,10 @@
 import { Users } from "lucide-react";
 import type { CircleMember } from "../../domain/types";
-import { CORE_SHORTLIST_LIMIT } from "../../domain/constants";
 import Avatar from "../../components/ui/Avatar";
 import MemberNode from "./MemberNode";
+import RingOverflowNode from "./RingOverflowNode";
+import { useRingPager } from "./ringPaging";
 
-const OUTER_CAP = 14;
 const INNER_RADIUS = 27;
 const OUTER_RADIUS = 42;
 
@@ -13,7 +13,8 @@ interface CircleCanvasProps {
   totalInCircle: number;
   accent: string;
   onViewProfile: (member: CircleMember) => void;
-  onSendMessage: (member: CircleMember) => void;
+  /** Omitted when the viewer cannot message the circle members. */
+  onSendMessage?: (member: CircleMember) => void;
   onAddCategory: (member: CircleMember) => void;
   /** The viewer at the centre of the canvas. */
   self?: { id: string; name: string; businessName: string; photoUrl?: string | null };
@@ -39,15 +40,22 @@ export default function CircleCanvas({
   self: selfProp,
 }: CircleCanvasProps) {
   const self = selfProp ?? { id: "", name: "Account", businessName: "Account" };
-  const inner = members
-    .filter((m) => m.role === "core" || m.role === "banker")
-    .slice(0, CORE_SHORTLIST_LIMIT);
-  const outerRest = members.filter((m) => m.role === "peripheral" || m.role === "partner");
-  const outer = outerRest.slice(0, OUTER_CAP);
-  const overflow = outerRest.length - outer.length;
+  const innerMembers = members.filter(
+    (m) => m.role === "core" || m.role === "banker"
+  );
+  const outerMembers = members.filter(
+    (m) => m.role === "peripheral" || m.role === "partner"
+  );
+  const innerPager = useRingPager(innerMembers);
+  const outerPager = useRingPager(outerMembers);
+  const inner = innerPager.visible;
+  const outer = outerPager.visible;
 
-  const innerPositions = ringPositions(Math.max(inner.length, 1), INNER_RADIUS);
-  const outerPositions = ringPositions(Math.max(outer.length, 1), OUTER_RADIUS);
+  const innerSlots = inner.length + (innerPager.hasOverflow ? 1 : 0);
+  const outerSlots = outer.length + (outerPager.hasOverflow ? 1 : 0);
+  const innerPositions = ringPositions(Math.max(innerSlots, 1), INNER_RADIUS);
+  const outerPositions = ringPositions(Math.max(outerSlots, 1), OUTER_RADIUS);
+  const shownCount = inner.length + outer.length;
 
   return (
     <div>
@@ -116,19 +124,34 @@ export default function CircleCanvas({
           );
         })}
 
-        {overflow > 0 && (
-          <div
-            className="absolute z-10 -translate-x-1/2 -translate-y-1/2"
-            style={{
-              left: `${outerPositions[outer.length]?.x ?? 50}%`,
-              top: `${outerPositions[outer.length]?.y ?? 50}%`,
-            }}
-            title={`${overflow} more member${overflow === 1 ? "" : "s"} beyond the displayed ring`}
-          >
-            <div className="flex size-10 items-center justify-center rounded-full border border-dashed border-white/30 bg-ink-800 text-[10px] font-semibold text-slate-300">
-              +{overflow}
-            </div>
-          </div>
+        {innerPager.hasOverflow && (
+          <RingOverflowNode
+            count={innerPager.hiddenCount}
+            x={innerPositions[inner.length]?.x ?? 50}
+            y={innerPositions[inner.length]?.y ?? 50}
+            expanded={innerPager.showingOverflow}
+            label={
+              innerPager.showingOverflow
+                ? `Show the first ${innerPager.firstSliceSize} core members again`
+                : `Show ${innerPager.hiddenCount} more core member${innerPager.hiddenCount === 1 ? "" : "s"}`
+            }
+            onToggle={innerPager.next}
+          />
+        )}
+
+        {outerPager.hasOverflow && (
+          <RingOverflowNode
+            count={outerPager.hiddenCount}
+            x={outerPositions[outer.length]?.x ?? 50}
+            y={outerPositions[outer.length]?.y ?? 50}
+            expanded={outerPager.showingOverflow}
+            label={
+              outerPager.showingOverflow
+                ? `Show the first ${outerPager.firstSliceSize} peripheral members again`
+                : `Show ${outerPager.hiddenCount} more peripheral member${outerPager.hiddenCount === 1 ? "" : "s"}`
+            }
+            onToggle={outerPager.next}
+          />
         )}
 
         {members.length === 0 && (
@@ -157,7 +180,7 @@ export default function CircleCanvas({
           Inactive
         </span>
         <span className="text-slate-500">
-          {members.length} of {totalInCircle} members shown
+          {shownCount} of {totalInCircle} members shown
         </span>
       </div>
     </div>

@@ -14,7 +14,9 @@ import {
 import { PrismaService } from "../prisma/prisma.service.js";
 import { jsonObject } from "../admin/admin.mappers.js";
 import { hasActiveLocalPlan } from "../business/business.rules.js";
+import { ContactOnboardingService } from "../contacts/contact-onboarding.service.js";
 import { McomService } from "../mcom/mcom.service.js";
+import { CentralSessionService } from "./central-session.service.js";
 import { decideAccess } from "./entitlement-access.js";
 import { normalizeRole, toUserRole } from "./roles.js";
 import type {
@@ -41,6 +43,8 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly prisma: PrismaService,
     private readonly mcomService: McomService,
+    private readonly centralSession: CentralSessionService,
+    private readonly contacts: ContactOnboardingService,
   ) {}
 
   get sessionTtlSeconds(): number {
@@ -118,10 +122,63 @@ export class AuthService {
     await this.enforceAccess(profile, entitlement);
 
     const localUser = await this.upsertUser(profile, entitlement);
+    await this.centralSession.storeTokens(localUser.id, {
+      accessToken: data.accessToken ?? data.access_token ?? null,
+      refreshToken: data.refreshToken ?? data.refresh_token ?? null,
+      expiresIn: Number(data.expiresIn ?? data.expires_in ?? 3600),
+    });
+    await this.reconcileContacts(profile, localUser);
     const user = this.toSessionUser(localUser);
     const token = await this.signSession(user);
 
     return { user, entitlement, token };
+  }
+
+  /**
+   * A contact that was invited by email signs up on Central Hub and lands
+   * here. Their contact record is refreshed with the profile they signed up
+   * with, they join the circles built from their list and their pending
+   * invitations are claimed by the new account.
+   */
+  private async reconcileContacts(
+    profile: McomProfile,
+    user: {
+      id: string;
+      email: string;
+      fullName: string | null;
+      mcomUserId: string | null;
+    },
+  ): Promise<void> {
+    try {
+      const businessProfile = jsonObject(profile.businessProfile);
+      const customerProfile = jsonObject(profile.customerProfile);
+      const category =
+        typeof businessProfile.category === "string"
+          ? businessProfile.category
+          : typeof customerProfile.category === "string"
+            ? customerProfile.category
+            : null;
+
+      await this.contacts.reconcileSignedUpContact({
+        userId: user.id,
+        email: user.email,
+        fullName:
+          profile.fullName?.trim() ||
+          [profile.firstName, profile.lastName].filter(Boolean).join(" ") ||
+          user.fullName,
+        category,
+        city: profile.location?.city ?? null,
+        phone: profile.phone ?? null,
+        mcomUserId: user.mcomUserId,
+      });
+    } catch (error) {
+      // A reconciliation hiccup must never block the sign-in itself.
+      this.logger.error(
+        `Contact reconciliation failed for ${user.email}: ${
+          error instanceof Error ? error.message : "unknown error"
+        }`,
+      );
+    }
   }
 
   async adminLogin(
@@ -226,6 +283,23 @@ export class AuthService {
     };
 
     return this.jwt.signAsync(payload);
+  }
+
+  /**
+   * Forgets the Central Hub SSO credentials of a user who signed out.
+   *
+   * Best effort: a sign-out must never fail because the cleanup did.
+   */
+  async clearCentralSession(userId: string): Promise<void> {
+    try {
+      await this.centralSession.clearTokens(userId);
+    } catch (error) {
+      this.logger.warn(
+        `Could not clear the Central Hub session for ${userId}: ${
+          error instanceof Error ? error.message : "unknown error"
+        }`,
+      );
+    }
   }
 
   private async introspectEntitlement(

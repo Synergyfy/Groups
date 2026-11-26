@@ -60,6 +60,14 @@ model User {
   entitlement              Json?
   entitlementCheckedAt    DateTime?    @map("entitlement_checked_at")
   lastLoginAt             DateTime?    @map("last_login_at")
+  /// Central Hub SSO access token (encrypted at rest). Kept server-side so the
+  /// app can exchange it for scoped Central Hub chat credentials.
+  mcomAccessToken         String?      @map("mcom_access_token")
+  /// Central Hub SSO refresh token (encrypted at rest) used to renew the
+  /// access token without sending the user back through SSO.
+  mcomRefreshToken        String?      @map("mcom_refresh_token")
+  /// When the stored Central Hub access token stops being valid.
+  mcomTokenExpiresAt      DateTime?    @map("mcom_token_expires_at")
   createdAt               DateTime     @default(now()) @map("created_at")
   updatedAt               DateTime     @updatedAt @map("updated_at")
 
@@ -113,10 +121,13 @@ model Group {
   accountManagerId      String?  @map("account_manager_id")
   agentId               String?  @map("agent_id")
   consultantId          String?  @map("consultant_id")
+  imageUrl              String?  @map("image_url")
+  chatConversationId    String?  @map("chat_conversation_id")
 
-  members    GroupMember[]
-  activities GroupActivity[]
-  payments   Payment[]
+  members       GroupMember[]
+  activities    GroupActivity[]
+  payments      Payment[]
+  linkedCircles GroupLinkedCircle[]
 
   @@index([visibility])
   @@index([type])
@@ -255,15 +266,16 @@ model NetworkList {
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
-  business Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  contacts NetworkContact[]
+  business    Business                @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  contacts    NetworkContact[]
+  memberships NetworkListMembership[]
 
   @@index([businessId])
   @@index([businessId, type])
   @@map("network_lists")
 }
 
-/// A contact captured into one of the business's network lists.
+/// A contact captured into one or more of the business's network lists.
 model NetworkContact {
   id           String    @id @default(uuid()) @db.Uuid
   businessId   String    @map("business_id")
@@ -271,6 +283,9 @@ model NetworkContact {
   fullName     String    @map("full_name")
   email        String?
   phone        String?
+  /// Immutable Central Hub user id for this contact, once the contact has an
+  /// account on Central Hub. It is what makes a chat conversation possible.
+  mcomUserId   String?   @map("mcom_user_id")
   category     String?
   location     String?
   geography    String?
@@ -283,13 +298,32 @@ model NetworkContact {
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
-  business Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  list     NetworkList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  business    Business                @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  list        NetworkList             @relation(fields: [listId], references: [id], onDelete: Cascade)
+  memberships NetworkListMembership[]
 
   @@index([businessId])
   @@index([listId])
   @@index([email])
+  @@index([mcomUserId])
   @@map("network_contacts")
+}
+
+/// Many-to-many association allowing a single contact record to belong to
+/// multiple network lists without duplication.
+model NetworkListMembership {
+  id        String   @id @default(uuid()) @db.Uuid
+  listId    String   @map("list_id") @db.Uuid
+  contactId String   @map("contact_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  list    NetworkList    @relation(fields: [listId], references: [id], onDelete: Cascade)
+  contact NetworkContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([listId, contactId])
+  @@index([listId])
+  @@index([contactId])
+  @@map("network_list_memberships")
 }
 
 /// A business-owned group circle. Mirrors GroupCircle in the web domain but is
@@ -302,15 +336,35 @@ model Circle {
   memberIds        String[] @default([]) @map("member_ids")
   sourceListIds    String[] @default([]) @map("source_list_ids")
   status           String   @default("Active")
+  /// The Central Hub group conversation of this circle, once it has one. The
+  /// business that owns the circle is the group owner and admin; the circle
+  /// members are group members.
+  chatConversationId String? @map("chat_conversation_id")
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
-  business  Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  activities CircleActivity[]
+  business     Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  activities   CircleActivity[]
+  linkedGroups GroupLinkedCircle[]
 
   @@index([businessId])
   @@index([type])
   @@map("circles")
+}
+
+model GroupLinkedCircle {
+  id        String   @id @default(uuid()) @db.Uuid
+  groupId   String   @map("group_id") @db.Uuid
+  circleId  String   @map("circle_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  group  Group  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  circle Circle @relation(fields: [circleId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, circleId])
+  @@index([groupId])
+  @@index([circleId])
+  @@map("group_linked_circles")
 }
 
 model CircleActivity {
@@ -494,6 +548,8 @@ model Invitation {
   @@index([groupId])
   @@index([createdAt])
   @@index([groupId, createdAt])
+  @@index([inviteeId])
+  @@index([inviteeEmail])
   @@map("invitations")
 }
 

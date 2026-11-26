@@ -15,6 +15,7 @@ import { Type } from "class-transformer";
 
 const GROUP_STATUSES = [
   "Active",
+  "Draft",
   "Recruiting",
   "Pending Review",
   "Suspended",
@@ -122,6 +123,7 @@ export class CreateGroupAdminDto {
   @IsString() @MaxLength(120) name!: string;
   @IsOptional() @IsString() @MaxLength(140) slug?: string;
   @IsOptional() @IsString() @MaxLength(2000) description?: string;
+  @IsOptional() @IsString() @MaxLength(2048) imageUrl?: string;
   @IsOptional() @IsString() type?: string;
   @IsOptional() @IsString() source?: string;
   @IsOptional() @IsString() @MaxLength(2000) purpose?: string;
@@ -155,6 +157,7 @@ export class UpdateGroupAdminDto {
   @IsOptional() @IsString() @MaxLength(120) name?: string;
   @IsOptional() @IsString() @MaxLength(140) slug?: string;
   @IsOptional() @IsString() @MaxLength(2000) description?: string;
+  @IsOptional() @IsString() @MaxLength(2048) imageUrl?: string;
   @IsOptional() @IsString() type?: string;
   @IsOptional() @IsString() source?: string;
   @IsOptional() @IsString() @MaxLength(2000) purpose?: string;

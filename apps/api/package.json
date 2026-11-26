@@ -5,9 +5,9 @@
   "description": "247 GBS Groups API",
   "type": "module",
   "scripts": {
-    "build": "node init && nest build",
-    "dev": "node init && nest start --watch",
-    "start": "node init && nest start",
+    "build": "nest build",
+    "dev": "nest start --watch",
+    "start": "nest start",
     "start:prod": "node init && node dist/main.js",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
@@ -21,7 +21,8 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:seed:plans": "tsx prisma/seed-plans.ts",
     "db:sync-activation": "tsx prisma/sync-activation.ts",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "smoke:contacts": "tsx scripts/contact-onboarding-smoke.ts"
   },
   "dependencies": {
     "@nestjs/common": "^12.4.2",
