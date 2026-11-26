@@ -60,6 +60,14 @@ model User {
   entitlement              Json?
   entitlementCheckedAt    DateTime?    @map("entitlement_checked_at")
   lastLoginAt             DateTime?    @map("last_login_at")
+  /// Central Hub SSO access token (encrypted at rest). Kept server-side so the
+  /// app can exchange it for scoped Central Hub chat credentials.
+  mcomAccessToken         String?      @map("mcom_access_token")
+  /// Central Hub SSO refresh token (encrypted at rest) used to renew the
+  /// access token without sending the user back through SSO.
+  mcomRefreshToken        String?      @map("mcom_refresh_token")
+  /// When the stored Central Hub access token stops being valid.
+  mcomTokenExpiresAt      DateTime?    @map("mcom_token_expires_at")
   createdAt               DateTime     @default(now()) @map("created_at")
   updatedAt               DateTime     @updatedAt @map("updated_at")
 
@@ -271,6 +279,9 @@ model NetworkContact {
   fullName     String    @map("full_name")
   email        String?
   phone        String?
+  /// Immutable Central Hub user id for this contact, once the contact has an
+  /// account on Central Hub. It is what makes a chat conversation possible.
+  mcomUserId   String?   @map("mcom_user_id")
   category     String?
   location     String?
   geography    String?
@@ -289,6 +300,7 @@ model NetworkContact {
   @@index([businessId])
   @@index([listId])
   @@index([email])
+  @@index([mcomUserId])
   @@map("network_contacts")
 }
 
@@ -302,6 +314,10 @@ model Circle {
   memberIds        String[] @default([]) @map("member_ids")
   sourceListIds    String[] @default([]) @map("source_list_ids")
   status           String   @default("Active")
+  /// The Central Hub group conversation of this circle, once it has one. The
+  /// business that owns the circle is the group owner and admin; the circle
+  /// members are group members.
+  chatConversationId String? @map("chat_conversation_id")
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 

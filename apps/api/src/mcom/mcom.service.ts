@@ -261,6 +261,41 @@ export class McomService {
     return data as T;
   }
 
+  /**
+   * Renews a Central Hub SSO access token with the refresh token that was
+   * issued alongside it. The SSO session stays alive on Central Hub, so the
+   * user does not have to sign in again.
+   */
+  async refreshSsoAccessToken(
+    refreshToken: string,
+  ): Promise<{ accessToken: string; expiresIn: number }> {
+    const data = await this.requestJson<{
+      accessToken?: string;
+      access_token?: string;
+      expiresIn?: number;
+      expires_in?: number;
+      message?: string;
+    }>("/api/v1/auth/sso/token/refresh", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+
+    const accessToken = data.accessToken ?? data.access_token;
+    if (!accessToken) {
+      throw new UnauthorizedException(
+        data.message ?? "Central Hub did not return a refreshed access token",
+      );
+    }
+
+    return {
+      accessToken,
+      expiresIn: Number(data.expiresIn ?? data.expires_in ?? 3600),
+    };
+  }
+
   async exchangeUserToken(
     subjectToken: string,
     targetAudience: string,

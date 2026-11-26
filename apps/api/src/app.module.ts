@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { AdminModule } from "./admin/admin.module.js";
 import { AuthModule } from "./auth/auth.module.js";
 import { BusinessModule } from "./business/business.module.js";
+import { ChatModule } from "./chat/chat.module.js";
 import { ConsumerModule } from "./consumer/consumer.module.js";
 import { ContactsModule } from "./contacts/contact-onboarding.module.js";
 import { GroupsModule } from "./groups/groups.module.js";
@@ -34,6 +35,7 @@ import { SystemModule } from "./system/system.module.js";
     AuthModule,
     AdminModule,
     BusinessModule,
+    ChatModule,
     ConsumerModule,
     PaymentsModule,
     ProfileSyncModule,

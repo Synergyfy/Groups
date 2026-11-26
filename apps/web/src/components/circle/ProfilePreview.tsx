@@ -8,7 +8,8 @@ interface ProfilePreviewProps {
   anchor: HTMLElement | null;
   active: boolean;
   onViewProfile: (member: CircleMember) => void;
-  onSendMessage: (member: CircleMember) => void;
+  /** Omitted when the viewer cannot message this member. */
+  onSendMessage?: (member: CircleMember) => void;
   onAddCategory: (member: CircleMember) => void;
 }
 
@@ -68,7 +69,11 @@ export default function ProfilePreview({
         </span>
       </div>
 
-      <div className="mt-3 grid grid-cols-3 gap-1.5 border-t border-white/10 pt-2.5">
+      <div
+        className={`mt-3 grid gap-1.5 border-t border-white/10 pt-2.5 ${
+          onSendMessage ? "grid-cols-3" : "grid-cols-2"
+        }`}
+      >
         <button
           type="button"
           onClick={() => onViewProfile(member)}
@@ -77,14 +82,16 @@ export default function ProfilePreview({
           <Eye className="size-3.5" />
           View Profile
         </button>
-        <button
-          type="button"
-          onClick={() => onSendMessage(member)}
-          className="flex flex-col items-center gap-1 rounded-lg px-1 py-1.5 text-[10px] font-medium text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
-        >
-          <MessageSquare className="size-3.5" />
-          Message
-        </button>
+        {onSendMessage && (
+          <button
+            type="button"
+            onClick={() => onSendMessage(member)}
+            className="flex flex-col items-center gap-1 rounded-lg px-1 py-1.5 text-[10px] font-medium text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+          >
+            <MessageSquare className="size-3.5" />
+            Message
+          </button>
+        )}
         <button
           type="button"
           onClick={() => onAddCategory(member)}

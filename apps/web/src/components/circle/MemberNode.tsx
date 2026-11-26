@@ -12,7 +12,8 @@ interface MemberNodeProps {
   ring: "inner" | "outer";
   accent: string;
   onViewProfile: (member: CircleMember) => void;
-  onSendMessage: (member: CircleMember) => void;
+  /** Omitted when the viewer cannot message this member. */
+  onSendMessage?: (member: CircleMember) => void;
   onAddCategory: (member: CircleMember) => void;
 }
 

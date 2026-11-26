@@ -12,10 +12,15 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { JwtService } from "@nestjs/jwt";
 import type { CookieOptions, Request, Response } from "express";
 import { randomBytes } from "node:crypto";
 import { AuthService } from "./auth.service.js";
-import type { SessionRole, SessionUser } from "./auth.types.js";
+import type {
+  SessionRole,
+  SessionTokenPayload,
+  SessionUser,
+} from "./auth.types.js";
 import { CurrentUser } from "./current-user.decorator.js";
 import { AdminLoginDto } from "./dto/admin-login.dto.js";
 import { McomCallbackDto } from "./dto/mcom-callback.dto.js";
@@ -45,6 +50,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly config: ConfigService,
+    private readonly jwt: JwtService,
   ) {}
 
   @Get("mcom/login")
@@ -183,7 +189,24 @@ export class AuthController {
 
   @Post("logout")
   @HttpCode(HttpStatus.OK)
-  logout(@Res({ passthrough: true }) response: Response) {
+  async logout(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    // Drop the stored Central Hub SSO credentials so a signed-out session can
+    // never be used to mint chat credentials. A broken cookie is not an error.
+    const token = request.cookies?.[this.sessionCookieName];
+    if (typeof token === "string" && token) {
+      try {
+        const payload = await this.jwt.verify<SessionTokenPayload>(token);
+        if (payload?.sub) {
+          await this.authService.clearCentralSession(payload.sub);
+        }
+      } catch {
+        // The session was already invalid — nothing to clean up.
+      }
+    }
+
     response.clearCookie(this.sessionCookieName, { path: "/" });
     response.clearCookie(OAUTH_COOKIE, { path: "/" });
     return { ok: true };

@@ -305,6 +305,8 @@ export interface CircleMemberView {
   role: string;
   tier: string;
   confirmation?: string;
+  /** True when the member has a Central Hub account and can be messaged. */
+  chatable?: boolean;
   joinedAt?: string;
   lastActiveAt?: string;
   photoUrl?: string;

@@ -16,6 +16,7 @@ import { jsonObject } from "../admin/admin.mappers.js";
 import { hasActiveLocalPlan } from "../business/business.rules.js";
 import { ContactOnboardingService } from "../contacts/contact-onboarding.service.js";
 import { McomService } from "../mcom/mcom.service.js";
+import { CentralSessionService } from "./central-session.service.js";
 import { decideAccess } from "./entitlement-access.js";
 import { normalizeRole, toUserRole } from "./roles.js";
 import type {
@@ -42,6 +43,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly prisma: PrismaService,
     private readonly mcomService: McomService,
+    private readonly centralSession: CentralSessionService,
     private readonly contacts: ContactOnboardingService,
   ) {}
 
@@ -120,6 +122,11 @@ export class AuthService {
     await this.enforceAccess(profile, entitlement);
 
     const localUser = await this.upsertUser(profile, entitlement);
+    await this.centralSession.storeTokens(localUser.id, {
+      accessToken: data.accessToken ?? data.access_token ?? null,
+      refreshToken: data.refreshToken ?? data.refresh_token ?? null,
+      expiresIn: Number(data.expiresIn ?? data.expires_in ?? 3600),
+    });
     await this.reconcileContacts(profile, localUser);
     const user = this.toSessionUser(localUser);
     const token = await this.signSession(user);
@@ -135,7 +142,12 @@ export class AuthService {
    */
   private async reconcileContacts(
     profile: McomProfile,
-    user: { id: string; email: string; fullName: string | null },
+    user: {
+      id: string;
+      email: string;
+      fullName: string | null;
+      mcomUserId: string | null;
+    },
   ): Promise<void> {
     try {
       const businessProfile = jsonObject(profile.businessProfile);
@@ -157,6 +169,7 @@ export class AuthService {
         category,
         city: profile.location?.city ?? null,
         phone: profile.phone ?? null,
+        mcomUserId: user.mcomUserId,
       });
     } catch (error) {
       // A reconciliation hiccup must never block the sign-in itself.
@@ -270,6 +283,23 @@ export class AuthService {
     };
 
     return this.jwt.signAsync(payload);
+  }
+
+  /**
+   * Forgets the Central Hub SSO credentials of a user who signed out.
+   *
+   * Best effort: a sign-out must never fail because the cleanup did.
+   */
+  async clearCentralSession(userId: string): Promise<void> {
+    try {
+      await this.centralSession.clearTokens(userId);
+    } catch (error) {
+      this.logger.warn(
+        `Could not clear the Central Hub session for ${userId}: ${
+          error instanceof Error ? error.message : "unknown error"
+        }`,
+      );
+    }
   }
 
   private async introspectEntitlement(

@@ -38,13 +38,15 @@ const FIELD_CLASS =
 export default function AddContactFlow({
   open,
   onClose,
+  defaultListId,
 }: {
   open: boolean;
   onClose: () => void;
+  defaultListId?: string;
 }) {
   const { networkLists, refresh } = useBusinessData();
   const [view, setView] = useState<View>("method");
-  const [listId, setListId] = useState("");
+  const [listId, setListId] = useState(defaultListId ?? "");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -63,7 +65,7 @@ export default function AddContactFlow({
 
   const reset = () => {
     setView("method");
-    setListId("");
+    setListId(defaultListId ?? "");
     setFullName("");
     setEmail("");
     setPhone("");

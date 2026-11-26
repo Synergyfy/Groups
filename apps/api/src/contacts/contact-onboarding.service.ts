@@ -27,6 +27,8 @@ export interface SignedUpContact {
   category?: string | null;
   city?: string | null;
   phone?: string | null;
+  /** The immutable Central Hub user id, once the account is known there. */
+  mcomUserId?: string | null;
 }
 
 export interface ContactReconciliationResult {
@@ -183,6 +185,9 @@ export class ContactOnboardingService {
           ...(signedUp.category ? { category: signedUp.category } : {}),
           ...(signedUp.city ? { location: signedUp.city } : {}),
           ...(signedUp.phone ? { phone: signedUp.phone } : {}),
+          // The contact is a real Central Hub user from now on, which is what
+          // makes them chat-able inside a circle.
+          ...(signedUp.mcomUserId ? { mcomUserId: signedUp.mcomUserId } : {}),
           confirmation: "confirmed",
           consentAt: contact.consentAt ?? new Date(),
         },

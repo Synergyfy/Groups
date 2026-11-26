@@ -21,6 +21,7 @@ const VARIANTS = ["Standard", "Pro", "Pro+"] as const;
 const ACCESS_TYPES = ["open", "request", "eligibility", "invitation"] as const;
 const VISIBILITIES = ["directory", "members"] as const;
 const INTERACTION_LEVELS = ["read", "message", "collaborate"] as const;
+const CIRCLE_INTERACTION_LEVELS = ["read", "message"] as const;
 const PRICING_MODES = ["free", "paid"] as const;
 const CONTRIBUTION_FREQUENCIES = ["once", "daily", "weekly", "monthly"] as const;
 const GROUP_STATUSES = [
@@ -224,9 +225,8 @@ export class ConfirmNetworkContactDto {
 export class CircleConfigDto {
   @IsString() @MaxLength(160) name!: string;
   @IsOptional() @IsString() @MaxLength(2000) description?: string;
-  @IsOptional() @IsInt() @Min(1) @Max(365) duration?: number;
   @IsOptional() @IsIn(CIRCLE_VISIBILITIES) visibility?: string;
-  @IsOptional() @IsIn(INTERACTION_LEVELS) interactionLevel?: string;
+  @IsOptional() @IsIn(CIRCLE_INTERACTION_LEVELS) interactionLevel?: string;
 }
 
 export class CreateCircleDto {

@@ -136,6 +136,12 @@ export interface CircleMember {
   joinedAt: string;
   lastActiveAt: string;
   photoUrl?: string;
+  /**
+   * True when the member is a real Central Hub user and can therefore be
+   * messaged. Somebody who was only added to a network list has no account to
+   * talk with yet.
+   */
+  chatable?: boolean;
 }
 
 export interface GroupCircle {

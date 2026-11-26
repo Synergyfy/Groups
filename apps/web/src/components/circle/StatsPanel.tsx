@@ -14,6 +14,8 @@ interface StatsPanelProps {
   onEditCircle?: () => void;
   onDeleteCircle?: () => void;
   onRemoveMember?: (member: CircleMember) => void;
+  /** Opens the group chat of this circle on Central Hub. */
+  onGroupChat?: () => void;
   participantMode?: boolean;
 }
 
@@ -46,6 +48,7 @@ export default function StatsPanel({
   onEditCircle,
   onDeleteCircle,
   onRemoveMember,
+  onGroupChat,
   participantMode = false,
 }: StatsPanelProps) {
   const meta = useCircleTypeMeta(circle.type);
@@ -106,6 +109,16 @@ export default function StatsPanel({
               </button>
             )}
           </div>
+        )}
+        {onGroupChat && (
+          <button
+            type="button"
+            onClick={onGroupChat}
+            className="mt-3 flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-gold-500/30 bg-gold-500/10 px-3 py-2 text-[11px] font-semibold text-gold-200 transition-colors hover:bg-gold-500/20"
+          >
+            <MessageSquare className="size-3.5" />
+            Start a group chat with this circle
+          </button>
         )}
       </section>
 

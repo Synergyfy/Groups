@@ -146,6 +146,7 @@ export interface McomTokenResponse {
   refreshToken?: string;
   token_type?: string;
   expires_in?: number;
+  expiresIn?: number;
   user?: McomProfile;
   profile?: McomProfile;
   entitlement?: McomEntitlement;

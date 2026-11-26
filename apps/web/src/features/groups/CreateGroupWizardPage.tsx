@@ -101,9 +101,9 @@ export default function CreateGroupWizardPage() {
   const missingGroups = mandatoryGroups.filter(
     (entry) => entry.required && !entry.satisfied,
   );
-  const requestedIsMissingRequiredGroup = missingGroups.some(
-    (entry) => entry.type === requestedType,
-  );
+  const requestedIsMissingRequiredGroup =
+    missingGroups.some((entry) => entry.type === requestedType) &&
+    creatableTypes.some((entry) => entry.type === requestedType);
   // `circles` is null until the business data provider has loaded. Do not show
   // the wizard before the prerequisite check can run.
   const circlesReady = circles !== null;
@@ -114,7 +114,7 @@ export default function CreateGroupWizardPage() {
     missingGroups.length > 0 &&
     !requestedIsMissingRequiredGroup;
 
-  const circlesHref = "/business/network/lists";
+  const circlesHref = "/business/circles/create";
   const nextRequiredGroup = missingGroups[0];
   const groupHref = nextRequiredGroup
     ? `/business/groups/create?type=${encodeURIComponent(nextRequiredGroup.type)}`
@@ -307,14 +307,15 @@ function CreateGroupWizard({
 
   // Hard mandate: while required groups are missing, only those types are offered.
   const creatableSet = useMemo(() => new Set(types.map((entry) => entry.type)), [types]);
-  const pendingTypes = useMemo(
-    () =>
-      pendingMandatoryTypes(adminConfig, ownedTypes).filter((entry) =>
-        creatableSet.has(entry)
-      ),
-    [adminConfig, ownedTypes, creatableSet]
+  const allPendingTypes = useMemo(
+    () => pendingMandatoryTypes(adminConfig, ownedTypes),
+    [adminConfig, ownedTypes]
   );
-  const mandateActive = pendingTypes.length > 0;
+  const pendingTypes = useMemo(
+    () => allPendingTypes.filter((entry) => creatableSet.has(entry)),
+    [allPendingTypes, creatableSet]
+  );
+  const mandateActive = allPendingTypes.length > 0;
   const pendingSet = useMemo(() => new Set(pendingTypes), [pendingTypes]);
 
   const rawStep = Number(searchParams.get("step") ?? "0");
@@ -514,6 +515,12 @@ function CreateGroupWizard({
 
   const create = async () => {
     if (!type || !stepValid || submitting) return;
+    if (mandateActive && !pendingSet.has(type)) {
+      setSubmitError(
+        `Create the required group types first: ${allPendingTypes.join(", ")}.`
+      );
+      return;
+    }
     setSubmitting(true);
     setSubmitError(null);
     try {

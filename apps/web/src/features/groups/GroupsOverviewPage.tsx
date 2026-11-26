@@ -5,6 +5,7 @@ import {
   Check,
   ChevronRight,
   CircleDollarSign,
+  CircleDot,
   Compass,
   Info,
   ListChecks,
@@ -35,6 +36,7 @@ import {
   useMandatoryGroupStatuses,
   usePlatformGroup,
 } from "../../store/selectors";
+import { useBusinessData } from "../../business/BusinessDataProvider";
 
 function requiredPricingLabel(pricing: MandatoryGroupPricing, allowPaid: boolean): string {
   if (pricing === "paid") {
@@ -55,6 +57,9 @@ export default function GroupsOverviewPage() {
   const mandatoryStatuses = useMandatoryGroupStatuses(actorId);
   const requiredGroups = mandatoryStatuses.filter((entry) => entry.required);
   const missingGroups = requiredGroups.filter((entry) => !entry.satisfied);
+  const { circles } = useBusinessData();
+  const requiredCircles = (circles?.mandatoryCircles ?? []).filter((entry) => entry.required);
+  const missingCircles = requiredCircles.filter((entry) => !entry.satisfied);
   const canCreate = useCanCreateGroups();
   const rightsLabel = useCreationRightsLabel();
   const headStartGroups = useHeadStartGroups();
@@ -72,6 +77,59 @@ export default function GroupsOverviewPage() {
         <SkeletonRows rows={6} />
       ) : (
         <>
+          {requiredCircles.length > 0 && (
+            <div className="rounded-2xl border border-gold-500/30 bg-ink-900 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  <CircleDot className="size-4 text-gold-500" />
+                  <p className="text-sm font-semibold text-white">Required circles</p>
+                  <Badge variant={missingCircles.length > 0 ? "warning" : "success"}>
+                    {requiredCircles.length - missingCircles.length} / {requiredCircles.length}{" "}
+                    ready
+                  </Badge>
+                </div>
+                {missingCircles.length > 0 && (
+                  <span className="text-[11px] text-slate-400">
+                    Set these up first — group creation unlocks afterwards.
+                  </span>
+                )}
+              </div>
+              <p className="mt-1.5 text-[11px] leading-relaxed text-slate-400">
+                Administrators require your business to have these circles with their minimum
+                members before creating any group or other circle type.
+              </p>
+              <ul className="mt-3 flex flex-col gap-2">
+                {requiredCircles.map((entry) => (
+                  <li
+                    key={entry.circleType}
+                    className="flex flex-wrap items-center gap-3 rounded-xl border border-white/10 bg-ink-950/60 px-3 py-2.5"
+                  >
+                    <div className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-ink-900">
+                      {entry.satisfied ? (
+                        <Check className="size-4 text-success-400" />
+                      ) : (
+                        <span className="size-2 rounded-full bg-warning-400" />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-semibold text-white">{entry.circleType}</p>
+                      <p className="mt-0.5 truncate text-[11px] text-slate-400">
+                        {entry.current} / {entry.minMemberCount} members
+                      </p>
+                    </div>
+                    {entry.satisfied ? (
+                      <Badge variant="success">Ready</Badge>
+                    ) : (
+                      <LinkButton to="/business/circles/create" size="sm">
+                        Set up
+                      </LinkButton>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {requiredGroups.length > 0 && (
             <div data-tour="required-groups" className="rounded-2xl border border-gold-500/30 bg-ink-900 p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -232,11 +290,23 @@ export default function GroupsOverviewPage() {
               icon={<Plus className="size-5" />}
               title="Create a Group"
               description={
-                canCreate
-                  ? "Optional — start a group only when you need one."
-                  : `Locked for your membership — ${rightsLabel} only. Other memberships join the admin platform group.`
+                !canCreate
+                  ? `Locked for your membership — ${rightsLabel} only. Other memberships join the admin platform group.`
+                  : missingCircles.length > 0
+                    ? "Locked until your required circles are set up."
+                    : missingGroups.length > 0
+                      ? `Create your required groups first (${missingGroups.map((entry) => entry.type).join(", ")}).`
+                      : "Optional — start a group only when you need one."
               }
-              badge={canCreate ? undefined : "Plan locked"}
+              badge={
+                !canCreate
+                  ? "Plan locked"
+                  : missingCircles.length > 0
+                    ? "Circles required"
+                    : missingGroups.length > 0
+                      ? "Required first"
+                      : undefined
+              }
               badgeVariant="warning"
             />
             <NavRow

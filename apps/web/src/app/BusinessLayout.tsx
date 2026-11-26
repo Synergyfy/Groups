@@ -2,10 +2,10 @@ import {
   CircleDot,
   Compass,
   Crown,
-  Gift,
+  // Gift,
   Globe,
   MapPin,
-  Megaphone,
+  // Megaphone,
   Settings,
   Users,
 } from "lucide-react";
@@ -57,13 +57,13 @@ const BUSINESS_NAV: NavSection[] = [
         end: true,
       },
       { to: "/business/location", label: "My Location", icon: <MapPin className="size-4" />, end: true },
-      {
-        to: "/business/campaigns",
-        label: "Campaigns",
-        icon: <Megaphone className="size-4" />,
-        end: true,
-      },
-      { to: "/business/rewards", label: "Rewards", icon: <Gift className="size-4" />, end: true },
+      // {
+      //   to: "/business/campaigns",
+      //   label: "Campaigns",
+      //   icon: <Megaphone className="size-4" />,
+      //   end: true,
+      // },
+      // { to: "/business/rewards", label: "Rewards", icon: <Gift className="size-4" />, end: true },
       {
         to: "/business/plan",
         label: "Plan",

@@ -13,7 +13,8 @@ interface CircleCanvasProps {
   totalInCircle: number;
   accent: string;
   onViewProfile: (member: CircleMember) => void;
-  onSendMessage: (member: CircleMember) => void;
+  /** Omitted when the viewer cannot message the circle members. */
+  onSendMessage?: (member: CircleMember) => void;
   onAddCategory: (member: CircleMember) => void;
   /** The viewer at the centre of the canvas. */
   self?: { id: string; name: string; businessName: string; photoUrl?: string | null };
